@@ -60,10 +60,10 @@ function send(res, status, body, requestId) { res.writeHead(status, { 'content-t
 const server = createServer(async (req, res) => {
   const requestId = randomUUID()
   if (req.method === 'OPTIONS') return send(res, 204, {}, requestId)
-  if (req.method === 'GET' && req.url === '/health') return send(res, 200, { status: 'ok', service: 'trustlens-functions' })
+  if (req.method === 'GET' && req.url === '/health') return send(res, 200, { status: 'ok', service: 'trustlens-api', requestId }, requestId)
   if (req.method !== 'POST' || req.url !== '/api/analyze') return send(res, 404, { code: 'NOT_FOUND', message: 'Route not found.', requestId }, requestId)
   if (!String(req.headers['content-type'] || '').toLowerCase().includes('application/json')) return send(res, 415, { code: 'UNSUPPORTED_MEDIA_TYPE', message: 'Content-Type must be application/json.', requestId }, requestId)
-  let raw = ''; for await (const chunk of req) { raw += chunk; if (raw.length > 15000) return send(res, 413, { code: 'PAYLOAD_TOO_LARGE', message: 'Request body is too large.' }) }
+  let raw = ''; for await (const chunk of req) { raw += chunk; if (raw.length > 15000) return send(res, 413, { code: 'PAYLOAD_TOO_LARGE', message: 'Request body is too large.', requestId }, requestId) }
   try {
     const body = JSON.parse(raw || '{}'); const validationError = validateSubmission(body)
     if (validationError) return send(res, 400, { code: 'INVALID_SUBMISSION', message: validationError, requestId }, requestId)
