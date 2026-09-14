@@ -34,6 +34,14 @@ function analyze(text) {
   return { riskBand, recommendation: riskBand === 'HIGH' ? 'STOP_AND_AVOID' : riskBand === 'MEDIUM' ? 'VERIFY_INDEPENDENTLY' : 'PROCEED_CAUTIOUSLY', findings, limitations: ['This local prototype uses deterministic rules only.'], safeActions: riskBand === 'HIGH' ? ['Do not click, pay, reply, or share credentials.', 'Verify through the organisation’s official website.'] : ['Verify the sender and organisation independently.'], policyVersion: 'rules-v1' }
 }
 
+function validateSubmission(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return 'Request body must be a JSON object.'
+  if (body.type !== undefined && !['message', 'url', 'screenshot'].includes(body.type)) return 'type must be message, url, or screenshot.'
+  if (body.languageHint !== undefined && !['en', 'si', 'singlish', 'mixed'].includes(body.languageHint)) return 'languageHint is not supported.'
+  if (body.retentionConsent !== undefined && typeof body.retentionConsent !== 'boolean') return 'retentionConsent must be a boolean.'
+  return null
+}
+
 async function persistIfConsented(body, decision, entities) {
   if (body.retentionConsent !== true || !process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) return null
   const headers = { apikey: process.env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`, 'content-type': 'application/json', Prefer: 'return=representation' }
@@ -48,17 +56,21 @@ async function persistIfConsented(body, decision, entities) {
   return submission?.id || null
 }
 
-function send(res, status, body) { res.writeHead(status, { 'content-type': 'application/json', 'access-control-allow-origin': 'http://localhost:5173' }); res.end(JSON.stringify(body)) }
+function send(res, status, body, requestId) { res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'access-control-allow-origin': 'http://localhost:5173', 'access-control-allow-methods': 'GET,POST,OPTIONS', 'access-control-allow-headers': 'content-type', 'x-content-type-options': 'nosniff', 'x-frame-options': 'DENY', 'referrer-policy': 'no-referrer', ...(requestId ? { 'x-request-id': requestId } : {}) }); res.end(JSON.stringify(body)) }
 const server = createServer(async (req, res) => {
-  if (req.method === 'OPTIONS') return send(res, 204, {})
+  const requestId = randomUUID()
+  if (req.method === 'OPTIONS') return send(res, 204, {}, requestId)
   if (req.method === 'GET' && req.url === '/health') return send(res, 200, { status: 'ok', service: 'trustlens-functions' })
-  if (req.method !== 'POST' || req.url !== '/api/analyze') return send(res, 404, { code: 'NOT_FOUND', message: 'Route not found.' })
+  if (req.method !== 'POST' || req.url !== '/api/analyze') return send(res, 404, { code: 'NOT_FOUND', message: 'Route not found.', requestId }, requestId)
+  if (!String(req.headers['content-type'] || '').toLowerCase().includes('application/json')) return send(res, 415, { code: 'UNSUPPORTED_MEDIA_TYPE', message: 'Content-Type must be application/json.', requestId }, requestId)
   let raw = ''; for await (const chunk of req) { raw += chunk; if (raw.length > 15000) return send(res, 413, { code: 'PAYLOAD_TOO_LARGE', message: 'Request body is too large.' }) }
   try {
-    const body = JSON.parse(raw || '{}'); const text = typeof body.text === 'string' ? body.text.trim() : ''
-    if (!text || text.length > MAX_TEXT) return send(res, 400, { code: 'INVALID_SUBMISSION', message: 'text is required and must be at most 10,000 characters.' })
+    const body = JSON.parse(raw || '{}'); const validationError = validateSubmission(body)
+    if (validationError) return send(res, 400, { code: 'INVALID_SUBMISSION', message: validationError, requestId }, requestId)
+    const text = typeof body.text === 'string' ? body.text.trim() : ''
+    if (!text || text.length > MAX_TEXT) return send(res, 400, { code: 'INVALID_SUBMISSION', message: 'text is required and must be at most 10,000 characters.', requestId }, requestId)
     const decision = analyze(text); const entities = extractEntities(text); const submissionId = await persistIfConsented({ ...body, text }, decision, entities)
-    return send(res, 200, { decision, entities, inputType: entities.some((item) => item.type === 'url') ? 'url' : 'message', requestId: randomUUID(), ...(submissionId ? { submissionId } : {}) })
-  } catch (error) { return send(res, error instanceof SyntaxError ? 400 : 502, { code: error instanceof SyntaxError ? 'INVALID_JSON' : 'PERSISTENCE_ERROR', message: error instanceof SyntaxError ? 'Request body must be valid JSON.' : 'Analysis completed, but persistence is temporarily unavailable.' }) }
+    return send(res, 200, { decision, entities, inputType: entities.some((item) => item.type === 'url') ? 'url' : 'message', requestId, ...(submissionId ? { submissionId } : {}) }, requestId)
+  } catch (error) { return send(res, error instanceof SyntaxError ? 400 : 502, { code: error instanceof SyntaxError ? 'INVALID_JSON' : 'PERSISTENCE_ERROR', message: error instanceof SyntaxError ? 'Request body must be valid JSON.' : 'Analysis completed, but persistence is temporarily unavailable.', requestId }, requestId) }
 })
 server.listen(PORT, () => console.log(`TrustLens API listening on http://localhost:${PORT}`))
