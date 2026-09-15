@@ -156,14 +156,14 @@ test('consented analysis persists through the server-only Supabase client', asyn
   const consentedChild = spawn(process.execPath, ['src/server.mjs'], { cwd: new URL('..', import.meta.url), env: { ...process.env, PORT: String(apiPort), SUPABASE_URL: `http://127.0.0.1:${supabasePort}`, SUPABASE_SERVICE_ROLE_KEY: 'test-service-key', RATE_LIMIT_MAX: '60' }, stdio: ['ignore', 'pipe', 'pipe'] })
   await waitForStartup(consentedChild, apiPort, 'Consented API')
   try {
-    const response = await fetch(`http://localhost:${apiPort}/api/analyze`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ type: 'message', text: 'Pay Rs. 5000 today and send your OTP.', languageHint: 'en', retentionConsent: true }) })
+    const response = await fetch(`http://localhost:${apiPort}/api/analyze`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ type: 'message', text: 'Visit https://example.com, pay Rs. 5000 today and send your OTP.', languageHint: 'en', retentionConsent: true }) })
     const body = await response.json()
     assert.equal(response.status, 200)
     assert.equal(body.submissionId, 'submission-test-id')
-    assert.deepEqual(requests.map((request) => request.url), ['/rest/v1/submissions', '/rest/v1/extracted_entities', '/rest/v1/findings'])
+    assert.deepEqual(requests.map((request) => request.url), ['/rest/v1/approved_organizations?official_domain=in.%28example.com%29&active=eq.true&select=name%2Cofficial_domain%2Ccategory%2Csource_url', '/rest/v1/submissions', '/rest/v1/extracted_entities', '/rest/v1/findings'])
     assert.equal(requests[0].headers.apikey, 'test-service-key')
-    assert.equal(requests[0].body.retention_consent, true)
-    assert.equal(requests[0].body.raw_text, 'Pay Rs. 5000 today and send your OTP.')
+    assert.equal(requests[1].body.retention_consent, true)
+    assert.equal(requests[1].body.raw_text, 'Visit https://example.com, pay Rs. 5000 today and send your OTP.')
   } finally {
     consentedChild.kill()
     await new Promise((resolve) => supabase.close(resolve))

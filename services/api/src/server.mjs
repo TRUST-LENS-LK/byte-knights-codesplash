@@ -5,6 +5,7 @@ import { send } from './http/response.mjs'
 import { analyze, extractEntities, validateSubmission } from './services/analysis.mjs'
 import { persistIfConsented } from './services/persistence.mjs'
 import { consumeRateLimit } from './services/rateLimit.mjs'
+import { verifyApprovedDomains } from './services/domainVerification.mjs'
 
 const server = createServer(async (req, res) => {
   const requestId = randomUUID()
@@ -38,8 +39,10 @@ const server = createServer(async (req, res) => {
     if (validationError) return send(res, 400, { code: 'INVALID_SUBMISSION', message: validationError, requestId }, requestId)
     const text = typeof body.text === 'string' ? body.text.trim() : ''
     if (!text || text.length > MAX_TEXT) return send(res, 400, { code: 'INVALID_SUBMISSION', message: 'text is required and must be at most 10,000 characters.', requestId }, requestId)
-    const decision = analyze(text)
     const entities = extractEntities(text)
+    const decision = analyze(text)
+    const approvedDomainFindings = await verifyApprovedDomains(entities)
+    if (approvedDomainFindings.length) decision.findings.push(...approvedDomainFindings)
     const submissionId = await persistIfConsented({ ...body, text }, decision, entities)
     return send(res, 200, { decision, entities, inputType: body.type === 'url' || entities.some((item) => item.type === 'url') ? 'url' : 'message', requestId, ...(submissionId ? { submissionId } : {}) }, requestId)
   } catch (error) {
