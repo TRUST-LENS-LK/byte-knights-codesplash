@@ -24,7 +24,7 @@ function extractEntities(text) {
   for (const match of text.matchAll(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g)) entities.push({ type: 'email', value: match[0], confidence: 0.99 })
   for (const match of text.matchAll(/(?:\+94|0)\s*\d{2}\s*\d{3}\s*\d{4}/g)) entities.push({ type: 'phone', value: match[0], normalizedValue: match[0].replace(/\s+/g, '').replace(/^0/, '+94'), confidence: 0.95 })
   for (const match of text.matchAll(/(?:Rs\.?|LKR)\s?[\d,]+(?:\.\d{1,2})?/gi)) entities.push({ type: 'amount', value: match[0], confidence: 0.94 })
-  return entities
+  return entities.filter((entity, index, all) => all.findIndex((candidate) => candidate.type === entity.type && candidate.value === entity.value) === index)
 }
 
 function analyze(text) {
@@ -50,8 +50,14 @@ async function persistIfConsented(body, decision, entities) {
   if (!response.ok) throw new Error('Supabase persistence failed')
   const [submission] = await response.json()
   if (submission?.id) {
-    if (entities.length) await fetch(`${process.env.SUPABASE_URL}/rest/v1/extracted_entities`, { method: 'POST', headers, body: JSON.stringify(entities.map((entity) => ({ submission_id: submission.id, entity_type: entity.type, value: entity.value, normalized_value: entity.normalizedValue || null, confidence: entity.confidence || null }))) })
-    if (decision.findings.length) await fetch(`${process.env.SUPABASE_URL}/rest/v1/findings`, { method: 'POST', headers, body: JSON.stringify(decision.findings.map((finding) => ({ submission_id: submission.id, canonical_signal: finding.canonicalSignal, category: finding.category, evidence: finding.evidence, source: finding.source, strength: finding.strength, confidence: finding.confidence, limitation: finding.limitation }))) })
+    if (entities.length) {
+      const entityResponse = await fetch(`${process.env.SUPABASE_URL}/rest/v1/extracted_entities`, { method: 'POST', headers, body: JSON.stringify(entities.map((entity) => ({ submission_id: submission.id, entity_type: entity.type, value: entity.value, normalized_value: entity.normalizedValue || null, confidence: entity.confidence || null }))) })
+      if (!entityResponse.ok) throw new Error('Supabase entity persistence failed')
+    }
+    if (decision.findings.length) {
+      const findingResponse = await fetch(`${process.env.SUPABASE_URL}/rest/v1/findings`, { method: 'POST', headers, body: JSON.stringify(decision.findings.map((finding) => ({ submission_id: submission.id, canonical_signal: finding.canonicalSignal, category: finding.category, evidence: finding.evidence, source: finding.source, strength: finding.strength, confidence: finding.confidence, limitation: finding.limitation }))) })
+      if (!findingResponse.ok) throw new Error('Supabase finding persistence failed')
+    }
   }
   return submission?.id || null
 }
@@ -63,6 +69,8 @@ const server = createServer(async (req, res) => {
   if (req.method === 'GET' && req.url === '/health') return send(res, 200, { status: 'ok', service: 'trustlens-api', requestId }, requestId)
   if (req.method !== 'POST' || req.url !== '/api/analyze') return send(res, 404, { code: 'NOT_FOUND', message: 'Route not found.', requestId }, requestId)
   if (!String(req.headers['content-type'] || '').toLowerCase().includes('application/json')) return send(res, 415, { code: 'UNSUPPORTED_MEDIA_TYPE', message: 'Content-Type must be application/json.', requestId }, requestId)
+  const contentLength = Number(req.headers['content-length'] || 0)
+  if (Number.isFinite(contentLength) && contentLength > 15000) return send(res, 413, { code: 'PAYLOAD_TOO_LARGE', message: 'Request body is too large.', requestId }, requestId)
   let raw = ''; for await (const chunk of req) { raw += chunk; if (raw.length > 15000) return send(res, 413, { code: 'PAYLOAD_TOO_LARGE', message: 'Request body is too large.', requestId }, requestId) }
   try {
     const body = JSON.parse(raw || '{}'); const validationError = validateSubmission(body)
@@ -73,4 +81,21 @@ const server = createServer(async (req, res) => {
     return send(res, 200, { decision, entities, inputType: entities.some((item) => item.type === 'url') ? 'url' : 'message', requestId, ...(submissionId ? { submissionId } : {}) }, requestId)
   } catch (error) { return send(res, error instanceof SyntaxError ? 400 : 502, { code: error instanceof SyntaxError ? 'INVALID_JSON' : 'PERSISTENCE_ERROR', message: error instanceof SyntaxError ? 'Request body must be valid JSON.' : 'Analysis completed, but persistence is temporarily unavailable.', requestId }, requestId) }
 })
+server.on('error', (error) => {
+  if (error.code === 'EADDRINUSE') {
+    console.error(`TrustLens API cannot start: port ${PORT} is already in use.`)
+    process.exitCode = 1
+    return
+  }
+  console.error('TrustLens API server error:', error)
+  process.exitCode = 1
+})
+
+function shutdown(signal) {
+  console.log(`${signal} received; shutting down TrustLens API.`)
+  server.close(() => process.exit(0))
+}
+
+process.once('SIGINT', () => shutdown('SIGINT'))
+process.once('SIGTERM', () => shutdown('SIGTERM'))
 server.listen(PORT, () => console.log(`TrustLens API listening on http://localhost:${PORT}`))
