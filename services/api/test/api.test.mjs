@@ -52,6 +52,21 @@ test('unsupported language hints are rejected', async () => {
   assert.equal(body.message, 'languageHint is not supported.')
 })
 
+test('invalid retention consent values are rejected', async () => {
+  const response = await fetch(`http://localhost:${port}/api/analyze`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ type: 'message', text: 'hello', retentionConsent: 'true' }) })
+  const body = await response.json()
+  assert.equal(response.status, 400)
+  assert.equal(body.code, 'INVALID_SUBMISSION')
+  assert.equal(body.message, 'retentionConsent must be a boolean.')
+})
+
+test('empty or whitespace-only text is rejected', async () => {
+  const response = await fetch(`http://localhost:${port}/api/analyze`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ type: 'message', text: '   ' }) })
+  const body = await response.json()
+  assert.equal(response.status, 400)
+  assert.equal(body.code, 'INVALID_SUBMISSION')
+})
+
 test('malformed JSON is rejected with a traceable error', async () => {
   const response = await fetch(`http://localhost:${port}/api/analyze`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"type":"message"' })
   const body = await response.json()
@@ -91,6 +106,20 @@ test('repeated entities are returned only once', async () => {
   const body = await response.json()
   assert.equal(response.status, 200)
   assert.deepEqual(body.entities.filter((entity) => entity.type === 'url').map((entity) => entity.value), ['https://example.com'])
+})
+
+test('URL entities include a normalized domain', async () => {
+  const response = await fetch(`http://localhost:${port}/api/analyze`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ type: 'url', text: 'Visit https://Phishing.Example.com/login.', retentionConsent: false }) })
+  const body = await response.json()
+  assert.equal(response.status, 200)
+  assert.equal(body.entities.find((entity) => entity.type === 'domain')?.normalizedValue, 'phishing.example.com')
+})
+
+test('explicit URL submissions preserve their input type', async () => {
+  const response = await fetch(`http://localhost:${port}/api/analyze`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ type: 'url', text: 'example dot com', retentionConsent: false }) })
+  const body = await response.json()
+  assert.equal(response.status, 200)
+  assert.equal(body.inputType, 'url')
 })
 
 test('rate limiting returns 429 after the configured request budget', async () => {

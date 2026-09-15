@@ -41,7 +41,7 @@ const server = createServer(async (req, res) => {
     const decision = analyze(text)
     const entities = extractEntities(text)
     const submissionId = await persistIfConsented({ ...body, text }, decision, entities)
-    return send(res, 200, { decision, entities, inputType: entities.some((item) => item.type === 'url') ? 'url' : 'message', requestId, ...(submissionId ? { submissionId } : {}) }, requestId)
+    return send(res, 200, { decision, entities, inputType: body.type === 'url' || entities.some((item) => item.type === 'url') ? 'url' : 'message', requestId, ...(submissionId ? { submissionId } : {}) }, requestId)
   } catch (error) {
     return send(res, error instanceof SyntaxError ? 400 : 502, { code: error instanceof SyntaxError ? 'INVALID_JSON' : 'PERSISTENCE_ERROR', message: error instanceof SyntaxError ? 'Request body must be valid JSON.' : 'Analysis completed, but persistence is temporarily unavailable.', requestId }, requestId)
   }

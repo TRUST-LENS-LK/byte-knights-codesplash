@@ -7,7 +7,16 @@ const patterns = [
 
 export function extractEntities(text) {
   const entities = []
-  for (const match of text.matchAll(/https?:\/\/[^\s<>()]+/gi)) entities.push({ type: 'url', value: match[0].replace(/[),.!?]+$/, ''), confidence: 0.99 })
+  for (const match of text.matchAll(/https?:\/\/[^\s<>()]+/gi)) {
+    const value = match[0].replace(/[),.!?]+$/, '')
+    entities.push({ type: 'url', value, confidence: 0.99 })
+    try {
+      const hostname = new URL(value).hostname.toLowerCase()
+      if (hostname) entities.push({ type: 'domain', value: hostname, normalizedValue: hostname, confidence: 0.98 })
+    } catch {
+      // Keep the URL entity when the submitted value is not parseable.
+    }
+  }
   for (const match of text.matchAll(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g)) entities.push({ type: 'email', value: match[0], confidence: 0.99 })
   for (const match of text.matchAll(/(?:\+94|0)\s*\d{2}\s*\d{3}\s*\d{4}/g)) entities.push({ type: 'phone', value: match[0], normalizedValue: match[0].replace(/\s+/g, '').replace(/^0/, '+94'), confidence: 0.95 })
   for (const match of text.matchAll(/(?:Rs\.?|LKR)\s?[\d,]+(?:\.\d{1,2})?/gi)) entities.push({ type: 'amount', value: match[0], confidence: 0.94 })
