@@ -1,64 +1,70 @@
 import { createServer } from 'node:http'
-import { randomUUID, createHash } from 'node:crypto'
-import { readFileSync, existsSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
+import { MAX_BODY_BYTES, MAX_TEXT, PORT } from './config/env.mjs'
+import { send } from './http/response.mjs'
+import { analyze, extractEntities, validateSubmission } from './services/analysis.mjs'
+import { persistIfConsented } from './services/persistence.mjs'
+import { consumeRateLimit } from './services/rateLimit.mjs'
+import { verifyApprovedDomains } from './services/domainVerification.mjs'
 
-if (existsSync(new URL('../.env', import.meta.url))) {
-  for (const line of readFileSync(new URL('../.env', import.meta.url), 'utf8').split(/\r?\n/)) {
-    const match = line.match(/^([A-Z0-9_]+)=(.*)$/)
-    if (match && !process.env[match[1]]) process.env[match[1]] = match[2].trim().replace(/^['"]|['"]$/g, '')
-  }
-}
-
-const PORT = Number(process.env.PORT || 8787)
-const MAX_TEXT = 10000
-const patterns = [
-  ['credential_request', 'Sensitive information', /otp|one[- ]time password|pin|password|bank(?:ing)? details?/i, 'OTP, PIN, password, or banking details', 0.98],
-  ['advance_payment', 'Financial request', /registration fee|upfront|deposit|send (?:rs\.?|lkr)|payment|pay today|transfer/i, 'Payment or upfront-fee language', 0.95],
-  ['urgency', 'Social engineering', /urgent|immediately|today|expires|act now|last chance/i, 'Urgent timing language', 0.55],
-  ['job_offer', 'Job scam', /job|salary|vacancy|work from home|hiring|selected/i, 'Recruitment or job-offer language', 0.65],
-]
-
-function extractEntities(text) {
-  const entities = []
-  for (const match of text.matchAll(/https?:\/\/[^\s]+/gi)) entities.push({ type: 'url', value: match[0].replace(/[),.!?]+$/, ''), confidence: 0.99 })
-  for (const match of text.matchAll(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g)) entities.push({ type: 'email', value: match[0], confidence: 0.99 })
-  for (const match of text.matchAll(/(?:\+94|0)\s*\d{2}\s*\d{3}\s*\d{4}/g)) entities.push({ type: 'phone', value: match[0], normalizedValue: match[0].replace(/\s+/g, '').replace(/^0/, '+94'), confidence: 0.95 })
-  for (const match of text.matchAll(/(?:Rs\.?|LKR)\s?[\d,]+(?:\.\d{1,2})?/gi)) entities.push({ type: 'amount', value: match[0], confidence: 0.94 })
-  return entities
-}
-
-function analyze(text) {
-  const findings = patterns.filter(([, , pattern]) => pattern.test(text)).map(([canonicalSignal, category, , evidence, strength]) => ({ canonicalSignal, category, evidence, source: 'RULE', strength, confidence: strength, limitation: 'Keyword rule; context should be verified independently.' }))
-  const critical = findings.some((item) => ['credential_request', 'advance_payment'].includes(item.canonicalSignal))
-  const riskBand = critical || findings.length >= 3 ? 'HIGH' : findings.length ? 'MEDIUM' : 'LOW'
-  return { riskBand, recommendation: riskBand === 'HIGH' ? 'STOP_AND_AVOID' : riskBand === 'MEDIUM' ? 'VERIFY_INDEPENDENTLY' : 'PROCEED_CAUTIOUSLY', findings, limitations: ['This local prototype uses deterministic rules only.'], safeActions: riskBand === 'HIGH' ? ['Do not click, pay, reply, or share credentials.', 'Verify through the organisation’s official website.'] : ['Verify the sender and organisation independently.'], policyVersion: 'rules-v1' }
-}
-
-async function persistIfConsented(body, decision, entities) {
-  if (body.retentionConsent !== true || !process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) return null
-  const headers = { apikey: process.env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`, 'content-type': 'application/json', Prefer: 'return=representation' }
-  const hash = createHash('sha256').update(body.text).digest('hex')
-  const response = await fetch(`${process.env.SUPABASE_URL}/rest/v1/submissions`, { method: 'POST', headers, body: JSON.stringify({ submission_type: body.type || 'message', content_sha256: hash, raw_text: body.text, language_hint: body.languageHint || null, retention_consent: true, risk_band: decision.riskBand, recommendation: decision.recommendation, policy_version: decision.policyVersion }) })
-  if (!response.ok) throw new Error('Supabase persistence failed')
-  const [submission] = await response.json()
-  if (submission?.id) {
-    if (entities.length) await fetch(`${process.env.SUPABASE_URL}/rest/v1/extracted_entities`, { method: 'POST', headers, body: JSON.stringify(entities.map((entity) => ({ submission_id: submission.id, entity_type: entity.type, value: entity.value, normalized_value: entity.normalizedValue || null, confidence: entity.confidence || null }))) })
-    if (decision.findings.length) await fetch(`${process.env.SUPABASE_URL}/rest/v1/findings`, { method: 'POST', headers, body: JSON.stringify(decision.findings.map((finding) => ({ submission_id: submission.id, canonical_signal: finding.canonicalSignal, category: finding.category, evidence: finding.evidence, source: finding.source, strength: finding.strength, confidence: finding.confidence, limitation: finding.limitation }))) })
-  }
-  return submission?.id || null
-}
-
-function send(res, status, body) { res.writeHead(status, { 'content-type': 'application/json', 'access-control-allow-origin': 'http://localhost:5173' }); res.end(JSON.stringify(body)) }
 const server = createServer(async (req, res) => {
-  if (req.method === 'OPTIONS') return send(res, 204, {})
-  if (req.method === 'GET' && req.url === '/health') return send(res, 200, { status: 'ok', service: 'trustlens-functions' })
-  if (req.method !== 'POST' || req.url !== '/api/analyze') return send(res, 404, { code: 'NOT_FOUND', message: 'Route not found.' })
-  let raw = ''; for await (const chunk of req) { raw += chunk; if (raw.length > 15000) return send(res, 413, { code: 'PAYLOAD_TOO_LARGE', message: 'Request body is too large.' }) }
+  const requestId = randomUUID()
+  if (req.method === 'OPTIONS') return send(res, 204, {}, requestId)
+  if (req.method === 'GET' && req.url === '/health') return send(res, 200, { status: 'ok', service: 'trustlens-api', requestId }, requestId)
+  if (req.method !== 'POST' || req.url !== '/api/analyze') return send(res, 404, { code: 'NOT_FOUND', message: 'Route not found.', requestId }, requestId)
+  if (!String(req.headers['content-type'] || '').toLowerCase().includes('application/json')) return send(res, 415, { code: 'UNSUPPORTED_MEDIA_TYPE', message: 'Content-Type must be application/json.', requestId }, requestId)
+
+  const rateLimit = consumeRateLimit(req)
+  res.setHeader('ratelimit-limit', String(rateLimit.limit))
+  res.setHeader('ratelimit-remaining', String(rateLimit.remaining))
+  res.setHeader('ratelimit-reset', String(Math.ceil(rateLimit.resetAt / 1000)))
+  if (!rateLimit.allowed) {
+    res.setHeader('retry-after', String(rateLimit.retryAfter))
+    return send(res, 429, { code: 'RATE_LIMITED', message: 'Too many analysis requests. Try again later.', requestId }, requestId)
+  }
+
+  const contentLength = Number(req.headers['content-length'] || 0)
+  if (Number.isFinite(contentLength) && contentLength > MAX_BODY_BYTES) return send(res, 413, { code: 'PAYLOAD_TOO_LARGE', message: 'Request body is too large.', requestId }, requestId)
+  let raw = ''
+  let receivedBytes = 0
+  for await (const chunk of req) {
+    receivedBytes += Buffer.byteLength(chunk)
+    if (receivedBytes > MAX_BODY_BYTES) return send(res, 413, { code: 'PAYLOAD_TOO_LARGE', message: 'Request body is too large.', requestId }, requestId)
+    raw += chunk
+  }
+
   try {
-    const body = JSON.parse(raw || '{}'); const text = typeof body.text === 'string' ? body.text.trim() : ''
-    if (!text || text.length > MAX_TEXT) return send(res, 400, { code: 'INVALID_SUBMISSION', message: 'text is required and must be at most 10,000 characters.' })
-    const decision = analyze(text); const entities = extractEntities(text); const submissionId = await persistIfConsented({ ...body, text }, decision, entities)
-    return send(res, 200, { decision, entities, inputType: entities.some((item) => item.type === 'url') ? 'url' : 'message', requestId: randomUUID(), ...(submissionId ? { submissionId } : {}) })
-  } catch (error) { return send(res, error instanceof SyntaxError ? 400 : 502, { code: error instanceof SyntaxError ? 'INVALID_JSON' : 'PERSISTENCE_ERROR', message: error instanceof SyntaxError ? 'Request body must be valid JSON.' : 'Analysis completed, but persistence is temporarily unavailable.' }) }
+    const body = JSON.parse(raw || '{}')
+    const validationError = validateSubmission(body)
+    if (validationError) return send(res, 400, { code: 'INVALID_SUBMISSION', message: validationError, requestId }, requestId)
+    const text = typeof body.text === 'string' ? body.text.trim() : ''
+    if (!text || text.length > MAX_TEXT) return send(res, 400, { code: 'INVALID_SUBMISSION', message: 'text is required and must be at most 10,000 characters.', requestId }, requestId)
+    const entities = extractEntities(text)
+    const decision = analyze(text)
+    const approvedDomainFindings = await verifyApprovedDomains(entities)
+    if (approvedDomainFindings.length) decision.findings.push(...approvedDomainFindings)
+    const submissionId = await persistIfConsented({ ...body, text }, decision, entities)
+    return send(res, 200, { decision, entities, inputType: body.type === 'url' || entities.some((item) => item.type === 'url') ? 'url' : 'message', requestId, ...(submissionId ? { submissionId } : {}) }, requestId)
+  } catch (error) {
+    return send(res, error instanceof SyntaxError ? 400 : 502, { code: error instanceof SyntaxError ? 'INVALID_JSON' : 'PERSISTENCE_ERROR', message: error instanceof SyntaxError ? 'Request body must be valid JSON.' : 'Analysis completed, but persistence is temporarily unavailable.', requestId }, requestId)
+  }
 })
+
+server.on('error', (error) => {
+  if (error.code === 'EADDRINUSE') {
+    console.error(`TrustLens API cannot start: port ${PORT} is already in use.`)
+    process.exitCode = 1
+    return
+  }
+  console.error('TrustLens API server error:', error)
+  process.exitCode = 1
+})
+
+function shutdown(signal) {
+  console.log(`${signal} received; shutting down TrustLens API.`)
+  server.close(() => process.exit(0))
+}
+
+process.once('SIGINT', () => shutdown('SIGINT'))
+process.once('SIGTERM', () => shutdown('SIGTERM'))
 server.listen(PORT, () => console.log(`TrustLens API listening on http://localhost:${PORT}`))
