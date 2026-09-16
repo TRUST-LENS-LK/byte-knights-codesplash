@@ -20,7 +20,12 @@ export const extractedEntitySchema = z.object({
   ]),
   value: z.string(),
   normalizedValue: z.string().optional(),
+  /** The matched substring as it appeared in the raw input text */
   sourceSpan: z.string().optional(),
+  /** Zero-based character index where this entity starts in the raw input */
+  startIndex: z.number().int().nonnegative().optional(),
+  /** Zero-based character index immediately after this entity ends in the raw input */
+  endIndex: z.number().int().nonnegative().optional(),
   confidence: z.number().min(0).max(1).optional(),
 });
 

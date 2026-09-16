@@ -1,0 +1,281 @@
+{
+  "_meta": {
+    "version": "1.0.0",
+    "description": "TrustLens LK — Ground-truth expected entity extraction results. Each case maps raw input text to the exact entities the extraction package must produce.",
+    "fields": {
+      "type": "Entity type: url | domain | phone | email | amount | organization",
+      "value": "Exact matched substring from raw input",
+      "normalizedValue": "Canonicalized form of the matched value",
+      "startIndex": "Zero-based index where entity starts in the raw input string",
+      "endIndex": "Zero-based index immediately after entity ends in the raw input string"
+    }
+  },
+
+  "cases": [
+    {
+      "id": "EXT-001",
+      "description": "Standard HTTPS URL extraction",
+      "input": "Visit http://fake-recruitment.lk for details.",
+      "expectedEntities": [
+        {
+          "type": "url",
+          "value": "http://fake-recruitment.lk",
+          "normalizedValue": "http://fake-recruitment.lk",
+          "startIndex": 6,
+          "endIndex": 32
+        },
+        {
+          "type": "domain",
+          "value": "fake-recruitment.lk",
+          "normalizedValue": "fake-recruitment.lk",
+          "startIndex": 13,
+          "endIndex": 32
+        }
+      ]
+    },
+    {
+      "id": "EXT-002",
+      "description": "Defanged URL normalization — hxxps:// and [.]",
+      "input": "Apply at hxxps://jobs-lk-earn[.]com/register now.",
+      "expectedEntities": [
+        {
+          "type": "url",
+          "value": "hxxps://jobs-lk-earn[.]com/register",
+          "normalizedValue": "https://jobs-lk-earn.com/register",
+          "startIndex": 9,
+          "endIndex": 44
+        },
+        {
+          "type": "domain",
+          "value": "jobs-lk-earn[.]com",
+          "normalizedValue": "jobs-lk-earn.com",
+          "startIndex": 17,
+          "endIndex": 35
+        }
+      ]
+    },
+    {
+      "id": "EXT-003",
+      "description": "Sri Lankan mobile phone — 07x format with spaces",
+      "input": "Contact 0 77 123 4567 on WhatsApp.",
+      "expectedEntities": [
+        {
+          "type": "phone",
+          "value": "0 77 123 4567",
+          "normalizedValue": "+94771234567",
+          "startIndex": 8,
+          "endIndex": 21
+        }
+      ]
+    },
+    {
+      "id": "EXT-004",
+      "description": "Sri Lankan mobile phone — +94 format with spaces",
+      "input": "Call us at +94 71 234 5678 for info.",
+      "expectedEntities": [
+        {
+          "type": "phone",
+          "value": "+94 71 234 5678",
+          "normalizedValue": "+94712345678",
+          "startIndex": 11,
+          "endIndex": 26
+        }
+      ]
+    },
+    {
+      "id": "EXT-005",
+      "description": "LKR monetary amount",
+      "input": "Pay a registration fee of LKR 2,500 today.",
+      "expectedEntities": [
+        {
+          "type": "amount",
+          "value": "LKR 2,500",
+          "normalizedValue": "LKR 2500",
+          "startIndex": 26,
+          "endIndex": 35
+        }
+      ]
+    },
+    {
+      "id": "EXT-006",
+      "description": "Rs. monetary amount with period",
+      "input": "Pay Rs. 1,500 registration fee.",
+      "expectedEntities": [
+        {
+          "type": "amount",
+          "value": "Rs. 1,500",
+          "normalizedValue": "LKR 1500",
+          "startIndex": 4,
+          "endIndex": 13
+        }
+      ]
+    },
+    {
+      "id": "EXT-007",
+      "description": "Email address extraction",
+      "input": "Send your receipt to payment.confirm@cryptolk-profit.com.",
+      "expectedEntities": [
+        {
+          "type": "email",
+          "value": "payment.confirm@cryptolk-profit.com",
+          "normalizedValue": "payment.confirm@cryptolk-profit.com",
+          "startIndex": 21,
+          "endIndex": 56
+        }
+      ]
+    },
+    {
+      "id": "EXT-008",
+      "description": "Organization name extraction",
+      "input": "Peoples Bank Security Team is calling regarding your account.",
+      "expectedEntities": [
+        {
+          "type": "organization",
+          "value": "Peoples Bank",
+          "normalizedValue": "Peoples Bank",
+          "startIndex": 0,
+          "endIndex": 12
+        }
+      ]
+    },
+    {
+      "id": "EXT-009",
+      "description": "Multiple entity types in one message",
+      "input": "Earn Rs.18,000/day. Fee: LKR 2,000. WhatsApp +94 77 999 8888. Apply: https://lk-typing-jobs.net.",
+      "expectedEntities": [
+        {
+          "type": "amount",
+          "value": "Rs.18,000",
+          "normalizedValue": "LKR 18000",
+          "startIndex": 5,
+          "endIndex": 14
+        },
+        {
+          "type": "amount",
+          "value": "LKR 2,000",
+          "normalizedValue": "LKR 2000",
+          "startIndex": 25,
+          "endIndex": 34
+        },
+        {
+          "type": "phone",
+          "value": "+94 77 999 8888",
+          "normalizedValue": "+94779998888",
+          "startIndex": 46,
+          "endIndex": 61
+        },
+        {
+          "type": "url",
+          "value": "https://lk-typing-jobs.net",
+          "normalizedValue": "https://lk-typing-jobs.net",
+          "startIndex": 70,
+          "endIndex": 96
+        },
+        {
+          "type": "domain",
+          "value": "lk-typing-jobs.net",
+          "normalizedValue": "lk-typing-jobs.net",
+          "startIndex": 78,
+          "endIndex": 96
+        }
+      ]
+    },
+    {
+      "id": "EXT-010",
+      "description": "Telegram URL extraction",
+      "input": "Join our group: https://t.me/fakelkjobs and pay the fee.",
+      "expectedEntities": [
+        {
+          "type": "url",
+          "value": "https://t.me/fakelkjobs",
+          "normalizedValue": "https://t.me/fakelkjobs",
+          "startIndex": 16,
+          "endIndex": 39
+        },
+        {
+          "type": "domain",
+          "value": "t.me",
+          "normalizedValue": "t.me",
+          "startIndex": 24,
+          "endIndex": 28
+        }
+      ]
+    },
+    {
+      "id": "EXT-011",
+      "description": "No entities in clean message",
+      "input": "Hello, how are you?",
+      "expectedEntities": []
+    },
+    {
+      "id": "EXT-012",
+      "description": "USD monetary amount",
+      "input": "Background check fee is USD 25. Please pay before the interview.",
+      "expectedEntities": [
+        {
+          "type": "amount",
+          "value": "USD 25",
+          "normalizedValue": "USD 25",
+          "startIndex": 23,
+          "endIndex": 29
+        }
+      ]
+    },
+    {
+      "id": "EXT-013",
+      "description": "Multiple phone numbers in one message",
+      "input": "For info call +94 71 234 5678 or 011-234-5678.",
+      "expectedEntities": [
+        {
+          "type": "phone",
+          "value": "+94 71 234 5678",
+          "normalizedValue": "+94712345678",
+          "startIndex": 14,
+          "endIndex": 29
+        },
+        {
+          "type": "phone",
+          "value": "011-234-5678",
+          "normalizedValue": "+94112345678",
+          "startIndex": 33,
+          "endIndex": 45
+        }
+      ]
+    },
+    {
+      "id": "EXT-014",
+      "description": "Defanged hxxp (non-SSL) URL",
+      "input": "Visit hxxp://crypto-returns-lk[.]net to invest.",
+      "expectedEntities": [
+        {
+          "type": "url",
+          "value": "hxxp://crypto-returns-lk[.]net",
+          "normalizedValue": "http://crypto-returns-lk.net",
+          "startIndex": 6,
+          "endIndex": 36
+        },
+        {
+          "type": "domain",
+          "value": "crypto-returns-lk[.]net",
+          "normalizedValue": "crypto-returns-lk.net",
+          "startIndex": 13,
+          "endIndex": 36
+        }
+      ]
+    },
+    {
+      "id": "EXT-015",
+      "description": "Organization with Pvt Ltd suffix",
+      "input": "XYZ Pvt Ltd is hiring. Apply now with no registration fee.",
+      "expectedEntities": [
+        {
+          "type": "organization",
+          "value": "XYZ Pvt Ltd",
+          "normalizedValue": "XYZ Pvt Ltd",
+          "startIndex": 0,
+          "endIndex": 11
+        }
+      ]
+    }
+  ]
+}
