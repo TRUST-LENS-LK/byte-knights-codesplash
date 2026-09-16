@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: trustlens-api
+    env: node
+    buildCommand: npm install && npm run build:packages
+    startCommand: npm --workspace services/api start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SCANNER_URL
+        value: http://trustlens-scanner:8788
+      
+  - type: web
+    name: trustlens-scanner
+    env: docker
+    dockerfilePath: services/scanner/Dockerfile
+    dockerContext: services/scanner
+    envVars:
+      - key: PORT
+        value: 8788

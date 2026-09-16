@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import { createServer } from 'node:http'
-import { validateScannerUrl } from '../src/services/urlSafety.mjs'
+import { inspectScannerUrl, validateScannerUrl } from '../src/services/urlSafety.mjs'
 
 const port = 18787
 let child
@@ -13,6 +13,98 @@ test('scanner URL validation blocks unsafe targets', () => {
   assert.equal(validateScannerUrl('http://127.0.0.1/health').allowed, false)
   assert.equal(validateScannerUrl('http://192.168.1.10/admin').allowed, false)
   assert.equal(validateScannerUrl('https://example.com/path').allowed, true)
+  for (const url of ['http://2130706433', 'http://0x7f000001', 'http://[::ffff:7f00:1]', 'http://[fe80::1]', 'http://100.64.0.1', 'http://224.0.0.1']) assert.equal(validateScannerUrl(url).allowed, false)
+})
+
+test('scanner URL validation blocks all private IPv4 ranges', () => {
+  const privateTargets = [
+    'http://10.0.0.1',
+    'http://10.255.255.255',
+    'http://172.16.0.1',
+    'http://172.31.255.255',
+    'http://192.168.0.1',
+    'http://169.254.1.1',
+    'http://0.0.0.1',
+    'http://198.18.0.1',
+    'http://198.19.255.255',
+  ]
+  for (const url of privateTargets) assert.equal(validateScannerUrl(url).allowed, false, `Should block ${url}`)
+})
+
+test('scanner URL validation blocks private IPv6 targets', () => {
+  const ipv6Targets = [
+    'http://[::1]',
+    'http://[::ffff:192.168.1.1]',
+    'http://[fc00::1]',
+    'http://[fd00::1]',
+    'http://[fe80::1]',
+  ]
+  for (const url of ipv6Targets) assert.equal(validateScannerUrl(url).allowed, false, `Should block ${url}`)
+})
+
+test('scanner URL validation allows legitimate public URLs', () => {
+  const safeTargets = [
+    'https://example.com',
+    'http://example.com/path?query=1',
+    'https://sub.domain.example.com',
+    'https://1.1.1.1',
+    'https://8.8.8.8',
+  ]
+  for (const url of safeTargets) assert.equal(validateScannerUrl(url).allowed, true, `Should allow ${url}`)
+})
+
+test('scanner inspection detects internationalized hostname signal', () => {
+  const result = inspectScannerUrl('https://xn--nxasmq6b.example.com/login')
+  assert.equal(result.allowed, true)
+  assert.equal(result.signals.includes('internationalized_hostname'), true)
+})
+
+test('scanner inspection detects deep subdomain signal', () => {
+  const result = inspectScannerUrl('https://a.b.c.d.e.example.com/login')
+  assert.equal(result.allowed, true)
+  assert.equal(result.signals.includes('deep_subdomain'), true)
+})
+
+test('scanner inspection detects long path signal', () => {
+  const longPath = '/login/' + 'a'.repeat(110)
+  const result = inspectScannerUrl(`https://example.com${longPath}`)
+  assert.equal(result.allowed, true)
+  assert.equal(result.signals.includes('long_path'), true)
+})
+
+test('scanner inspection detects long query signal', () => {
+  const longQuery = '?token=' + 'a'.repeat(130)
+  const result = inspectScannerUrl(`https://example.com/login${longQuery}`)
+  assert.equal(result.allowed, true)
+  assert.equal(result.signals.includes('long_query'), true)
+})
+
+test('scanner inspection detects embedded credentials signal', () => {
+  const result = inspectScannerUrl('https://user:password@example.com/login')
+  assert.equal(result.allowed, true)
+  assert.equal(result.signals.includes('embedded_credentials'), true)
+})
+
+
+
+test('scanner inspection returns metadata without fetching', () => {
+  const result = inspectScannerUrl('https://login.example.com:8443/account?next=home')
+  assert.equal(result.allowed, true)
+  assert.equal(result.hostname, 'login.example.com')
+  assert.equal(result.protocol, 'https')
+  assert.equal(result.port, '8443')
+  assert.equal(result.hasQuery, true)
+  assert.deepEqual(result.signals, ['non_standard_port'])
+})
+
+test('analysis includes local scanner findings for suspicious URL structure', async () => {
+  const response = await fetch(`http://localhost:${port}/api/analyze`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ type: 'url', text: 'https://user:pass@login.example.com:8443/account', retentionConsent: false }) })
+  const body = await response.json()
+  assert.equal(response.status, 200)
+  assert.equal(body.decision.findings.some((finding) => finding.canonicalSignal === 'embedded_credentials' && finding.source === 'SCANNER'), true)
+  assert.equal(body.decision.findings.some((finding) => finding.canonicalSignal === 'non_standard_port' && finding.source === 'SCANNER'), true)
+  assert.equal(body.decision.riskBand, 'HIGH')
+  assert.equal(body.decision.recommendation, 'STOP_AND_AVOID')
 })
 
 test('scanner preview validates without fetching a URL', async () => {
@@ -51,6 +143,29 @@ test('analysis remains available when approved-domain lookup fails', async () =>
     assert.equal(body.decision.limitations.includes('Approved-domain verification was unavailable for this request.'), true)
   } finally {
     lookupChild.kill()
+    await new Promise((resolve) => supabase.close(resolve))
+  }
+})
+
+test('approved-domain verification recognizes real subdomains but not lookalikes', async () => {
+  const supabasePort = 18795
+  const apiPort = 18796
+  const supabase = createServer((req, res) => {
+    res.writeHead(200, { 'content-type': 'application/json' })
+    res.end(JSON.stringify([{ name: 'Sri Lanka CERT', official_domain: 'cert.gov.lk', category: 'Cybersecurity', source_url: 'https://www.cert.gov.lk' }]))
+  })
+  await new Promise((resolve) => supabase.listen(supabasePort, '127.0.0.1', resolve))
+  const domainChild = spawn(process.execPath, ['src/server.mjs'], { cwd: new URL('..', import.meta.url), env: { ...process.env, PORT: String(apiPort), SUPABASE_URL: `http://127.0.0.1:${supabasePort}`, SUPABASE_SERVICE_ROLE_KEY: 'test-service-key' }, stdio: ['ignore', 'pipe', 'pipe'] })
+  await waitForStartup(domainChild, apiPort, 'Domain API')
+  try {
+    const trusted = await fetch(`http://localhost:${apiPort}/api/analyze`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ type: 'url', text: 'https://alerts.cert.gov.lk/advisory', retentionConsent: false }) })
+    const trustedBody = await trusted.json()
+    assert.equal(trustedBody.decision.findings.some((finding) => finding.canonicalSignal === 'approved_domain'), true)
+    const lookalike = await fetch(`http://localhost:${apiPort}/api/analyze`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ type: 'url', text: 'https://cert.gov.lk.evil.example/login', retentionConsent: false }) })
+    const lookalikeBody = await lookalike.json()
+    assert.equal(lookalikeBody.decision.findings.some((finding) => finding.canonicalSignal === 'approved_domain'), false)
+  } finally {
+    domainChild.kill()
     await new Promise((resolve) => supabase.close(resolve))
   }
 })
@@ -284,7 +399,7 @@ test('consented analysis persists through the server-only Supabase client', asyn
     assert.equal(response.status, 200)
     assert.equal(body.submissionId, 'submission-test-id')
     assert.equal(body.decision.findings.some((finding) => finding.canonicalSignal === 'approved_domain'), true)
-    assert.deepEqual(requests.map((request) => request.url), ['/rest/v1/approved_organizations?official_domain=in.%28example.com%29&active=eq.true&select=name%2Cofficial_domain%2Ccategory%2Csource_url', '/rest/v1/submissions', '/rest/v1/extracted_entities', '/rest/v1/findings'])
+    assert.deepEqual(requests.map((request) => request.url), ['/rest/v1/approved_organizations?active=eq.true&select=name%2Cofficial_domain%2Ccategory%2Csource_url', '/rest/v1/submissions', '/rest/v1/extracted_entities', '/rest/v1/findings'])
     assert.equal(requests[0].headers.apikey, 'test-service-key')
     assert.equal(requests[1].body.retention_consent, true)
     assert.equal(requests[1].body.raw_text, 'Visit https://example.com, pay Rs. 5000 today and send your OTP.')

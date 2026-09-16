@@ -7,14 +7,21 @@
     "packages/contracts",
     "packages/extraction",
     "packages/rules",
-    "services/api"
+    "services/api",
+    "services/scanner"
   ],
   "scripts": {
     "dev:web": "npm --workspace apps/web run dev",
     "build:web": "npm --workspace apps/web run build",
     "lint:web": "npm --workspace apps/web run lint",
     "start:api": "npm --workspace services/api run start",
+    "build:packages": "npm --workspace packages/contracts run build && npm --workspace packages/extraction run build && npm --workspace packages/rules run build",
+    "check:packages": "npm --workspace packages/contracts run check && npm --workspace packages/extraction run check && npm --workspace packages/rules run check",
     "check:api": "npm --workspace services/api run check",
-    "test:api": "npm --workspace services/api run test"
+    "test:api": "npm --workspace services/api run test",
+    "test:packages": "npm --workspace packages/rules run test && npm --workspace packages/extraction run test"
+  },
+  "devDependencies": {
+    "@esbuild/win32-x64": "^0.28.2"
   }
 }

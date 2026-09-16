@@ -2,11 +2,11 @@ import { createServer } from 'node:http'
 import { randomUUID } from 'node:crypto'
 import { MAX_BODY_BYTES, MAX_TEXT, PORT } from './config/env.mjs'
 import { send } from './http/response.mjs'
-import { analyze, extractEntities, validateReport, validateSubmission } from './services/analysis.mjs'
+import { analyze, applyScannerRisk, extractEntities, validateReport, validateSubmission } from './services/analysis.mjs'
 import { persistIfConsented, persistReport } from './services/persistence.mjs'
 import { consumeRateLimit } from './services/rateLimit.mjs'
 import { verifyApprovedDomains } from './services/domainVerification.mjs'
-import { validateScannerUrl } from './services/urlSafety.mjs'
+import { inspectScannerUrl, scannerFindings } from './services/urlSafety.mjs'
 
 const server = createServer(async (req, res) => {
   const requestId = randomUUID()
@@ -41,7 +41,7 @@ const server = createServer(async (req, res) => {
     const body = JSON.parse(raw || '{}')
     if (isScanPreview) {
       if (!body || typeof body !== 'object' || Array.isArray(body) || typeof body.url !== 'string' || !body.url.trim()) return send(res, 400, { code: 'INVALID_SUBMISSION', message: 'url is required.', requestId }, requestId)
-      const result = validateScannerUrl(body.url)
+      const result = inspectScannerUrl(body.url)
       return send(res, result.allowed ? 200 : 400, result.allowed ? { safeToFetch: true, hostname: result.hostname, url: result.url, requestId } : { code: 'UNSAFE_URL', message: result.reason, safeToFetch: false, requestId }, requestId)
     }
     const validationError = isReport ? validateReport(body) : validateSubmission(body)
@@ -54,7 +54,30 @@ const server = createServer(async (req, res) => {
     const text = typeof body.text === 'string' ? body.text.trim() : ''
     if (!text || text.length > MAX_TEXT) return send(res, 400, { code: 'INVALID_SUBMISSION', message: 'text is required and must be at most 10,000 characters.', requestId }, requestId)
     const entities = extractEntities(text)
-    const decision = analyze(text)
+    let finalScanText = text
+    const urlEntities = entities.filter(e => e.type === 'url')
+    if (urlEntities.length > 0 && process.env.SCANNER_URL) {
+      try {
+        const scanRes = await fetch(`${process.env.SCANNER_URL}/scan`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: urlEntities[0].value }),
+          signal: AbortSignal.timeout(10000)
+        })
+        if (scanRes.ok) {
+          const scanBody = await scanRes.json()
+          if (scanBody.textContent) {
+            finalScanText += '\n\n' + scanBody.textContent
+          }
+        }
+      } catch (err) {
+        console.error('Remote scanner failed:', err)
+      }
+    }
+    const decision = analyze(finalScanText)
+    const localScannerFindings = scannerFindings(entities)
+    if (localScannerFindings.length) decision.findings.push(...localScannerFindings)
+    applyScannerRisk(decision)
     try {
       const approvedDomainFindings = await verifyApprovedDomains(entities)
       if (approvedDomainFindings.length) decision.findings.push(...approvedDomainFindings)

@@ -1,11 +1,36 @@
-const patterns = [
-  ['credential_request', 'Sensitive information', /otp|one[- ]time password|pin|password|bank(?:ing)? details?|otp\s+eka|otp\s+ewanna|මුරපදය|රහස් අංකය|ගිණුම් විස්තර/i, 'OTP, PIN, password, or banking details', 0.98],
-  ['advance_payment', 'Financial request', /registration fee|upfront|deposit|send (?:rs\.?|lkr)|payment|pay today|transfer|pay\s+(?:the\s+)?fee|salli\s+(?:ewanna|gewanna)|gaasthu|ගාස්තු|මුදල්|ගෙවන්න|තැන්පතු/i, 'Payment or upfront-fee language', 0.95],
-  ['urgency', 'Social engineering', /urgent|immediately|today|expires|act now|last chance|ada\s+pay|danma|ikmanata|වහාම|අදම|හදිසි|දැන්ම/i, 'Urgent timing language', 0.55],
-  ['job_offer', 'Job scam', /job|salary|vacancy|work from home|hiring|selected|job\s+ekak|job\s+offer|රැකියාව|වැටුප්|රැකියා අවස්ථාව|තෝරාගෙන/i, 'Recruitment or job-offer language', 0.65],
-]
+import { analyzeMessage } from '@trustlens/rules'
+import { extractEntities as extractEntitiesExtraction } from '@trustlens/extraction'
 
+// Re-export the shared analyzeMessage so callers inside the API can use it directly.
+export { analyzeMessage }
+
+// Use the shared extraction package for entity extraction and augment with domain entities.
 export function extractEntities(text) {
+  try {
+    const raw = extractEntitiesExtraction(text).map((entity) => ({
+      type: entity.type,
+      value: entity.type === 'url' ? entity.normalizedValue ?? entity.value : entity.value,
+      normalizedValue: entity.normalizedValue ?? null,
+      confidence: entity.confidence ?? null,
+    }))
+    // Augment with domain entities derived from URL entities (not in shared package).
+    const domainEntities = []
+    for (const entity of raw.filter((e) => e.type === 'url')) {
+      try {
+        const hostname = new URL(entity.value).hostname.toLowerCase()
+        if (hostname) domainEntities.push({ type: 'domain', value: hostname, normalizedValue: hostname, confidence: 0.98 })
+      } catch { /* skip unparseable URLs */ }
+    }
+    const all = [...raw, ...domainEntities]
+    // Deduplicate by type + value.
+    return all.filter((entity, index, arr) => arr.findIndex((c) => c.type === entity.type && c.value === entity.value) === index)
+  } catch {
+    return extractEntitiesInline(text)
+  }
+}
+
+// Inline fallback — kept in sync with the shared extraction package.
+function extractEntitiesInline(text) {
   const entities = []
   for (const match of text.matchAll(/https?:\/\/[^\s<>()]+/gi)) {
     const value = match[0].replace(/[),.!?]+$/, '')
@@ -17,17 +42,13 @@ export function extractEntities(text) {
       // Keep the URL entity when the submitted value is not parseable.
     }
   }
-  for (const match of text.matchAll(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g)) entities.push({ type: 'email', value: match[0], confidence: 0.99 })
-  for (const match of text.matchAll(/(?:\+94|0)\s*\d{2}\s*\d{3}\s*\d{4}/g)) entities.push({ type: 'phone', value: match[0], normalizedValue: match[0].replace(/\s+/g, '').replace(/^0/, '+94'), confidence: 0.95 })
-  for (const match of text.matchAll(/(?:Rs\.?|LKR)\s?[\d,]+(?:\.\d{1,2})?/gi)) entities.push({ type: 'amount', value: match[0], confidence: 0.94 })
-  return entities.filter((entity, index, all) => all.findIndex((candidate) => candidate.type === entity.type && candidate.value === entity.value) === index)
-}
-
-export function analyze(text) {
-  const findings = patterns.filter(([, , pattern]) => pattern.test(text)).map(([canonicalSignal, category, , evidence, strength]) => ({ canonicalSignal, category, evidence, source: 'RULE', strength, confidence: strength, limitation: 'Keyword rule; context should be verified independently.' }))
-  const critical = findings.some((item) => ['credential_request', 'advance_payment'].includes(item.canonicalSignal))
-  const riskBand = critical || findings.length >= 3 ? 'HIGH' : findings.length ? 'MEDIUM' : 'LOW'
-  return { riskBand, recommendation: riskBand === 'HIGH' ? 'STOP_AND_AVOID' : riskBand === 'MEDIUM' ? 'VERIFY_INDEPENDENTLY' : 'PROCEED_CAUTIOUSLY', findings, limitations: ['This local prototype uses deterministic rules only.'], safeActions: riskBand === 'HIGH' ? ['Do not click, pay, reply, or share credentials.', "Verify through the organisation's official website."] : ['Verify the sender and organisation independently.'], policyVersion: 'rules-v1' }
+  for (const match of text.matchAll(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g))
+    entities.push({ type: 'email', value: match[0], confidence: 0.99 })
+  for (const match of text.matchAll(/(?:\+94|0)\s*\d{2}\s*\d{3}\s*\d{4}/g))
+    entities.push({ type: 'phone', value: match[0], normalizedValue: match[0].replace(/\s+/g, '').replace(/^0/, '+94'), confidence: 0.95 })
+  for (const match of text.matchAll(/(?:Rs\.?|LKR)\s?[\d,]+(?:\.\d{1,2})?/gi))
+    entities.push({ type: 'amount', value: match[0], confidence: 0.94 })
+  return entities.filter((entity, index, all) => all.findIndex((c) => c.type === entity.type && c.value === entity.value) === index)
 }
 
 export function validateSubmission(body) {
@@ -36,6 +57,20 @@ export function validateSubmission(body) {
   if (body.languageHint !== undefined && !['en', 'si', 'singlish', 'mixed'].includes(body.languageHint)) return 'languageHint is not supported.'
   if (body.retentionConsent !== undefined && typeof body.retentionConsent !== 'boolean') return 'retentionConsent must be a boolean.'
   return null
+}
+
+export function applyScannerRisk(decision) {
+  const severe = decision.findings.some((finding) => ['embedded_credentials', 'unsafe_url_target'].includes(finding.canonicalSignal))
+  const structural = decision.findings.some((finding) => finding.source === 'SCANNER')
+  if (severe) {
+    decision.riskBand = 'HIGH'
+    decision.recommendation = 'STOP_AND_AVOID'
+    decision.safeActions = ['Do not open or share the URL.', 'Verify the sender and organization through an independent official channel.']
+  } else if (structural && decision.riskBand === 'LOW') {
+    decision.riskBand = 'MEDIUM'
+    decision.recommendation = 'VERIFY_INDEPENDENTLY'
+  }
+  return decision
 }
 
 export function validateReport(body) {
@@ -47,3 +82,6 @@ export function validateReport(body) {
   if (body.reportedDomain !== undefined && (typeof body.reportedDomain !== 'string' || body.reportedDomain.length > 253)) return 'reportedDomain is invalid.'
   return null
 }
+
+// Keep analyzeSubmission as a named alias so server.mjs import doesn't need to change.
+export const analyze = analyzeMessage
