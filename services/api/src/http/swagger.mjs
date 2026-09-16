@@ -14,20 +14,15 @@ export function getOpenApiSpec() {
     ],
     components: {
       securitySchemes: {
-        ModeratorSecretKey: {
-          type: 'apiKey',
-          in: 'header',
-          name: 'x-moderator-key',
-          description: 'Passcode for developer/moderator quick access',
-        },
         BearerAuth: {
           type: 'http',
           scheme: 'bearer',
           bearerFormat: 'JWT',
-          description: 'Supabase Auth JWT Bearer token',
+          description: 'Supabase Auth JWT Bearer token (from moderator login)',
         },
       },
     },
+
     paths: {
       '/health': {
         get: {
@@ -100,7 +95,7 @@ export function getOpenApiSpec() {
       '/api/moderation/queue': {
         get: {
           summary: 'Fetch pending reports for moderation',
-          security: [{ ModeratorSecretKey: [] }, { BearerAuth: [] }],
+          security: [{ BearerAuth: [] }],
           parameters: [
             {
               name: 'status',
@@ -118,7 +113,8 @@ export function getOpenApiSpec() {
       '/api/moderation/review': {
         post: {
           summary: 'Review and approve/reject a pending report',
-          security: [{ ModeratorSecretKey: [] }, { BearerAuth: [] }],
+          security: [{ BearerAuth: [] }],
+
           requestBody: {
             required: true,
             content: {

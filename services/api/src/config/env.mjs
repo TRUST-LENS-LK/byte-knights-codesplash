@@ -24,5 +24,5 @@ export const RATE_LIMIT_MAX = positiveInteger(process.env.RATE_LIMIT_MAX, 60)
 export const CORS_ORIGIN = process.env.CORS_ORIGIN || 'http://localhost:5173'
 export const SUPABASE_URL = process.env.SUPABASE_URL || ''
 export const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
-export const MODERATOR_SECRET = process.env.MODERATOR_SECRET || 'trustlens-dev-moderator-secret'
+
 
