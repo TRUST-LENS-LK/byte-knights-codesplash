@@ -11,6 +11,7 @@
     "services/scanner"
   ],
   "scripts": {
+    "start": "concurrently \"npm --workspace services/scanner start\" \"npm --workspace services/api start\" \"npm --workspace apps/web run dev\"",
     "dev:web": "npm --workspace apps/web run dev",
     "build:web": "npm --workspace apps/web run build",
     "lint:web": "npm --workspace apps/web run lint",
@@ -22,6 +23,7 @@
     "test:packages": "npm --workspace packages/rules run test && npm --workspace packages/extraction run test"
   },
   "devDependencies": {
-    "@esbuild/win32-x64": "^0.28.2"
+    "@esbuild/win32-x64": "^0.28.2",
+    "concurrently": "^10.0.5"
   }
 }
