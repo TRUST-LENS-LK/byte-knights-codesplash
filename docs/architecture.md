@@ -92,15 +92,6 @@ The following pieces described in the project proposal are not yet built:
 
 ## 6. Open decisions
 
-See the pending items tracked separately so they are not lost before the team confirms
-them. As of this writing, three decisions are still open:
-
-1. Whether the domain-directory table keeps its current name, `approved_organizations`,
-   or is renamed to `official_domains` as named in the development plan.
-2. Whether `services/api` adopts the shared Zod schemas in `packages/contracts` as its
-   single source of validation truth, instead of the current hand-written checks in
-   `services/analysis.mjs`.
-3. How URL-related work is split between Member 2 (generic entity extraction and
-   suspicious-link keyword rules) and Member 3 (dedicated URL submission and
-   official-domain verification), since the two planning documents describe this
-   differently.
+Decisions that affect shared code but have not yet been confirmed by the team are
+tracked in [docs/decisions.md](./decisions.md), not duplicated here. Check that file
+before assuming any of the naming, validation, or ownership questions are settled.
