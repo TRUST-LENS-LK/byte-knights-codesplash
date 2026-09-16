@@ -37,17 +37,38 @@ function extractEmails(text: string): ExtractedEntity[] {
 // ---------------------------------------------------------------------------
 // Overlap deduplication helper
 // ---------------------------------------------------------------------------
+
+/** Pairs of entity types that are intentionally allowed to overlap. */
+const ALLOWED_OVERLAP_PAIRS = new Set([
+  'url:domain',
+  'domain:url',
+])
+
 function hasOverlap(
   existing: ExtractedEntity[],
-  startIndex: number,
-  endIndex: number
+  candidate: ExtractedEntity
 ): boolean {
   return existing.some(
-    (e) =>
-      e.startIndex !== undefined &&
-      e.endIndex !== undefined &&
-      startIndex < e.endIndex &&
-      endIndex > e.startIndex
+    (e) => {
+      if (
+        e.startIndex === undefined ||
+        e.endIndex === undefined ||
+        candidate.startIndex === undefined ||
+        candidate.endIndex === undefined
+      ) return false
+
+      const spansOverlap =
+        candidate.startIndex < e.endIndex &&
+        candidate.endIndex > e.startIndex
+
+      if (!spansOverlap) return false
+
+      // Allow intentional pairs (e.g. url + domain) to coexist
+      const pairKey = `${candidate.type}:${e.type}`
+      if (ALLOWED_OVERLAP_PAIRS.has(pairKey)) return false
+
+      return true
+    }
   )
 }
 
@@ -91,11 +112,7 @@ export function extractEntities(text: string): ExtractedEntity[] {
   // Deduplicate: skip any entity whose span overlaps an already-accepted one
   const accepted: ExtractedEntity[] = []
   for (const entity of candidates) {
-    if (
-      entity.startIndex === undefined ||
-      entity.endIndex === undefined ||
-      !hasOverlap(accepted, entity.startIndex, entity.endIndex)
-    ) {
+    if (!hasOverlap(accepted, entity)) {
       accepted.push(entity)
     }
   }
