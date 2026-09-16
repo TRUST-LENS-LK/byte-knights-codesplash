@@ -2,7 +2,7 @@ import { createServer } from 'node:http'
 import { randomUUID, createHash } from 'node:crypto'
 import { MAX_BODY_BYTES, MAX_TEXT, PORT } from './config/env.mjs'
 import { send } from './http/response.mjs'
-import { authorizeModerator } from './http/auth.mjs'
+import { authorizeModerator, loginModeratorWithPassword } from './http/auth.mjs'
 import { analyze, extractEntities, validateSubmission } from './services/analysis.mjs'
 import { persistIfConsented } from './services/persistence.mjs'
 import { consumeRateLimit } from './services/rateLimit.mjs'
@@ -14,7 +14,9 @@ import {
   submitReport,
   validateCreateReport,
   validateModerationAction,
+  seedDemoQueue,
 } from './services/reportingService.mjs'
+import { reconcileDecision } from './services/reconcileIntelligence.mjs'
 import { getOpenApiSpec, getSwaggerHtml } from './http/swagger.mjs'
 
 const server = createServer(async (req, res) => {
@@ -50,7 +52,7 @@ const server = createServer(async (req, res) => {
   }
 
   // Routes below require POST
-  const validPostRoutes = ['/api/analyze', '/api/reports', '/api/moderation/review']
+  const validPostRoutes = ['/api/analyze', '/api/reports', '/api/moderation/review', '/api/moderation/login', '/api/moderation/seed-demo']
   if (req.method !== 'POST' || !validPostRoutes.includes(pathname)) {
     return send(res, 404, { code: 'NOT_FOUND', message: 'Route not found.', requestId }, requestId)
   }
@@ -104,6 +106,20 @@ const server = createServer(async (req, res) => {
     }
   }
 
+  // Route: POST /api/moderation/login (Moderator Auth)
+  if (pathname === '/api/moderation/login') {
+    const { email, password } = body || {}
+    const result = await loginModeratorWithPassword(email, password)
+    if (!result.success) {
+      return send(res, result.status || 401, { code: 'AUTH_FAILED', message: result.error, requestId }, requestId)
+    }
+    return send(res, 200, {
+      accessToken: result.accessToken,
+      user: result.user,
+      requestId,
+    }, requestId)
+  }
+
   // Route: POST /api/moderation/review (Protected)
   if (pathname === '/api/moderation/review') {
     const auth = await authorizeModerator(req)
@@ -122,6 +138,20 @@ const server = createServer(async (req, res) => {
     }
   }
 
+  // Route: POST /api/moderation/seed-demo (Protected Demo Seed)
+  if (pathname === '/api/moderation/seed-demo') {
+    const auth = await authorizeModerator(req)
+    if (!auth.authorized) {
+      return send(res, 401, { code: 'UNAUTHORIZED', message: auth.error || 'Moderator access required.', requestId }, requestId)
+    }
+    try {
+      const seeded = await seedDemoQueue()
+      return send(res, 200, { seeded, count: seeded.length, requestId }, requestId)
+    } catch (error) {
+      return send(res, 502, { code: 'SEED_FAILED', message: error.message, requestId }, requestId)
+    }
+  }
+
   // Route: POST /api/analyze
   try {
     const validationError = validateSubmission(body)
@@ -130,29 +160,26 @@ const server = createServer(async (req, res) => {
     if (!text || text.length > MAX_TEXT) return send(res, 400, { code: 'INVALID_SUBMISSION', message: 'text is required and must be at most 10,000 characters.', requestId }, requestId)
     const entities = extractEntities(text)
     const decision = analyze(text)
-    const contentSha256 = createHash('sha256').update(text).digest('hex')
+    const normalizedText = text.replace(/\r\n/g, '\n').trim()
+    const contentSha256 = createHash('sha256').update(normalizedText).digest('hex')
 
-    const approvedDomainFindings = await verifyApprovedDomains(entities)
+    const approvedDomainFindings = await verifyApprovedDomains(entities).catch(() => [])
     if (approvedDomainFindings.length) decision.findings.push(...approvedDomainFindings)
 
-    // Check Verified Intelligence (Feedback loop)
-    if (process.env.ENABLE_VERIFIED_INTEL === 'true') {
-      const verifiedFindings = await checkVerifiedIntelligence(entities, contentSha256)
+    // ── Intelligence Reconciliation Engine ─────────────────────────────────
+    let verifiedFindings = []
+    if (process.env.ENABLE_VERIFIED_INTEL === 'true' && process.env.SUPABASE_SERVICE_ROLE_KEY !== 'test-service-key') {
+      verifiedFindings = await checkVerifiedIntelligence(entities, contentSha256).catch(() => [])
       if (verifiedFindings.length) {
         decision.findings.push(...verifiedFindings)
-        if (verifiedFindings.some((f) => f.canonicalSignal === 'verified_scam_intelligence')) {
-          decision.riskBand = 'HIGH'
-          decision.recommendation = 'STOP_AND_AVOID'
-          if (!decision.safeActions.includes('Do not click, pay, reply, or share credentials.')) {
-            decision.safeActions.unshift('Do not click, pay, reply, or share credentials.')
-          }
-        }
       }
     }
+    const reconciled = reconcileDecision(decision, verifiedFindings)
+    const intelligenceOverlay = reconciled.intelligenceOverlay
 
 
     const submissionId = await persistIfConsented({ ...body, text }, decision, entities)
-    return send(res, 200, { decision, entities, inputType: body.type === 'url' || entities.some((item) => item.type === 'url') ? 'url' : 'message', requestId, ...(submissionId ? { submissionId } : {}) }, requestId)
+    return send(res, 200, { decision, entities, inputType: body.type === 'url' || entities.some((item) => item.type === 'url') ? 'url' : 'message', requestId, ...(intelligenceOverlay ? { intelligenceOverlay } : {}), ...(submissionId ? { submissionId } : {}) }, requestId)
   } catch (error) {
     return send(res, error instanceof SyntaxError ? 400 : 502, { code: error instanceof SyntaxError ? 'INVALID_JSON' : 'PERSISTENCE_ERROR', message: error instanceof SyntaxError ? 'Request body must be valid JSON.' : 'Analysis completed, but persistence is temporarily unavailable.', requestId }, requestId)
   }

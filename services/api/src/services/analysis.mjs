@@ -17,6 +17,15 @@ export function extractEntities(text) {
       // Keep the URL entity when the submitted value is not parseable.
     }
   }
+  // Extract bare domains (e.g. "scam.lk", "bank-verify.com") not already captured via URL extraction
+  for (const match of text.matchAll(/(?:^|[\s,;()\[\]<>])([a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z]{2,})+)(?=[)\]>.,;:!?\s]|$)/gm)) {
+    const domain = match[1].toLowerCase()
+    // Skip if this domain was already extracted from a full URL or looks like an email
+    const alreadyHas = entities.some((e) => e.type === 'domain' && e.value === domain)
+    if (!alreadyHas && !text.includes(`@${domain}`)) {
+      entities.push({ type: 'domain', value: domain, normalizedValue: domain, confidence: 0.90 })
+    }
+  }
   for (const match of text.matchAll(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g)) entities.push({ type: 'email', value: match[0], confidence: 0.99 })
   for (const match of text.matchAll(/(?:\+94|0)\s*\d{2}\s*\d{3}\s*\d{4}/g)) entities.push({ type: 'phone', value: match[0], normalizedValue: match[0].replace(/\s+/g, '').replace(/^0/, '+94'), confidence: 0.95 })
   for (const match of text.matchAll(/(?:Rs\.?|LKR)\s?[\d,]+(?:\.\d{1,2})?/gi)) entities.push({ type: 'amount', value: match[0], confidence: 0.94 })

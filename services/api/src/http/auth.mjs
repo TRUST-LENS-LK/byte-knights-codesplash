@@ -42,3 +42,57 @@ export async function authorizeModerator(req) {
     return { authorized: false, error: 'Authentication service temporarily unavailable.' }
   }
 }
+
+export async function loginModeratorWithPassword(email, password) {
+  if (!email || !password) {
+    return { success: false, status: 400, error: 'Email and password are required.' }
+  }
+
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+    return { success: false, status: 503, error: 'Supabase authentication service is not configured.' }
+  }
+
+  try {
+    const response = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
+      method: 'POST',
+      headers: {
+        apikey: SUPABASE_SERVICE_ROLE_KEY,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ email, password }),
+      signal: AbortSignal.timeout(10_000),
+    })
+
+    const data = await response.json()
+
+    if (!response.ok) {
+      return {
+        success: false,
+        status: response.status === 400 ? 401 : response.status,
+        error: data.error_description || data.msg || data.message || 'Invalid email or password.',
+      }
+    }
+
+    const role = data.user?.app_metadata?.role || data.user?.user_metadata?.role
+
+    if (role !== 'moderator' && role !== 'admin') {
+      return {
+        success: false,
+        status: 403,
+        error: 'Forbidden: Account does not possess moderator privileges.',
+      }
+    }
+
+    return {
+      success: true,
+      accessToken: data.access_token,
+      user: {
+        id: data.user.id,
+        email: data.user.email,
+        role,
+      },
+    }
+  } catch (error) {
+    return { success: false, status: 503, error: 'Authentication service temporarily unavailable.' }
+  }
+}

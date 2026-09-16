@@ -46,6 +46,26 @@ test.before(async () => {
       return res.end(JSON.stringify({ error: 'invalid_token' }))
     }
 
+    if (req.method === 'POST' && req.url.startsWith('/auth/v1/token')) {
+      const { email, password } = JSON.parse(raw || '{}')
+      if (email === 'moderator@trustlens.lk' && password === 'ValidPassword123!') {
+        res.writeHead(200, { 'content-type': 'application/json' })
+        return res.end(JSON.stringify({
+          access_token: validModeratorToken,
+          user: { id: 'mod-uuid-1', email: 'moderator@trustlens.lk', app_metadata: { role: 'moderator' } },
+        }))
+      }
+      if (email === 'citizen@example.lk') {
+        res.writeHead(200, { 'content-type': 'application/json' })
+        return res.end(JSON.stringify({
+          access_token: regularUserToken,
+          user: { id: 'user-uuid-2', email: 'citizen@example.lk', app_metadata: { role: 'user' } },
+        }))
+      }
+      res.writeHead(400, { 'content-type': 'application/json' })
+      return res.end(JSON.stringify({ error_description: 'Invalid login credentials' }))
+    }
+
     if (req.method === 'POST' && req.url.startsWith('/rest/v1/user_reports')) {
       const data = JSON.parse(raw)
       mockReports.set(data.id, data)
@@ -269,4 +289,60 @@ test('POST /api/moderation/review: rejects a report cleanly with Supabase JWT', 
   assert.equal(reviewRes.status, 200)
   const reviewBody = await reviewRes.json()
   assert.equal(reviewBody.result.status, 'REJECTED')
+})
+
+test('POST /api/moderation/login: rejects invalid credentials or non-moderator accounts', async () => {
+  // Invalid credentials
+  const badRes = await fetch(`http://localhost:${apiPort}/api/moderation/login`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ email: 'bad@user.com', password: 'wrong' }),
+  })
+  assert.equal(badRes.status, 401)
+
+  // Non-moderator account (citizen)
+  const citizenRes = await fetch(`http://localhost:${apiPort}/api/moderation/login`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ email: 'citizen@example.lk', password: 'pass' }),
+  })
+  assert.equal(citizenRes.status, 403)
+  const citizenBody = await citizenRes.json()
+  assert.match(citizenBody.message, /moderator privileges/i)
+})
+
+test('POST /api/moderation/login: succeeds for verified moderator account and returns JWT', async () => {
+  const loginRes = await fetch(`http://localhost:${apiPort}/api/moderation/login`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ email: 'moderator@trustlens.lk', password: 'ValidPassword123!' }),
+  })
+
+  assert.equal(loginRes.status, 200)
+  const body = await loginRes.json()
+  assert.ok(body.accessToken)
+  assert.equal(body.user.role, 'moderator')
+  assert.equal(body.user.email, 'moderator@trustlens.lk')
+})
+
+test('POST /api/moderation/seed-demo: blocks requests without moderator token', async () => {
+  const unauthRes = await fetch(`http://localhost:${apiPort}/api/moderation/seed-demo`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+  })
+  assert.equal(unauthRes.status, 401)
+})
+
+test('POST /api/moderation/seed-demo: populates demo fixtures when called by verified moderator', async () => {
+  const seedRes = await fetch(`http://localhost:${apiPort}/api/moderation/seed-demo`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      Authorization: `Bearer ${validModeratorToken}`,
+    },
+  })
+  assert.equal(seedRes.status, 200)
+  const body = await seedRes.json()
+  assert.ok(Array.isArray(body.seeded))
+  assert.equal(body.count, 3)
 })

@@ -140,6 +140,43 @@ export function getOpenApiSpec() {
           },
         },
       },
+      '/api/moderation/login': {
+        post: {
+          summary: 'Moderator Authentication Login',
+          description: 'Authenticates a moderator via Supabase Auth and returns an access token JWT.',
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['email', 'password'],
+                  properties: {
+                    email: { type: 'string', example: 'moderator@trustlens.lk' },
+                    password: { type: 'string', example: 'MyPassword123!' },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            200: { description: 'Successful login returning JWT access token and role' },
+            401: { description: 'Invalid email or password' },
+            403: { description: 'Account lacks moderator privileges' },
+          },
+        },
+      },
+      '/api/moderation/seed-demo': {
+        post: {
+          summary: 'Seed Realistic Demo Threat Reports (Protected)',
+          description: 'Populates 3 realistic Sri Lankan scam reports into the moderation queue for demonstration and testing.',
+          security: [{ BearerAuth: [] }],
+          responses: {
+            200: { description: 'Reports successfully seeded' },
+            401: { description: 'Unauthorized' },
+          },
+        },
+      },
     },
   }
 }

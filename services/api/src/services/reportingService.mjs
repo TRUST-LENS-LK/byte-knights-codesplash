@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { SUPABASE_SERVICE_ROLE_KEY, SUPABASE_URL } from '../config/env.mjs'
+import { DEMO_REPORTS } from '../fixtures/demoReports.mjs'
 
 const REQUEST_TIMEOUT_MS = 8_000
 
@@ -26,6 +27,16 @@ export function defang(indicator) {
   return indicator
     .replace(/^https?:\/\//i, 'hxxps://')
     .replace(/\./g, '[.]')
+    .replace(/@/g, '[@]')
+}
+
+/** Reverse defanging so we can recover the raw indicator from stored reports */
+export function rehydrate(defanged) {
+  if (!defanged || typeof defanged !== 'string') return ''
+  return defanged
+    .replace(/hxxps?:\/\//gi, 'https://')
+    .replace(/\[\.\]/g, '.')
+    .replace(/\[@\]/g, '@')
 }
 
 export function validateCreateReport(body) {
@@ -81,12 +92,17 @@ export function validateModerationAction(body) {
 }
 
 export async function submitReport(payload) {
+  let finalNotes = payload.notes?.trim() || null
+  if (payload.rawExcerpt && (!finalNotes || !finalNotes.includes(payload.rawExcerpt))) {
+    finalNotes = `[Reported Message Excerpt]: "${payload.rawExcerpt}"${finalNotes ? `\n\n[Submitter Context]: ${finalNotes}` : ''}`
+  }
+
   const report = {
     id: randomUUID(),
     report_type: payload.reportType,
     content_sha256: payload.contentSha256.toLowerCase(),
     reported_domain: payload.reportedDomain?.trim().toLowerCase() || null,
-    notes: payload.notes?.trim() || null,
+    notes: finalNotes,
     status: 'PENDING',
     created_at: new Date().toISOString(),
   }
@@ -142,6 +158,30 @@ export async function getReportById(reportId) {
   return inMemoryReports.get(reportId) || null
 }
 
+const SRI_LANKA_2ND_LEVEL_TLDS = new Set(['gov.lk', 'com.lk', 'org.lk', 'edu.lk', 'hotel.lk', 'ac.lk', 'sch.lk', 'net.lk', 'web.lk'])
+
+export function extractDomainVariants(domain) {
+  if (!domain || typeof domain !== 'string') return []
+  const clean = domain.toLowerCase().trim().replace(/^https?:\/\//, '').split('/')[0].split(':')[0]
+  const variants = new Set([clean])
+
+  if (clean.startsWith('www.')) {
+    variants.add(clean.replace(/^www\./, ''))
+  }
+
+  const parts = clean.split('.')
+  if (parts.length > 2) {
+    const lastTwo = parts.slice(-2).join('.')
+    if (SRI_LANKA_2ND_LEVEL_TLDS.has(lastTwo) && parts.length >= 3) {
+      variants.add(parts.slice(-3).join('.'))
+    } else {
+      variants.add(parts.slice(-2).join('.'))
+    }
+  }
+
+  return Array.from(variants).filter(Boolean)
+}
+
 export async function processModerationReview(reviewPayload, actorRole = 'moderator') {
   const { reportId, action, notes, indicatorType, category } = reviewPayload
 
@@ -193,40 +233,64 @@ export async function processModerationReview(reviewPayload, actorRole = 'modera
   // 3. Sanitization Pipeline for APPROVE action
   let verifiedIntelligenceId = null
   if (action === 'APPROVE') {
-    const rawVal = report.reported_domain || report.content_sha256
-    const indType = indicatorType || (report.reported_domain ? 'domain' : 'content_hash')
-    const intelRecord = {
+    const storedDomain = report.reported_domain || ''
+    const rawDomain = rehydrate(storedDomain)
+    const primaryVal = rawDomain || report.content_sha256
+    const indType = indicatorType || (rawDomain ? 'domain' : 'content_hash')
+    const intelRecords = []
+
+    // Primary indicator record
+    intelRecords.push({
       id: randomUUID(),
       source_report_id: reportId,
       indicator_type: indType,
-      indicator_value: rawVal,
-      defanged_value: defang(rawVal),
+      indicator_value: primaryVal.toLowerCase(),
+      defanged_value: defang(primaryVal),
       risk_level: report.report_type === 'false_positive' ? 'VERIFIED_SAFE' : 'CONFIRMED_SCAM',
-      category: category || 'Reported Scam',
+      category: category || (report.report_type === 'false_positive' ? 'False Alarm' : 'Reported Scam'),
       confidence: 1.0,
       notes: notes || 'Verified by moderator approval',
       active: true,
       created_at: new Date().toISOString(),
+    })
+
+    // Dual-index content SHA256 if distinct from primaryVal
+    if (rawDomain && report.content_sha256 && /^[a-f0-9]{64}$/i.test(report.content_sha256)) {
+      intelRecords.push({
+        id: randomUUID(),
+        source_report_id: reportId,
+        indicator_type: 'content_hash',
+        indicator_value: report.content_sha256.toLowerCase(),
+        defanged_value: report.content_sha256.toLowerCase(),
+        risk_level: report.report_type === 'false_positive' ? 'VERIFIED_SAFE' : 'CONFIRMED_SCAM',
+        category: category || (report.report_type === 'false_positive' ? 'False Alarm' : 'Reported Scam'),
+        confidence: 0.95,
+        notes: `Cryptographic fingerprint for verified report ${reportId.slice(0, 8)}`,
+        active: true,
+        created_at: new Date().toISOString(),
+      })
     }
 
-    if (isSupabaseConfigured()) {
-      try {
-        const intelRes = await fetch(`${SUPABASE_URL}/rest/v1/verified_intelligence`, {
-          method: 'POST',
-          headers: getHeaders(),
-          body: JSON.stringify(intelRecord),
-          signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-        })
-        if (intelRes.ok) {
-          const [savedIntel] = await intelRes.json()
-          verifiedIntelligenceId = savedIntel?.id || intelRecord.id
+    for (const intelRecord of intelRecords) {
+      if (isSupabaseConfigured()) {
+        try {
+          const intelRes = await fetch(`${SUPABASE_URL}/rest/v1/verified_intelligence`, {
+            method: 'POST',
+            headers: getHeaders(),
+            body: JSON.stringify(intelRecord),
+            signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+          })
+          if (intelRes.ok) {
+            const [savedIntel] = await intelRes.json()
+            if (!verifiedIntelligenceId) verifiedIntelligenceId = savedIntel?.id || intelRecord.id
+          }
+        } catch {
+          // Non-blocking if table migration pending
         }
-      } catch {
-        // Non-blocking if table migration pending
+      } else {
+        inMemoryIntel.set(intelRecord.id, intelRecord)
+        if (!verifiedIntelligenceId) verifiedIntelligenceId = intelRecord.id
       }
-    } else {
-      inMemoryIntel.set(intelRecord.id, intelRecord)
-      verifiedIntelligenceId = intelRecord.id
     }
   }
 
@@ -240,19 +304,44 @@ export async function processModerationReview(reviewPayload, actorRole = 'modera
 }
 
 export async function checkVerifiedIntelligence(entities = [], contentSha256 = null) {
-  const domains = entities.filter((e) => e.type === 'domain').map((e) => e.normalizedValue || e.value)
+  const rawDomains = entities.filter((e) => e.type === 'domain').map((e) => (e.normalizedValue || e.value || '').toLowerCase())
+  const urls = entities.filter((e) => e.type === 'url').map((e) => (e.value || '').toLowerCase())
+  const phones = entities.filter((e) => e.type === 'phone').map((e) => (e.normalizedValue || e.value || '').toLowerCase())
+  const emails = entities.filter((e) => e.type === 'email').map((e) => (e.value || '').toLowerCase())
+
+  // Expand domains with apex variants and www. stripping
+  const expandedDomains = []
+  for (const d of rawDomains) {
+    expandedDomains.push(...extractDomainVariants(d))
+  }
+  for (const u of urls) {
+    try {
+      const hostname = new URL(u.startsWith('http') ? u : `https://${u}`).hostname
+      if (hostname) expandedDomains.push(...extractDomainVariants(hostname))
+    } catch {}
+  }
+
+  const rawIndicators = [...new Set([...rawDomains, ...expandedDomains, ...urls, ...phones, ...emails])].filter(Boolean)
+  const allVariants = new Set()
+  for (const ind of rawIndicators) {
+    allVariants.add(ind)
+    allVariants.add(defang(ind))
+    allVariants.add(rehydrate(ind))
+  }
+  const indicators = [...allVariants].filter(Boolean)
   const findings = []
 
-  if (!domains.length && !contentSha256) return findings
+  if (!indicators.length && !contentSha256) return findings
 
   if (isSupabaseConfigured()) {
     try {
       const filters = []
-      if (domains.length) {
-        filters.push(`indicator_value=in.(${domains.map(encodeURIComponent).join(',')})`)
+      if (indicators.length) {
+        const quoted = indicators.map((ind) => `"${ind.replace(/"/g, '')}"`).join(',')
+        filters.push(`indicator_value.in.(${quoted})`)
       }
       if (contentSha256) {
-        filters.push(`indicator_value=eq.${encodeURIComponent(contentSha256)}`)
+        filters.push(`indicator_value.eq.${contentSha256}`)
       }
 
       const query = `${SUPABASE_URL}/rest/v1/verified_intelligence?active=eq.true&or=(${filters.join(',')})`
@@ -275,12 +364,12 @@ export async function checkVerifiedIntelligence(entities = [], contentSha256 = n
         }
       }
     } catch {
-      // Fail closed / gracefully return empty findings on connection error
+      // Gracefully return empty findings on connection error
     }
   } else {
     for (const intel of inMemoryIntel.values()) {
       if (!intel.active) continue
-      if (domains.includes(intel.indicator_value) || contentSha256 === intel.indicator_value) {
+      if (indicators.includes(intel.indicator_value) || contentSha256 === intel.indicator_value) {
         findings.push({
           canonicalSignal: intel.risk_level === 'CONFIRMED_SCAM' ? 'verified_scam_intelligence' : 'verified_safe_intelligence',
           category: intel.category || 'Threat Intelligence',
@@ -301,4 +390,36 @@ export function resetInMemoryStores() {
   inMemoryReports.clear()
   inMemoryIntel.clear()
   inMemoryAuditLogs.length = 0
+}
+
+export async function seedDemoQueue() {
+  const seeded = []
+  for (const demo of DEMO_REPORTS) {
+    const dbPayload = {
+      id: demo.id,
+      report_type: demo.report_type,
+      content_sha256: demo.content_sha256,
+      reported_domain: demo.reported_domain,
+      notes: `[Reported Message Excerpt]: "${demo.raw_excerpt}"\n\n[Submitter Context]: ${demo.notes}`,
+      status: demo.status,
+      created_at: demo.created_at,
+    }
+    if (isSupabaseConfigured()) {
+      try {
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/user_reports`, {
+          method: 'POST',
+          headers: { ...getHeaders(), Prefer: 'resolution=ignore-duplicates' },
+          body: JSON.stringify(dbPayload),
+        })
+        if (res.ok) seeded.push(dbPayload)
+      } catch {
+        inMemoryReports.set(dbPayload.id, dbPayload)
+        seeded.push(dbPayload)
+      }
+    } else {
+      inMemoryReports.set(dbPayload.id, dbPayload)
+      seeded.push(dbPayload)
+    }
+  }
+  return seeded
 }
