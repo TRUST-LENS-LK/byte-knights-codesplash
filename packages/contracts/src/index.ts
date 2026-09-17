@@ -95,8 +95,17 @@ export const findingSchema = z.object({
   strength: z.number().min(0).max(1),
   confidence: z.number().min(0).max(1).optional(),
   limitation: z.string().optional(),
+  // Identifies which version of the rule or detector produced this finding,
+  // so a stored decision trace stays auditable even after the detector logic
+  // changes later. Optional so existing findings without it stay valid.
+  detectorVersion: z.string().optional(),
 });
 
+// All three additions below are optional, not defaulted, on purpose: several
+// detectors (packages/rules, services/api) already return a RiskDecision as a
+// plain object literal without calling riskDecisionSchema.parse(). A default()
+// would make these fields required in the inferred output type and break
+// that existing code at compile time. Optional keeps this change additive.
 export const riskDecisionSchema = z.object({
   riskBand: z.enum(["LOW", "MEDIUM", "HIGH", "UNKNOWN"]),
   recommendation: z.enum([
@@ -106,6 +115,22 @@ export const riskDecisionSchema = z.object({
     "UNABLE_TO_VERIFY",
   ]),
   findings: z.array(findingSchema),
+  // Evidence that argues against the findings above, such as an official
+  // domain match found alongside a critical credential request. Recorded so
+  // the explanation can show both sides, not just the signals that won.
+  counterEvidence: z.array(findingSchema).optional(),
+  // Names of any critical-signal overrides the decision engine applied, for
+  // example forcing STOP_AND_AVOID because an OTP request was present
+  // regardless of what the weighted score alone would have produced.
+  overridesApplied: z.array(z.string()).optional(),
+  // Evidence sources that were unavailable for this analysis (the LLM timed
+  // out, the scanner could not run, and so on), shown to the user as a
+  // limitation rather than silently ignored.
+  missingChecks: z
+    .array(
+      z.enum(["RULE", "LLM", "DOMAIN_DIRECTORY", "SCANNER", "APPROVED_REPORT"]),
+    )
+    .optional(),
   limitations: z.array(z.string()),
   safeActions: z.array(z.string()),
   policyVersion: z.string(),
