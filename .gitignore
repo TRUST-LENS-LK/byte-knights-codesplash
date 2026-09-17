@@ -144,3 +144,10 @@ vite.config.ts.timestamp-*
 
 # Personal reference docs (not part of the shared codebase)
 member3_docs/
+
+# Documents
+TrustLens_LK_Five_Member_Equal_Work_Division.pdf
+TrustLens_LK_Full_Development_Plan.pdf
+
+# Agents
+AGENTS.md

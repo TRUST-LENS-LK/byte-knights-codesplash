@@ -26,4 +26,11 @@ npm.cmd run build:web
 npm.cmd run lint:web
 ```
 
+Build and type-check the shared packages with:
+
+```powershell
+npm.cmd run build:packages
+npm.cmd run check:packages
+```
+
 The API keeps submitted content out of Supabase unless `retentionConsent` is explicitly `true`. Keep `services/api/.env` local and never commit its contents.

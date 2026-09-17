@@ -31,3 +31,17 @@ export async function persistIfConsented(body, decision, entities) {
   }
   return submission?.id || null
 }
+
+export async function persistReport(body) {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return null
+  const headers = { apikey: SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`, 'content-type': 'application/json', Prefer: 'return=representation' }
+  const response = await fetch(`${SUPABASE_URL}/rest/v1/user_reports`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ report_type: body.reportType, content_sha256: createHash('sha256').update(body.text).digest('hex'), reported_domain: body.reportedDomain?.trim().toLowerCase() || null, notes: body.notes?.trim() || null, status: 'PENDING' }),
+    signal: AbortSignal.timeout(PERSISTENCE_TIMEOUT_MS),
+  })
+  if (!response.ok) throw new Error('Supabase report persistence failed')
+  const [report] = await response.json()
+  return report?.id || null
+}
