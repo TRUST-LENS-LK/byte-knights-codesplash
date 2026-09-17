@@ -171,25 +171,39 @@ const server = createServer(async (req, res) => {
 
     // ── Remote URL Scanner ─────────────────────────────────────────────
     let finalScanText = text
-    const urlEntities = entities.filter(e => e.type === 'url')
+    let scannerFailed = false
+    const urlEntities = entities.filter(e => e.type === 'url').slice(0, 3) // Scan up to 3 URLs max
+    
     if (urlEntities.length > 0 && process.env.SCANNER_URL) {
-      try {
+      const scanPromises = urlEntities.map(async (urlEntity) => {
         const scanRes = await fetch(`${process.env.SCANNER_URL}/scan`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url: urlEntities[0].value }),
+          body: JSON.stringify({ url: urlEntity.value }),
           signal: AbortSignal.timeout(10000)
         })
-        if (scanRes.ok) {
-          const scanBody = await scanRes.json()
-          if (scanBody.textContent) finalScanText += '\n\n' + scanBody.textContent
+        if (!scanRes.ok) throw new Error(`Scanner returned ${scanRes.status}`)
+        return scanRes.json()
+      })
+
+      const results = await Promise.allSettled(scanPromises)
+
+      for (const result of results) {
+        if (result.status === 'fulfilled' && result.value.textContent) {
+          finalScanText += '\n\n' + result.value.textContent
+        } else if (result.status === 'rejected') {
+          console.error('Remote scanner failed:', result.reason)
+          scannerFailed = true
         }
-      } catch (err) {
-        console.error('Remote scanner failed:', err)
       }
     }
 
     const decision = analyze(finalScanText)
+    
+    if (scannerFailed) {
+      decision.limitations.push('The remote URL scanner was unavailable or timed out. The URL content could not be verified.')
+    }
+
     const localScannerFindings = scannerFindings(entities)
     if (localScannerFindings.length) decision.findings.push(...localScannerFindings)
     applyScannerRisk(decision)

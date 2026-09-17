@@ -24,6 +24,7 @@ function isPrivateIp(ip) {
   return false
 }
 
+const dnsCache = new Map()
 let browser = null
 
 export async function scanUrl(targetUrl) {
@@ -36,6 +37,9 @@ export async function scanUrl(targetUrl) {
       executablePath,
       args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
     })
+    
+    // Stability: Auto-recover if the browser crashes internally
+    browser.on('disconnected', () => { browser = null })
   }
 
   const context = await browser.newContext({
@@ -55,7 +59,13 @@ export async function scanUrl(targetUrl) {
     }
 
     try {
-      const { address } = await lookup(requestUrl.hostname)
+      let address = dnsCache.get(requestUrl.hostname)
+      if (!address) {
+        const result = await lookup(requestUrl.hostname)
+        address = result.address
+        dnsCache.set(requestUrl.hostname, address)
+      }
+      
       if (isPrivateIp(address)) {
         console.warn(`[Scanner] Blocked request to private IP ${address} for ${requestUrl.hostname}`)
         return route.abort('blockedbyclient')
