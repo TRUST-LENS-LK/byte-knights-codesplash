@@ -1,4 +1,4 @@
-import { extractedEntitySchema, type ExtractedEntity } from '../../../packages/contracts/src/index'
+import { extractedEntitySchema, type ExtractedEntity } from '@trustlens/contracts'
 
 const patterns = {
   url: /https?:\/\/[^\s<>()]+/gi,
@@ -9,12 +9,15 @@ const patterns = {
 
 function entitiesFor(type: keyof typeof patterns, text: string): ExtractedEntity[] {
   return [...text.matchAll(patterns[type])].map((match) => {
-    const value = match[0]
-    const normalizedValue = type === 'phone' ? value.replace(/\s/g, '').replace(/^0/, '+94') : type === 'url' ? value.replace(/[.,!?]+$/, '') : value
-    return extractedEntitySchema.parse({ type, value, normalizedValue, sourceSpan: value, confidence: 0.95 })
+    const value = type === 'url' ? match[0].replace(/[),.!?]+$/, '') : match[0]
+    const normalizedValue = type === 'phone' ? value.replace(/\s/g, '').replace(/^0/, '+94') : value
+    return extractedEntitySchema.parse({ type, value, normalizedValue, sourceSpan: match[0], confidence: 0.95 })
   })
 }
 
 export function extractEntities(text: string): ExtractedEntity[] {
-  return (Object.keys(patterns) as Array<keyof typeof patterns>).flatMap((type) => entitiesFor(type, text))
+  const allEntities = (Object.keys(patterns) as Array<keyof typeof patterns>).flatMap((type) => entitiesFor(type, text))
+  return allEntities.filter((entity, index, arr) => 
+    arr.findIndex((c) => c.type === entity.type && c.value === entity.value) === index
+  )
 }

@@ -1,15 +1,18 @@
 import { existsSync, readFileSync } from 'node:fs'
 
-const envPath = new URL('../../.env', import.meta.url)
-
-if (existsSync(envPath)) {
-  for (const line of readFileSync(envPath, 'utf8').split(/\r?\n/)) {
+function loadEnvFile(path) {
+  if (!existsSync(path)) return
+  for (const line of readFileSync(path, 'utf8').split(/\r?\n/)) {
     const trimmed = line.trim()
     if (!trimmed || trimmed.startsWith('#')) continue
     const match = trimmed.match(/^([A-Z0-9_]+)=(.*)$/)
     if (match && !Object.hasOwn(process.env, match[1])) process.env[match[1]] = match[2].trim().replace(/^['"]|['"]$/g, '')
   }
 }
+
+loadEnvFile(new URL('../../.env', import.meta.url))
+loadEnvFile(new URL('../../.env.development', import.meta.url))
+
 
 function positiveInteger(value, fallback) {
   const parsed = Number(value)

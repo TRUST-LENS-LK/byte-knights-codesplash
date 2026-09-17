@@ -4,7 +4,11 @@ const rateLimitStore = new Map()
 
 export function consumeRateLimit(req) {
   const now = Date.now()
-  const key = req.socket.remoteAddress || 'unknown'
+  // Support reverse proxies (e.g. Render) by checking x-forwarded-for
+  const forwarded = req.headers['x-forwarded-for']
+  const clientIp = forwarded ? String(forwarded).split(',')[0].trim() : req.socket.remoteAddress
+  const key = clientIp || 'unknown'
+
   if (rateLimitStore.size > 1000) {
     for (const [storedKey, storedEntry] of rateLimitStore) {
       if (now - storedEntry.startedAt >= RATE_LIMIT_WINDOW_MS) rateLimitStore.delete(storedKey)
