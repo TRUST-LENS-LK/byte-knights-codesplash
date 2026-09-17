@@ -1,5 +1,47 @@
 import { z } from "zod";
 
+// ============================================================================
+// Member 3: Contract versioning and canonical signal taxonomy
+// ============================================================================
+
+// Bump this whenever a shape in this file changes in a way that existing
+// consumers need to know about, such as a field being renamed, removed, or
+// made required. Attach it to persisted records so old data can be told apart
+// from new data if the shape ever changes.
+export const CONTRACT_VERSION = "1.0.0";
+
+// The canonical signal taxonomy is the fixed list of names a Finding is
+// allowed to use in canonicalSignal. Every reason shown to a user must trace
+// back to one of these, so the explanation on screen always matches something
+// the decision engine actually used. Add new signals here first, then
+// reference them from rule or detector code, rather than inventing a new
+// string inside a detector.
+//
+// This list is not enforced as a strict validation constraint yet, see the
+// open decision in docs/decisions.md. Other members are still adding
+// detectors, and a strict enum would block their work until every signal is
+// catalogued here. Treat this as the shared source of truth to add to, not a
+// hard runtime check, until the team agrees to tighten it.
+export const CANONICAL_SIGNALS = [
+  // Deterministic message rules (packages/rules)
+  "credential_request",
+  "advance_payment",
+  "urgency",
+  "job_offer",
+
+  // Domain verification (services/api/src/services/domainVerification.mjs)
+  "approved_domain",
+  "domain_mismatch",
+  "domain_unknown",
+  "domain_stale",
+
+  // Verified intelligence (Member 5, supabase verified_intelligence table)
+  "confirmed_scam_indicator",
+  "verified_safe_indicator",
+] as const;
+
+export type CanonicalSignal = (typeof CANONICAL_SIGNALS)[number];
+
 export const submissionSchema = z.object({
   type: z.enum(["message", "url", "screenshot"]),
   text: z.string().max(10000).optional(),
