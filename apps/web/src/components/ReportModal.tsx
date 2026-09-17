@@ -4,10 +4,12 @@ import {
   AlertTriangle,
   Search,
   CheckCircle2,
-  ShieldCheck,
   X,
-  Fingerprint,
   Globe,
+  Copy,
+  Check,
+  Send,
+  ShieldCheck,
 } from 'lucide-react'
 import {
   type CreatedReport,
@@ -29,29 +31,33 @@ export interface ReportModalProps {
 const REPORT_TYPE_CONFIG: Record<
   ReportType,
   {
-    icon: React.ComponentType<{ size?: number; color?: string; 'aria-hidden'?: boolean | 'true' | 'false' }>
+    icon: React.ComponentType<{ size?: number; 'aria-hidden'?: boolean | 'true' | 'false' }>
     title: string
     desc: string
     color: string
+    typeClass: string
   }
 > = {
   suspicious: {
     icon: ShieldAlert,
     title: 'Unreported Threat',
-    desc: 'Phishing, bank fraud, fake job offer, or malicious link.',
-    color: '#a33d31',
+    desc: 'Phishing, bank fraud, fake job, or malicious link',
+    color: '#e11d48',
+    typeClass: 'is-threat',
   },
   false_positive: {
     icon: AlertTriangle,
     title: 'False Alarm',
-    desc: 'Legitimate message from an official organization or bank.',
-    color: '#b7791f',
+    desc: 'Legitimate message incorrectly flagged as risky',
+    color: '#d97706',
+    typeClass: 'is-alarm',
   },
   false_negative: {
     icon: Search,
     title: 'Evaded Detection',
-    desc: 'TrustLens rated this safe, but it is dangerous fraud.',
-    color: '#087f8c',
+    desc: 'Dangerous scam that bypassed safety filters',
+    color: '#0284c7',
+    typeClass: 'is-evaded',
   },
 }
 
@@ -68,12 +74,17 @@ export const ReportModal: React.FC<ReportModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [successReport, setSuccessReport] = useState<CreatedReport | null>(null)
+  const [copiedId, setCopiedId] = useState(false)
 
-  const detectedTarget = reportedDomain || content.match(/https?:\/\/[^\s/$.?#].[^\s]*/i)?.[0] || content.match(/[a-zA-Z0-9-]+\.[a-zA-Z]{2,}(?:\/[^\s]*)?/i)?.[0] || ''
+  const detectedTarget =
+    reportedDomain ||
+    content.match(/https?:\/\/[^\s/$.?#].[^\s]*/i)?.[0] ||
+    content.match(/[a-zA-Z0-9-]+\.[a-zA-Z]{2,}(?:\/[^\s]*)?/i)?.[0] ||
+    ''
   const [manualIndicator, setManualIndicator] = useState<string | null>(null)
   const targetIndicator = manualIndicator !== null ? manualIndicator : detectedTarget
 
-  // Compute client-side SHA-256 whenever the content changes
+  // Compute client-side SHA-256
   useEffect(() => {
     if (content && isOpen) {
       computeSha256(content).then(setSha256).catch(() => setSha256(''))
@@ -86,10 +97,11 @@ export const ReportModal: React.FC<ReportModalProps> = ({
     setSuccessReport(null)
     setNotes('')
     setManualIndicator(null)
+    setCopiedId(false)
     onClose()
   }, [isSubmitting, onClose])
 
-  // Handle escape key closing
+  // Escape key handler
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && isOpen && !isSubmitting) {
@@ -99,6 +111,12 @@ export const ReportModal: React.FC<ReportModalProps> = ({
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [isOpen, isSubmitting, handleClose])
+
+  const handleCopyId = (id: string) => {
+    navigator.clipboard.writeText(id)
+    setCopiedId(true)
+    setTimeout(() => setCopiedId(false), 2000)
+  }
 
   if (!isOpen) return null
 
@@ -137,6 +155,8 @@ export const ReportModal: React.FC<ReportModalProps> = ({
     }
   }
 
+  const defangedPreview = targetIndicator.trim() ? defangIndicator(targetIndicator.trim()) : ''
+
   return (
     <div
       className="modal-backdrop"
@@ -153,50 +173,67 @@ export const ReportModal: React.FC<ReportModalProps> = ({
         aria-modal="true"
         aria-labelledby="modal-title"
       >
+        {/* Subtle Brand Accent Bar */}
+        <div className="modal-top-accent" aria-hidden="true" />
+
         {successReport ? (
           <div className="success-view">
-            <div className="success-icon-circle" aria-hidden="true">
-              <CheckCircle2 size={36} color="#087f8c" />
+            <div className="success-icon-badge" aria-hidden="true">
+              <CheckCircle2 size={36} />
             </div>
-            <h4 id="modal-title">Threat Intelligence Reported</h4>
-            <p>
-              Thank you for protecting Sri Lankan citizens. Your submission has been
-              cryptographically hashed and placed in the verified moderation queue.
-            </p>
-            <span className="report-ref-badge">
-              Report ID: {successReport.id.slice(0, 8)}...
-            </span>
 
-            <div className="indicator-box" style={{ width: '100%', marginTop: '8px' }}>
-              <div className="indicator-row">
-                <span className="indicator-label">Classification</span>
-                <span className="indicator-value">
+            <div className="success-text-block">
+              <h4 id="modal-title">Threat Report Submitted</h4>
+              <p>
+                Thank you for protecting Sri Lankan citizens. Your report is now in the TrustLens moderation pipeline.
+              </p>
+            </div>
+
+            <div className="success-ref-card">
+              <div className="success-ref-item">
+                <span className="success-ref-tag">INCIDENT REFERENCE</span>
+                <button
+                  type="button"
+                  className="success-copy-ref-btn"
+                  onClick={() => handleCopyId(successReport.id)}
+                  title="Copy Reference ID"
+                >
+                  <code>{successReport.id}</code>
+                  {copiedId ? <Check size={12} color="#10b981" /> : <Copy size={12} />}
+                </button>
+              </div>
+
+              <div className="success-meta-row">
+                <span className="meta-label">Classification</span>
+                <span className="meta-badge">
                   {REPORT_TYPE_CONFIG[successReport.report_type]?.title || successReport.report_type}
                 </span>
               </div>
-              <div className="indicator-row">
-                <span className="indicator-label">SHA-256 Fingerprint</span>
-                <span className="hash-preview">
-                  {successReport.content_sha256.slice(0, 24)}...
-                </span>
-              </div>
+
+              {successReport.reported_domain && (
+                <div className="success-meta-row">
+                  <span className="meta-label">Defanged Target</span>
+                  <code className="meta-defanged">{successReport.reported_domain}</code>
+                </div>
+              )}
             </div>
 
-            <div className="modal-actions" style={{ width: '100%', justifyContent: 'center' }}>
+            <div className="modal-actions-single">
               <button
                 type="button"
-                className="btn-primary"
+                className="btn-primary done-btn"
                 onClick={handleClose}
                 autoFocus
               >
-                Done
+                <span>Done</span>
               </button>
             </div>
           </div>
         ) : (
           <>
+            {/* Modal Header */}
             <div className="modal-header">
-              <div>
+              <div className="modal-header-text">
                 <h3 id="modal-title">Report Threat or False Alarm</h3>
                 <p>Help improve TrustLens detection for Sri Lankan fraud patterns.</p>
               </div>
@@ -207,23 +244,26 @@ export const ReportModal: React.FC<ReportModalProps> = ({
                 aria-label="Close dialog"
                 disabled={isSubmitting}
               >
-                <X size={18} aria-hidden="true" />
+                <X size={17} aria-hidden="true" />
               </button>
             </div>
 
             {error && (
               <div className="error-banner" role="alert">
-                {error}
+                <AlertTriangle size={15} aria-hidden="true" />
+                <span>{error}</span>
               </div>
             )}
 
-            <form onSubmit={handleSubmit} style={{ display: 'contents' }}>
-              <div>
-                <label className="reason-group-label" id="reason-label">
+            <form onSubmit={handleSubmit} className="report-form">
+              {/* 1. Reason Selection Cards */}
+              <div className="form-group">
+                <label className="form-label" id="reason-label">
                   Reason for Reporting
                 </label>
+
                 <div
-                  className="reason-cards"
+                  className="reason-grid"
                   role="radiogroup"
                   aria-labelledby="reason-label"
                 >
@@ -235,136 +275,118 @@ export const ReportModal: React.FC<ReportModalProps> = ({
                       <button
                         type="button"
                         key={type}
-                        className={`reason-card ${isSelected ? 'selected' : ''}`}
+                        className={`reason-card ${cfg.typeClass} ${isSelected ? 'selected' : ''}`}
                         role="radio"
                         aria-checked={isSelected}
                         onClick={() => setReportType(type)}
                       >
-                        <span className="reason-icon">
-                          <IconComponent size={20} color={cfg.color} aria-hidden="true" />
-                        </span>
-                        <span className="reason-title">{cfg.title}</span>
-                        <span className="reason-desc">{cfg.desc}</span>
+                        <div className="reason-header">
+                          <div className={`reason-icon-box ${cfg.typeClass}`}>
+                            <IconComponent size={17} aria-hidden="true" />
+                          </div>
+                          <div className={`reason-radio ${isSelected ? 'active' : ''}`} aria-hidden="true">
+                            {isSelected && <Check size={10} strokeWidth={3} />}
+                          </div>
+                        </div>
+                        <div className="reason-text">
+                          <span className="reason-title">{cfg.title}</span>
+                          <span className="reason-desc">{cfg.desc}</span>
+                        </div>
                       </button>
                     )
                   })}
                 </div>
               </div>
 
-              {/* Scanned excerpt + Target input — compact row */}
-              <div className="report-two-col">
-                {/* Left: Excerpt + Target */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {content && (
-                    <div style={{ background: '#f0f4f8', borderLeft: '3px solid #087f8c', borderRadius: '6px', padding: '8px 10px' }}>
-                      <span style={{ display: 'block', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600, color: '#087f8c', marginBottom: '2px' }}>
-                        Scanned Excerpt
-                      </span>
-                      <p style={{ margin: 0, fontSize: '11px', color: '#102a43', fontStyle: 'italic', wordBreak: 'break-word', maxHeight: '40px', overflowY: 'auto', lineHeight: 1.35 }}>
-                        "{content.length > 150 ? content.slice(0, 147) + '...' : content}"
-                      </p>
-                    </div>
-                  )}
-                  <div className="notes-group">
-                    <label htmlFor="target-indicator" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '12px', fontWeight: 700, color: '#102a43' }}>
+              {/* 2. Scanned Snippet & Target URL (Clean, side-by-side or stacked cleanly) */}
+              <div className="form-row-compact">
+                {content && (
+                  <div className="snippet-box">
+                    <span className="snippet-label">Scanned Content Snippet</span>
+                    <p className="snippet-text">
+                      "{content.length > 140 ? content.slice(0, 137) + '...' : content}"
+                    </p>
+                  </div>
+                )}
+
+                <div className="target-box">
+                  <div className="target-label-row">
+                    <label htmlFor="target-indicator" className="form-label-inline">
                       <Globe size={12} aria-hidden="true" />
                       <span>Target URL / Domain</span>
                     </label>
-                    <input
-                      id="target-indicator"
-                      type="text"
-                      value={targetIndicator}
-                      onChange={(e) => setManualIndicator(e.target.value)}
-                      placeholder="e.g. ceb-online-pay.top"
-                      style={{
-                        width: '100%',
-                        padding: '7px 10px',
-                        borderRadius: '7px',
-                        border: '1px solid #d9e2ec',
-                        fontSize: '12px',
-                        fontFamily: 'monospace',
-                        background: '#ffffff',
-                        colorScheme: 'light',
-                        boxSizing: 'border-box',
-                      }}
-                    />
-                  </div>
-                </div>
-
-                {/* Right: Fingerprint + indicator */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  <div className="indicator-box">
-                    {targetIndicator.trim() && (
-                      <div className="indicator-row">
-                        <span className="indicator-label">Defanged</span>
-                        <span className="indicator-value" style={{ color: '#a33d31', fontWeight: 600, fontSize: '11px' }}>
-                          {defangIndicator(targetIndicator.trim())}
-                        </span>
-                      </div>
+                    {defangedPreview && (
+                      <span className="defanged-pill" title="Indicators are safely defanged before transmission">
+                        <code>{defangedPreview}</code>
+                      </span>
                     )}
-                    <div className="indicator-row">
-                      <span className="indicator-label" style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
-                        <Fingerprint size={11} color="#087f8c" aria-hidden="true" />
-                        SHA-256
-                      </span>
-                      <span className="hash-preview" title={sha256} style={{ fontSize: '10px' }}>
-                        {sha256 ? `${sha256.slice(0, 20)}...` : 'Computing...'}
-                      </span>
-                    </div>
                   </div>
-                  <div className="privacy-badge">
-                    <ShieldCheck size={13} aria-hidden="true" style={{ flexShrink: 0 }} />
-                    <span>
-                      <strong>Privacy First:</strong> Indicators defanged, payloads hashed. PII never indexed.
-                    </span>
-                  </div>
+                  <input
+                    id="target-indicator"
+                    type="text"
+                    value={targetIndicator}
+                    onChange={(e) => setManualIndicator(e.target.value)}
+                    placeholder="e.g. ceb-online-pay.top"
+                    className="target-input-field"
+                  />
                 </div>
               </div>
 
-              {/* Additional Context Notes */}
-              <div className="notes-group">
-                <div className="notes-header">
-                  <label htmlFor="report-notes" style={{ fontSize: '12px' }}>Additional Context (Optional)</label>
-                  <span
-                    className={`char-counter ${notes.length >= 1950 ? 'warning' : ''}`}
-                  >
+              {/* 3. Additional Context */}
+              <div className="form-group">
+                <div className="label-with-counter">
+                  <label htmlFor="report-notes" className="form-label">
+                    Additional Context <span className="optional-tag">(Optional)</span>
+                  </label>
+                  <span className={`counter-text ${notes.length >= 1950 ? 'limit-near' : ''}`}>
                     {notes.length} / 2000
                   </span>
                 </div>
                 <textarea
                   id="report-notes"
-                  className="report-notes-textarea"
+                  className="notes-textarea"
                   maxLength={2000}
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
-                  placeholder="e.g. 'Received via WhatsApp SMS claiming to be Commercial Bank asking to redeem reward points'."
+                  placeholder="e.g. Received via WhatsApp claiming to be Commercial Bank with a reward link."
                   rows={2}
                 />
               </div>
 
-              <div className="modal-actions">
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  onClick={handleClose}
-                  disabled={isSubmitting}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="btn-primary"
-                  disabled={isSubmitting || !sha256}
-                >
-                  {isSubmitting ? (
-                    <>
-                      <span className="spinner" />
-                      <span>Submitting...</span>
-                    </>
-                  ) : (
-                    'Submit to Threat Queue'
-                  )}
-                </button>
+              {/* 4. Footer with Privacy Assurance & Action Buttons */}
+              <div className="modal-footer">
+                <div className="privacy-assurance">
+                  <ShieldCheck size={14} color="#087f8c" aria-hidden="true" />
+                  <span>Zero-PII • Content hashed locally • Submitter anonymous</span>
+                </div>
+
+                <div className="footer-buttons">
+                  <button
+                    type="button"
+                    className="btn-cancel"
+                    onClick={handleClose}
+                    disabled={isSubmitting}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="btn-submit"
+                    disabled={isSubmitting || !sha256}
+                  >
+                    {isSubmitting ? (
+                      <>
+                        <span className="btn-spinner" />
+                        <span>Submitting...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Send size={13} aria-hidden="true" />
+                        <span>Submit to Threat Queue</span>
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
             </form>
           </>

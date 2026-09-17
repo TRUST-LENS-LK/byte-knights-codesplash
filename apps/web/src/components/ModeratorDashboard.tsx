@@ -20,6 +20,8 @@ import {
   AlertCircle,
   PanelLeftClose,
   PanelLeftOpen,
+  Download,
+  ArrowRight,
 } from 'lucide-react'
 import {
   type ModerationQueueItem,
@@ -35,7 +37,6 @@ import {
 } from '../services/moderatorService'
 import { defangIndicator } from '../services/reportingService'
 import { formatRelativeTime } from '../utils/formatTime'
-import { ReportDetailModal } from './modals/ReportDetailModal'
 import { ReviewDecisionModal } from './modals/ReviewDecisionModal'
 import './ModeratorDashboard.css'
 
@@ -422,7 +423,6 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
   const [auditPageSize, setAuditPageSize] = useState<number>(10)
 
   // Dedicated Modal Dialog State
-  const [detailModalReport, setDetailModalReport] = useState<ModerationQueueItem | null>(null)
   const [reviewModalReport, setReviewModalReport] = useState<ModerationQueueItem | null>(null)
   const [isProcessingReview, setIsProcessingReview] = useState(false)
   const [isSeeding, setIsSeeding] = useState(false)
@@ -1192,14 +1192,15 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                     </div>
                     <button
                       type="button"
-                      className="neo-btn-sidebar-logout"
+                      className="neo-btn-toolbar-action"
                       onClick={() => {
                         setActiveNav('QUEUE')
                         setActiveTab('APPROVED')
                       }}
-                      style={{ fontSize: '11px', padding: '4px 10px', color: '#0f172a' }}
+                      title="View all approved reports"
                     >
-                      View All Approved →
+                      <span>View All Approved</span>
+                      <ArrowRight size={12} aria-hidden="true" />
                     </button>
                   </div>
 
@@ -1383,7 +1384,7 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
 
                     <button
                       type="button"
-                      className="neo-btn-sidebar-logout"
+                      className="neo-btn-toolbar-action"
                       onClick={() => void loadReports(true)}
                       disabled={isLoadingQueue}
                       title="Refresh data"
@@ -1461,28 +1462,16 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                               </span>
                             </td>
 
-                            {/* Submitter Excerpt with Modal Trigger */}
+                            {/* Submitter Excerpt */}
                             <td style={{ maxWidth: '320px' }}>
                               {displayText ? (
                                 <div className="neo-excerpt-cell">
                                   <span
-                                    className="neo-excerpt-text collapsed"
-                                    title="Click to inspect full submission evidence"
-                                    onClick={() => setDetailModalReport(item)}
-                                    style={{ cursor: 'pointer' }}
+                                    className="neo-excerpt-text"
+                                    title={excerpt ? `"${excerpt}"` : parsed.userNotes || undefined}
                                   >
                                     {excerpt ? `"${excerpt}"` : parsed.userNotes}
                                   </span>
-                                  <button
-                                    type="button"
-                                    className="neo-btn-excerpt-toggle"
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      setDetailModalReport(item)
-                                    }}
-                                  >
-                                    View full text
-                                  </button>
                                 </div>
                               ) : (
                                 <span style={{ fontSize: '11.5px', color: '#94a3b8', fontStyle: 'italic' }}>
@@ -1524,7 +1513,7 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                                     color: '#475569',
                                     borderColor: '#cbd5e1',
                                   }}
-                                  onClick={() => setDetailModalReport(item)}
+                                  onClick={() => setReviewModalReport(item)}
                                   title="Inspect submission record"
                                 >
                                   Inspect
@@ -1626,11 +1615,12 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                   </div>
                   <button
                     type="button"
-                    className="neo-btn-sidebar-logout"
+                    className="neo-btn-toolbar-action"
                     onClick={handleExportData}
-                    style={{ fontSize: '11.5px', padding: '6px 14px', color: '#0f172a' }}
+                    title="Export audit feed to JSON"
                   >
-                    Export Audit Feed (JSON)
+                    <Download size={13} aria-hidden="true" />
+                    <span>Export Audit Feed (JSON)</span>
                   </button>
                 </div>
 
@@ -1686,23 +1676,11 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                                 {excerpt || parsed.userNotes ? (
                                   <div className="neo-excerpt-cell">
                                     <span
-                                      className="neo-excerpt-text collapsed"
-                                      title="Click to inspect full submission evidence"
-                                      onClick={() => setDetailModalReport(item)}
-                                      style={{ cursor: 'pointer' }}
+                                      className="neo-excerpt-text"
+                                      title={excerpt ? `"${excerpt}"` : parsed.userNotes || undefined}
                                     >
                                       {excerpt ? `"${excerpt}"` : parsed.userNotes}
                                     </span>
-                                    <button
-                                      type="button"
-                                      className="neo-btn-excerpt-toggle"
-                                      onClick={(e) => {
-                                        e.stopPropagation()
-                                        setDetailModalReport(item)
-                                      }}
-                                    >
-                                      View full text
-                                    </button>
                                   </div>
                                 ) : (
                                   <span style={{ fontSize: '11.5px', color: '#94a3b8', fontStyle: 'italic' }}>
@@ -1800,21 +1778,6 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
           )}
         </main>
       </div>
-
-      {/* ── Evidence Detail & Full Text Modal (Inspect up to 10,000+ words) ── */}
-      <ReportDetailModal
-        isOpen={Boolean(detailModalReport)}
-        report={detailModalReport}
-        onClose={() => setDetailModalReport(null)}
-        onOpenReview={
-          detailModalReport?.status === 'PENDING'
-            ? (rep) => {
-                setDetailModalReport(null)
-                setReviewModalReport(rep)
-              }
-            : undefined
-        }
-      />
 
       {/* ── Review Decision Modal (Consensus, Classification & Sanitization) ── */}
       <ReviewDecisionModal
