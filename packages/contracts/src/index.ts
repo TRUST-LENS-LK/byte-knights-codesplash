@@ -124,6 +124,57 @@ export type RiskDecision = z.infer<typeof riskDecisionSchema>;
 export type ApiError = z.infer<typeof apiErrorSchema>;
 
 // ============================================================================
+// Member 3: Official domain directory and verification contracts
+// ============================================================================
+
+// Mirrors the approved_organizations table, once Stage 3 adds the governance
+// columns (reviewer, nextReviewDate, status) alongside the ones that already
+// exist. id is optional because a record does not have one yet before it is
+// first inserted.
+export const domainDirectoryStatusSchema = z.enum(["ACTIVE", "STALE", "RETIRED"]);
+
+export const officialDomainRecordSchema = z.object({
+  id: z.number().int().optional(),
+  name: z.string().min(1).max(255),
+  officialDomain: z.string().min(1).max(255),
+  category: z.string().max(100).nullable().optional(),
+  sourceUrl: z.string().url().max(2048).nullable().optional(),
+  reviewer: z.string().max(255).nullable().optional(),
+  verifiedAt: z.string().nullable().optional(),
+  nextReviewDate: z.string().nullable().optional(),
+  status: domainDirectoryStatusSchema.default("ACTIVE"),
+  active: z.boolean().default(true),
+});
+
+// The result of checking one submitted domain against the official directory,
+// and, per docs/decisions.md, against Member 5's verifiedIntelligenceSchema
+// data too once Stage 5 wires that in. UNKNOWN means "not verified", never
+// "fraudulent". STALE means a directory match exists but its review date has
+// expired, so it cannot contribute positive evidence.
+export const domainVerificationOutcomeSchema = z.enum([
+  "MATCHED",
+  "MISMATCH",
+  "UNKNOWN",
+  "STALE",
+]);
+
+export const domainVerificationSchema = z.object({
+  submittedDomain: z.string().min(1),
+  claimedOrganization: z.string().nullable().optional(),
+  outcome: domainVerificationOutcomeSchema,
+  matchedRecord: officialDomainRecordSchema.nullable().optional(),
+  evidence: z.string(),
+  checkedAt: z.string(),
+});
+
+export type DomainDirectoryStatus = z.infer<typeof domainDirectoryStatusSchema>;
+export type OfficialDomainRecord = z.infer<typeof officialDomainRecordSchema>;
+export type DomainVerificationOutcome = z.infer<
+  typeof domainVerificationOutcomeSchema
+>;
+export type DomainVerification = z.infer<typeof domainVerificationSchema>;
+
+// ============================================================================
 // Member 5: User Reporting, Moderation & Verified Intelligence Contracts
 // ============================================================================
 
