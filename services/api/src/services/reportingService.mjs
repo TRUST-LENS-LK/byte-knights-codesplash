@@ -24,7 +24,13 @@ function getHeaders() {
 
 export function defang(indicator) {
   if (!indicator || typeof indicator !== 'string') return ''
-  return indicator
+  const clean = indicator
+    .replace(/hxxps?:\/\//gi, 'https://')
+    .replace(/\[+\]+/g, '.')
+    .replace(/\[\.\]/g, '.')
+    .replace(/\[@\]/g, '@')
+
+  return clean
     .replace(/^https?:\/\//i, 'hxxps://')
     .replace(/\./g, '[.]')
     .replace(/@/g, '[@]')
