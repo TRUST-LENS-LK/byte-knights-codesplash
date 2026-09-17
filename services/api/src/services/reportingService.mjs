@@ -131,24 +131,190 @@ export async function submitReport(payload) {
   return report
 }
 
-export async function getModerationQueue(status = 'PENDING') {
+export async function getModerationQueue(statusOrOptions = 'PENDING') {
+  let status = 'PENDING'
+  let limit = null
+  let offset = 0
+
+  if (typeof statusOrOptions === 'object' && statusOrOptions !== null) {
+    status = statusOrOptions.status || 'PENDING'
+    limit = Number.isFinite(Number(statusOrOptions.limit)) ? Number(statusOrOptions.limit) : null
+    offset = Number.isFinite(Number(statusOrOptions.offset)) ? Number(statusOrOptions.offset) : 0
+  } else if (typeof statusOrOptions === 'string') {
+    status = statusOrOptions
+  }
+
   if (isSupabaseConfigured()) {
     let url = `${SUPABASE_URL}/rest/v1/user_reports?select=*&order=created_at.desc`
     if (status && status !== 'ALL') {
       url += `&status=eq.${encodeURIComponent(status)}`
     }
+    if (limit !== null && limit > 0) {
+      url += `&limit=${limit}&offset=${offset}`
+    }
+    const headers = {
+      ...getHeaders(),
+      Prefer: 'count=exact',
+    }
     const response = await fetch(url, {
-      headers: getHeaders(),
+      headers,
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     })
     if (!response.ok) {
       throw new Error(`Failed to fetch moderation queue: ${response.statusText}`)
     }
-    return await response.json()
+    const reports = await response.json()
+    const contentRange = response.headers.get('content-range') || ''
+    const match = contentRange.match(/\/(\d+|\*)$/)
+    const total = match && match[1] !== '*' ? parseInt(match[1], 10) : reports.length
+    return { reports, total }
   }
 
-  const list = Array.from(inMemoryReports.values())
-  return status && status !== 'ALL' ? list.filter((r) => r.status === status) : list
+  const list = Array.from(inMemoryReports.values()).sort(
+    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  )
+  const filtered = status && status !== 'ALL' ? list.filter((r) => r.status === status) : list
+  const total = filtered.length
+  const reports = limit !== null && limit > 0 ? filtered.slice(offset, offset + limit) : filtered
+  return { reports, total }
+}
+
+function computeStatsFromReports(reports) {
+  let pendingCount = 0
+  let approvedCount = 0
+  let rejectedCount = 0
+  let confirmedThreatCount = 0
+  let clearedSafeCount = 0
+
+  const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+  const weeklyMap = new Map(days.map((d) => [d, { threats: 0, resolved: 0 }]))
+
+  const categoryCounts = new Map([
+    ['Banking Phishing', 0],
+    ['Telecom / Utility Scam', 0],
+    ['Job Scam', 0],
+    ['Lottery / Prize Fraud', 0],
+    ['OTP Theft', 0],
+    ['Malicious Link / APK', 0],
+    ['False Alarm', 0],
+  ])
+
+  let priorityIncident = null
+
+  reports.forEach((report) => {
+    if (report.status === 'PENDING') {
+      pendingCount++
+      if (!priorityIncident) {
+        priorityIncident = {
+          id: report.id,
+          reported_domain: report.reported_domain || null,
+          raw_excerpt: report.raw_excerpt || null,
+          notes: report.notes || null,
+          report_type: report.report_type,
+          created_at: report.created_at,
+        }
+      }
+    } else if (report.status === 'APPROVED') {
+      approvedCount++
+      if (report.report_type === 'false_positive') {
+        clearedSafeCount++
+      } else {
+        confirmedThreatCount++
+      }
+    } else if (report.status === 'REJECTED') {
+      rejectedCount++
+    }
+
+    // Weekly activity
+    if (report.created_at) {
+      try {
+        const d = new Date(report.created_at)
+        if (!isNaN(d.getTime())) {
+          const dayName = days[d.getDay()]
+          const entry = weeklyMap.get(dayName)
+          if (entry) {
+            if (report.report_type === 'suspicious') entry.threats++
+            if (report.status === 'APPROVED' || report.status === 'REJECTED') entry.resolved++
+          }
+        }
+      } catch (_) {}
+    }
+
+    // Categorization
+    if (report.report_type === 'false_positive') {
+      categoryCounts.set('False Alarm', (categoryCounts.get('False Alarm') || 0) + 1)
+    } else {
+      const text = `${report.reported_domain || ''} ${report.notes || ''} ${report.raw_excerpt || ''}`.toLowerCase()
+      if (/boc|combank|bank|hnb|sampath|card|debit|credit|fund/.test(text)) {
+        categoryCounts.set('Banking Phishing', (categoryCounts.get('Banking Phishing') || 0) + 1)
+      } else if (/ceb|electricity|utility|water|bill|telecom|dialog|mobitel/.test(text)) {
+        categoryCounts.set('Telecom / Utility Scam', (categoryCounts.get('Telecom / Utility Scam') || 0) + 1)
+      } else if (/job|earn|part-time|salary|advance|bonus|hiring/.test(text)) {
+        categoryCounts.set('Job Scam', (categoryCounts.get('Job Scam') || 0) + 1)
+      } else if (/lottery|prize|won|lucky|cash|gift|reward/.test(text)) {
+        categoryCounts.set('Lottery / Prize Fraud', (categoryCounts.get('Lottery / Prize Fraud') || 0) + 1)
+      } else if (/otp|code|pin|password|credential|security/.test(text)) {
+        categoryCounts.set('OTP Theft', (categoryCounts.get('OTP Theft') || 0) + 1)
+      } else if (/\.apk|download|install|app/.test(text)) {
+        categoryCounts.set('Malicious Link / APK', (categoryCounts.get('Malicious Link / APK') || 0) + 1)
+      } else {
+        categoryCounts.set('Banking Phishing', (categoryCounts.get('Banking Phishing') || 0) + 1)
+      }
+    }
+  })
+
+  const totalReports = reports.length
+  const reviewedCount = approvedCount + rejectedCount
+  const verificationVelocity = totalReports > 0 ? Number(((reviewedCount / totalReports) * 100).toFixed(1)) : 100
+
+  const weeklyActivity = days.map((day) => ({
+    day,
+    threats: weeklyMap.get(day)?.threats || 0,
+    resolved: weeklyMap.get(day)?.resolved || 0,
+  }))
+
+  const nonZeroCategories = Array.from(categoryCounts.entries())
+    .map(([category, count]) => ({
+      category,
+      count,
+      percentage: totalReports > 0 ? Number(((count / totalReports) * 100).toFixed(1)) : 0,
+    }))
+    .sort((a, b) => b.count - a.count)
+
+  return {
+    metrics: {
+      totalReports,
+      pendingCount,
+      approvedCount,
+      rejectedCount,
+      confirmedThreatCount,
+      clearedSafeCount,
+      verificationVelocity,
+    },
+    weeklyActivity,
+    threatCategories: nonZeroCategories,
+    priorityIncident,
+  }
+}
+
+export async function getModerationStats() {
+  if (isSupabaseConfigured()) {
+    const url = `${SUPABASE_URL}/rest/v1/user_reports?select=id,status,report_type,reported_domain,notes,created_at&order=created_at.desc`
+    const response = await fetch(url, {
+      headers: getHeaders(),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    })
+    if (!response.ok) {
+      throw new Error(`Failed to fetch moderation stats: ${response.statusText}`)
+    }
+    const reports = await response.json()
+    return computeStatsFromReports(reports)
+  }
+
+  const reports = Array.from(inMemoryReports.values()).sort(
+    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  )
+  return computeStatsFromReports(reports)
 }
 
 export async function getReportById(reportId) {

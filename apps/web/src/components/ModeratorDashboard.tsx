@@ -24,8 +24,10 @@ import {
 import {
   type ModerationQueueItem,
   type ModeratorUser,
+  type ModerationStats,
   clearSession,
   fetchModerationQueue,
+  fetchModerationStats,
   getStoredSession,
   loginModerator,
   reviewModerationItem,
@@ -349,6 +351,42 @@ const CuteRobotAvatar: React.FC<CuteRobotAvatarProps> = ({ isPasswordFocused, is
   )
 }
 
+function renderPaginationNumbers(currentPage: number, totalPages: number, onSelect: (p: number) => void) {
+  const pages: (number | '...')[] = []
+  if (totalPages <= 7) {
+    for (let i = 1; i <= totalPages; i++) pages.push(i)
+  } else {
+    pages.push(1)
+    if (currentPage > 3) pages.push('...')
+    const start = Math.max(2, currentPage - 1)
+    const end = Math.min(totalPages - 1, currentPage + 1)
+    for (let i = start; i <= end; i++) pages.push(i)
+    if (currentPage < totalPages - 2) pages.push('...')
+    pages.push(totalPages)
+  }
+
+  return (
+    <div className="neo-page-numbers">
+      {pages.map((p, idx) =>
+        p === '...' ? (
+          <span key={`ellipsis-${idx}`} className="neo-page-ellipsis">
+            ...
+          </span>
+        ) : (
+          <button
+            key={p}
+            type="button"
+            className={`neo-page-pill ${p === currentPage ? 'active' : ''}`}
+            onClick={() => onSelect(p)}
+          >
+            {p}
+          </button>
+        )
+      )}
+    </div>
+  )
+}
+
 export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackToScanner }) => {
   const [token, setToken] = useState<string | null>(() => getStoredSession().token)
   const [user, setUser] = useState<ModeratorUser | null>(() => getStoredSession().user)
@@ -365,12 +403,24 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
   const [isPasswordFocused, setIsPasswordFocused] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
 
+  // Dedicated Aggregated Stats State (High-performance metrics decoupled from full table arrays)
+  const [stats, setStats] = useState<ModerationStats | null>(null)
+
   // Real Database Reports (Full dataset)
   const [allReports, setAllReports] = useState<ModerationQueueItem[]>([])
   const [activeTab, setActiveTab] = useState<'PENDING' | 'APPROVED' | 'REJECTED' | 'ALL'>('PENDING')
   const [searchQuery, setSearchQuery] = useState('')
   const [isLoadingQueue, setIsLoadingQueue] = useState(false)
   const [queueError, setQueueError] = useState<string | null>(null)
+
+  // Queue Pagination State
+  const [queuePage, setQueuePage] = useState(1)
+  const [queuePageSize, setQueuePageSize] = useState<number>(10)
+
+  // Audit Pagination State
+  const [auditPage, setAuditPage] = useState(1)
+  const [auditPageSize, setAuditPageSize] = useState<number>(10)
+
   // Dedicated Modal Dialog State
   const [detailModalReport, setDetailModalReport] = useState<ModerationQueueItem | null>(null)
   const [reviewModalReport, setReviewModalReport] = useState<ModerationQueueItem | null>(null)
@@ -390,7 +440,17 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
     setToken(null)
     setUser(null)
     setAllReports([])
+    setStats(null)
   }, [])
+
+  // Load aggregated stats from dedicated lightweight endpoint
+  const loadStats = useCallback(async () => {
+    if (!token) return
+    const res = await fetchModerationStats(token)
+    if (res.success && res.stats) {
+      setStats(res.stats)
+    }
+  }, [token])
 
   // Load all reports from database to compute real dynamic metrics & feeds
   const loadReports = useCallback(
@@ -398,7 +458,7 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
       if (!token) return
       if (showSpinner) setIsLoadingQueue(true)
       setQueueError(null)
-      const res = await fetchModerationQueue(token, 'ALL')
+      const res = await fetchModerationQueue(token, 'ALL', 1, 100)
       setIsLoadingQueue(false)
       if (res.success && res.reports) {
         setAllReports(res.reports)
@@ -408,15 +468,22 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
           handleSignOut()
         }
       }
+      void loadStats()
     },
-    [token, handleSignOut]
+    [token, handleSignOut, loadStats]
   )
 
   useEffect(() => {
     let active = true
     if (!token) return
 
-    fetchModerationQueue(token, 'ALL')
+    fetchModerationStats(token).then((res) => {
+      if (active && res.success && res.stats) {
+        setStats(res.stats)
+      }
+    })
+
+    fetchModerationQueue(token, 'ALL', 1, 100)
       .then((res) => {
         if (!active) return
         if (res.success && res.reports) {
@@ -437,6 +504,11 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
       active = false
     }
   }, [token, handleSignOut])
+
+  // Automatically reset queue page to 1 whenever tab or search filter changes
+  useEffect(() => {
+    setQueuePage(1)
+  }, [activeTab, searchQuery])
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -529,14 +601,16 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
     showToast('Threat intelligence feed exported successfully.')
   }
 
-  // ── REAL DATABASE METRICS COMPUTATION ────────────────────────────────────
+  // ── REAL DATABASE METRICS COMPUTATION (Priority: Stats Endpoint, Fallback: allReports) ──
   const pendingReports = useMemo(() => allReports.filter((r) => r.status === 'PENDING'), [allReports])
   const approvedReports = useMemo(() => allReports.filter((r) => r.status === 'APPROVED'), [allReports])
   const rejectedReports = useMemo(() => allReports.filter((r) => r.status === 'REJECTED'), [allReports])
 
-  const pendingCount = pendingReports.length
-  const confirmedThreatCount = approvedReports.filter((r) => r.report_type === 'suspicious').length
-  const clearedSafeCount = approvedReports.filter((r) => r.report_type === 'false_positive').length
+  const pendingCount = stats?.metrics.pendingCount ?? pendingReports.length
+  const confirmedThreatCount =
+    stats?.metrics.confirmedThreatCount ?? approvedReports.filter((r) => r.report_type === 'suspicious').length
+  const clearedSafeCount =
+    stats?.metrics.clearedSafeCount ?? approvedReports.filter((r) => r.report_type === 'false_positive').length
 
   // Filtered reports for current tab & search
   const tabFilteredReports = useMemo(() => {
@@ -558,8 +632,23 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
     })
   }, [tabFilteredReports, searchQuery])
 
-  // ── DYNAMIC WEEKLY INFLOW VELOCITY FROM REAL DATABASE ────────────────────
+  // Paginated Queue Slices
+  const queueTotalPages = Math.max(1, Math.ceil(displayedReports.length / queuePageSize))
+  const paginatedReports = useMemo(() => {
+    const start = (queuePage - 1) * queuePageSize
+    return displayedReports.slice(start, start + queuePageSize)
+  }, [displayedReports, queuePage, queuePageSize])
+
+  // ── DYNAMIC WEEKLY INFLOW VELOCITY (Priority: Stats Endpoint, Fallback: allReports) ──
   const weeklyActivity = useMemo(() => {
+    if (stats?.weeklyActivity && stats.weeklyActivity.length === 7) {
+      const counts = stats.weeklyActivity
+      const maxThreat = Math.max(...counts.map((c) => c.threats), 1)
+      const maxResolved = Math.max(...counts.map((c) => c.resolved), 1)
+      const maxVal = Math.max(maxThreat, maxResolved, 5)
+      return { counts, maxVal }
+    }
+
     const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
     const counts = days.map((day) => ({ day, threats: 0, resolved: 0 }))
 
@@ -583,10 +672,14 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
     const maxVal = Math.max(maxThreat, maxResolved, 5)
 
     return { counts, maxVal }
-  }, [allReports])
+  }, [stats, allReports])
 
-  // ── DYNAMIC CATEGORY BREAKDOWN FROM REAL DATABASE ────────────────────────
+  // ── DYNAMIC CATEGORY BREAKDOWN (Priority: Stats Endpoint, Fallback: allReports) ──
   const categoryStats = useMemo(() => {
+    if (stats?.threatCategories && stats.threatCategories.length > 0) {
+      return stats.threatCategories.slice(0, 3)
+    }
+
     if (allReports.length === 0) return []
     const map = new Map<string, number>()
 
@@ -603,13 +696,29 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
       }))
       .sort((a, b) => b.count - a.count)
       .slice(0, 3)
-  }, [allReports])
+  }, [stats, allReports])
 
-  // ── DYNAMIC PRIORITY ALERT INCIDENT FROM REAL DATABASE ───────────────────
+  // ── DYNAMIC PRIORITY ALERT INCIDENT (Priority: Stats Endpoint, Fallback: pendingReports[0]) ──
   const priorityIncident = useMemo(() => {
+    if (stats?.priorityIncident) {
+      const match = allReports.find((r) => r.id === stats.priorityIncident?.id)
+      if (match) return match
+      return {
+        id: stats.priorityIncident.id,
+        submission_id: null,
+        report_type: stats.priorityIncident.report_type,
+        content_sha256: '',
+        reported_domain: stats.priorityIncident.reported_domain,
+        raw_excerpt: stats.priorityIncident.raw_excerpt,
+        notes: stats.priorityIncident.notes,
+        status: 'PENDING' as const,
+        created_at: stats.priorityIncident.created_at,
+        updated_at: stats.priorityIncident.created_at,
+      }
+    }
     if (pendingReports.length > 0) return pendingReports[0]
     return null
-  }, [pendingReports])
+  }, [stats, allReports, pendingReports])
 
   const priorityExcerpt = useMemo(() => {
     if (!priorityIncident) return null
@@ -619,9 +728,14 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
 
   // ── REAL MODERATION AUDIT TRAIL FROM DATABASE ────────────────────────────
   const resolvedAuditItems = useMemo(() => {
-    return allReports
-      .filter((r) => r.status === 'APPROVED' || r.status === 'REJECTED')
+    return allReports.filter((r) => r.status === 'APPROVED' || r.status === 'REJECTED')
   }, [allReports])
+
+  const auditTotalPages = Math.max(1, Math.ceil(resolvedAuditItems.length / auditPageSize))
+  const paginatedAuditItems = useMemo(() => {
+    const start = (auditPage - 1) * auditPageSize
+    return resolvedAuditItems.slice(start, start + auditPageSize)
+  }, [resolvedAuditItems, auditPage, auditPageSize])
 
   // Format today's date
   const todayStr = new Date().toLocaleDateString('en-GB', {
@@ -1311,7 +1425,7 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                           </td>
                         </tr>
                       ) : (
-                        displayedReports.map((item) => {
+                        paginatedReports.map((item) => {
                         const parsed = parseReportNotes(item.notes)
                         const excerpt = item.raw_excerpt || parsed.excerpt
                         const displayText = excerpt || parsed.userNotes || ''
@@ -1424,6 +1538,76 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                     </tbody>
                   </table>
                 </div>
+
+                {/* Modern Pagination Bar */}
+                {displayedReports.length > 0 && (
+                  <div className="neo-pagination-bar">
+                    <div className="neo-pagination-info">
+                      <span>
+                        Showing <strong>{(queuePage - 1) * queuePageSize + 1}</strong> to{' '}
+                        <strong>{Math.min(queuePage * queuePageSize, displayedReports.length)}</strong> of{' '}
+                        <strong>{displayedReports.length}</strong> reports
+                      </span>
+                      <div className="neo-page-size-selector">
+                        <label htmlFor="queue-page-size">Per page:</label>
+                        <select
+                          id="queue-page-size"
+                          value={queuePageSize}
+                          onChange={(e) => {
+                            setQueuePageSize(Number(e.target.value))
+                            setQueuePage(1)
+                          }}
+                        >
+                          <option value={10}>10</option>
+                          <option value={20}>20</option>
+                          <option value={50}>50</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="neo-pagination-actions">
+                      <button
+                        type="button"
+                        className="neo-btn-page-nav"
+                        disabled={queuePage <= 1}
+                        onClick={() => setQueuePage(1)}
+                        title="First Page"
+                      >
+                        «
+                      </button>
+                      <button
+                        type="button"
+                        className="neo-btn-page-nav"
+                        disabled={queuePage <= 1}
+                        onClick={() => setQueuePage((p) => Math.max(1, p - 1))}
+                        title="Previous Page"
+                      >
+                        ‹ Prev
+                      </button>
+
+                      {renderPaginationNumbers(queuePage, queueTotalPages, setQueuePage)}
+
+                      <button
+                        type="button"
+                        className="neo-btn-page-nav"
+                        disabled={queuePage >= queueTotalPages}
+                        onClick={() => setQueuePage((p) => Math.min(queueTotalPages, p + 1))}
+                        title="Next Page"
+                      >
+                        Next ›
+                      </button>
+                      <button
+                        type="button"
+                        className="neo-btn-page-nav"
+                        disabled={queuePage >= queueTotalPages}
+                        onClick={() => setQueuePage(queueTotalPages)}
+                        title="Last Page"
+                      >
+                        »
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </section>
           )}
@@ -1474,7 +1658,7 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                           </td>
                         </tr>
                       ) : (
-                        resolvedAuditItems.map((item) => {
+                        paginatedAuditItems.map((item) => {
                           const parsed = parseReportNotes(item.notes)
                           const excerpt = item.raw_excerpt || parsed.excerpt
 
@@ -1541,6 +1725,76 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                     </tbody>
                   </table>
                 </div>
+
+                {/* Modern Audit Pagination Bar */}
+                {resolvedAuditItems.length > 0 && (
+                  <div className="neo-pagination-bar">
+                    <div className="neo-pagination-info">
+                      <span>
+                        Showing <strong>{(auditPage - 1) * auditPageSize + 1}</strong> to{' '}
+                        <strong>{Math.min(auditPage * auditPageSize, resolvedAuditItems.length)}</strong> of{' '}
+                        <strong>{resolvedAuditItems.length}</strong> records
+                      </span>
+                      <div className="neo-page-size-selector">
+                        <label htmlFor="audit-page-size">Per page:</label>
+                        <select
+                          id="audit-page-size"
+                          value={auditPageSize}
+                          onChange={(e) => {
+                            setAuditPageSize(Number(e.target.value))
+                            setAuditPage(1)
+                          }}
+                        >
+                          <option value={10}>10</option>
+                          <option value={20}>20</option>
+                          <option value={50}>50</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="neo-pagination-actions">
+                      <button
+                        type="button"
+                        className="neo-btn-page-nav"
+                        disabled={auditPage <= 1}
+                        onClick={() => setAuditPage(1)}
+                        title="First Page"
+                      >
+                        «
+                      </button>
+                      <button
+                        type="button"
+                        className="neo-btn-page-nav"
+                        disabled={auditPage <= 1}
+                        onClick={() => setAuditPage((p) => Math.max(1, p - 1))}
+                        title="Previous Page"
+                      >
+                        ‹ Prev
+                      </button>
+
+                      {renderPaginationNumbers(auditPage, auditTotalPages, setAuditPage)}
+
+                      <button
+                        type="button"
+                        className="neo-btn-page-nav"
+                        disabled={auditPage >= auditTotalPages}
+                        onClick={() => setAuditPage((p) => Math.min(auditTotalPages, p + 1))}
+                        title="Next Page"
+                      >
+                        Next ›
+                      </button>
+                      <button
+                        type="button"
+                        className="neo-btn-page-nav"
+                        disabled={auditPage >= auditTotalPages}
+                        onClick={() => setAuditPage(auditTotalPages)}
+                        title="Last Page"
+                      >
+                        »
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </section>
           )}

@@ -10,6 +10,7 @@ import { verifyApprovedDomains } from './services/domainVerification.mjs'
 import {
   checkVerifiedIntelligence,
   getModerationQueue,
+  getModerationStats,
   processModerationReview,
   submitReport,
   validateCreateReport,
@@ -36,7 +37,21 @@ const server = createServer(async (req, res) => {
   }
 
 
-  // Moderation Queue (Protected GET)
+  // Moderation Stats & High-Level Aggregations (Protected GET)
+  if (req.method === 'GET' && pathname === '/api/moderation/stats') {
+    const auth = await authorizeModerator(req)
+    if (!auth.authorized) {
+      return send(res, 401, { code: 'UNAUTHORIZED', message: auth.error || 'Moderator access required.', requestId }, requestId)
+    }
+    try {
+      const stats = await getModerationStats()
+      return send(res, 200, { ...stats, requestId }, requestId)
+    } catch (error) {
+      return send(res, 502, { code: 'STATS_FETCH_ERROR', message: error.message, requestId }, requestId)
+    }
+  }
+
+  // Moderation Queue (Protected GET) with Pagination Support
   if (req.method === 'GET' && pathname === '/api/moderation/queue') {
     const auth = await authorizeModerator(req)
     if (!auth.authorized) {
@@ -44,8 +59,30 @@ const server = createServer(async (req, res) => {
     }
     try {
       const statusParam = parsedUrl.searchParams.get('status') || 'PENDING'
-      const reports = await getModerationQueue(statusParam)
-      return send(res, 200, { reports, count: reports.length, status: statusParam, requestId }, requestId)
+      const pageParam = parseInt(parsedUrl.searchParams.get('page') || '1', 10)
+      const limitParam = parseInt(parsedUrl.searchParams.get('limit') || '20', 10)
+      const page = Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1
+      const limit = Number.isFinite(limitParam) && limitParam > 0 && limitParam <= 100 ? limitParam : 20
+      const offset = (page - 1) * limit
+
+      const { reports, total } = await getModerationQueue({ status: statusParam, limit, offset })
+      const totalPages = Math.ceil(total / limit) || 1
+
+      return send(
+        res,
+        200,
+        {
+          reports,
+          count: reports.length,
+          total,
+          page,
+          limit,
+          totalPages,
+          status: statusParam,
+          requestId,
+        },
+        requestId
+      )
     } catch (error) {
       return send(res, 502, { code: 'QUEUE_FETCH_ERROR', message: error.message, requestId }, requestId)
     }

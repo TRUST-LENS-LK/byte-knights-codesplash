@@ -1805,3 +1805,139 @@
   border-color: #cbd5e1;
 }
 
+/* ── Modern Table Pagination Bar ───────────────────────────────── */
+.neo-pagination-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px;
+  border-top: 1px solid #e2e8f0;
+  background: #f8fafc;
+  border-radius: 0 0 16px 16px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.neo-pagination-info {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.neo-pagination-info strong {
+  color: #0f172a;
+  font-weight: 600;
+}
+
+.neo-page-size-selector {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.neo-page-size-selector label {
+  font-size: 11.5px;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.neo-page-size-selector select {
+  padding: 4px 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #0f172a;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  outline: none;
+  transition: all 0.15s ease;
+}
+
+.neo-page-size-selector select:focus {
+  border-color: #0284c7;
+  box-shadow: 0 0 0 2px rgba(2, 132, 199, 0.15);
+}
+
+.neo-pagination-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.neo-page-numbers {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.neo-page-ellipsis {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 30px;
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.neo-btn-page-nav {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 10px;
+  min-width: 32px;
+  height: 30px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.neo-btn-page-nav:hover:not(:disabled) {
+  border-color: #cbd5e1;
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.neo-btn-page-nav:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  background: #f8fafc;
+}
+
+.neo-page-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 30px;
+  height: 30px;
+  padding: 0 8px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.neo-page-pill:hover {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+}
+
+.neo-page-pill.active {
+  background: #0f172a;
+  color: #ffffff;
+  border-color: #0f172a;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.2);
+}
+
