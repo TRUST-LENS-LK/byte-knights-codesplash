@@ -149,3 +149,4 @@ TrustLens_LK_Full_Development_Plan.pdf
 # Agents
 AGENTS.md
 
+\n# Nested package-lock files (monorepo uses root lock file only)\napps/web/package-lock.json\npackages/*/package-lock.json\nservices/*/package-lock.json
