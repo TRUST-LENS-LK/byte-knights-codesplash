@@ -1,1 +1,18 @@
-{"name":"@trustlens/rules","version":"0.1.0","private":true,"type":"module","main":"src/index.ts","dependencies":{"@trustlens/contracts":"file:../contracts"}}
+{
+  "name": "@trustlens/rules",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@trustlens/contracts": "file:../contracts"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.4"
+  }
+}
+
