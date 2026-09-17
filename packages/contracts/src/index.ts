@@ -42,14 +42,29 @@ export const CANONICAL_SIGNALS = [
 
 export type CanonicalSignal = (typeof CANONICAL_SIGNALS)[number];
 
-export const submissionSchema = z.object({
-  type: z.enum(["message", "url", "screenshot"]),
-  text: z.string().max(10000).optional(),
-  languageHint: z
-    .enum(["en", "si", "singlish", "mixed"])
-    .optional(),
-  retentionConsent: z.boolean().default(false),
-});
+// A submission's required fields depend on its type: a "message" needs text, a
+// "url" needs a proper url string, and a "screenshot" needs an image reference
+// (added as an optional field for now; Member 2 owns tightening this once the
+// upload/OCR flow exists).
+export const submissionSchema = z
+  .object({
+    type: z.enum(["message", "url", "screenshot"]),
+    text: z.string().max(10000).optional(),
+    url: z.string().url().max(2048).optional(),
+    imageRef: z.string().max(512).optional(),
+    languageHint: z
+      .enum(["en", "si", "singlish", "mixed"])
+      .optional(),
+    retentionConsent: z.boolean().default(false),
+  })
+  .refine((submission) => submission.type !== "url" || Boolean(submission.url), {
+    message: "url is required when type is 'url'.",
+    path: ["url"],
+  })
+  .refine((submission) => submission.type !== "message" || Boolean(submission.text), {
+    message: "text is required when type is 'message'.",
+    path: ["text"],
+  });
 
 export const extractedEntitySchema = z.object({
   type: z.enum([
