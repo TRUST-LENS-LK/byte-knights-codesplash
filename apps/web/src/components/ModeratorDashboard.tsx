@@ -8,7 +8,6 @@ import {
   RefreshCw,
   LogOut,
   ArrowLeft,
-  X,
   Globe,
   Sparkles,
   ChevronRight,
@@ -34,22 +33,13 @@ import {
 } from '../services/moderatorService'
 import { defangIndicator } from '../services/reportingService'
 import { formatRelativeTime } from '../utils/formatTime'
+import { ReportDetailModal } from './modals/ReportDetailModal'
+import { ReviewDecisionModal } from './modals/ReviewDecisionModal'
 import './ModeratorDashboard.css'
 
 export interface ModeratorDashboardProps {
   onBackToScanner: () => void
 }
-
-const CATEGORIES = [
-  'Banking Phishing',
-  'Job Scam',
-  'Gov Impersonation',
-  'Lottery / Prize Fraud',
-  'OTP Theft',
-  'Malicious Link / APK',
-  'Telecom / Utility Bill Scam',
-  'False Alarm',
-]
 
 /**
  * Normalizes any pre-existing brackets so indicators never show [[.]]
@@ -381,36 +371,9 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
   const [searchQuery, setSearchQuery] = useState('')
   const [isLoadingQueue, setIsLoadingQueue] = useState(false)
   const [queueError, setQueueError] = useState<string | null>(null)
-  const [expandedExcerptIds, setExpandedExcerptIds] = useState<Set<string>>(new Set())
-  const [isAllExcerptsExpanded, setIsAllExcerptsExpanded] = useState(false)
-
-  const toggleExcerptExpanded = (id: string) => {
-    setExpandedExcerptIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) {
-        next.delete(id)
-      } else {
-        next.add(id)
-      }
-      return next
-    })
-  }
-
-  const toggleAllExcerpts = () => {
-    if (isAllExcerptsExpanded) {
-      setExpandedExcerptIds(new Set())
-      setIsAllExcerptsExpanded(false)
-    } else {
-      setExpandedExcerptIds(new Set(allReports.map((r) => r.id)))
-      setIsAllExcerptsExpanded(true)
-    }
-  }
-
-  // Active Review State
-  const [activeReviewId, setActiveReviewId] = useState<string | null>(null)
-  const [reviewCategory, setReviewCategory] = useState<string>('Banking Phishing')
-  const [reviewIndicatorType, setReviewIndicatorType] = useState<'domain' | 'content_hash' | 'url'>('domain')
-  const [reviewNotes, setReviewNotes] = useState<string>('')
+  // Dedicated Modal Dialog State
+  const [detailModalReport, setDetailModalReport] = useState<ModerationQueueItem | null>(null)
+  const [reviewModalReport, setReviewModalReport] = useState<ModerationQueueItem | null>(null)
   const [isProcessingReview, setIsProcessingReview] = useState(false)
   const [isSeeding, setIsSeeding] = useState(false)
 
@@ -492,29 +455,33 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
     }
   }
 
-  const handleApprove = async (report: ModerationQueueItem) => {
+  const handleModalApprove = async (
+    report: ModerationQueueItem,
+    category: string,
+    indicatorType: 'domain' | 'content_hash' | 'url',
+    notes: string
+  ) => {
     if (!token) return
     setIsProcessingReview(true)
     const res = await reviewModerationItem(token, {
       reportId: report.id,
       action: 'APPROVE',
-      category: reviewCategory,
-      indicatorType: report.reported_domain ? reviewIndicatorType : 'content_hash',
-      notes: reviewNotes.trim() || 'Approved by moderator and sanitized for threat intelligence.',
+      category,
+      indicatorType: report.reported_domain ? indicatorType : 'content_hash',
+      notes: notes.trim() || 'Approved by moderator and sanitized for threat intelligence.',
     })
     setIsProcessingReview(false)
 
     if (res.success) {
       showToast(`Report ${report.id.slice(0, 8)} approved and published to verified threat feed.`)
-      setActiveReviewId(null)
-      setReviewNotes('')
+      setReviewModalReport(null)
       void loadReports()
     } else {
       showToast(`Approval failed: ${res.error}`)
     }
   }
 
-  const handleReject = async (report: ModerationQueueItem) => {
+  const handleModalReject = async (report: ModerationQueueItem) => {
     if (!token) return
     if (!window.confirm('Dismiss this report without publishing threat intelligence?')) return
     setIsProcessingReview(true)
@@ -527,7 +494,7 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
 
     if (res.success) {
       showToast(`Report ${report.id.slice(0, 8)} marked as rejected.`)
-      setActiveReviewId(null)
+      setReviewModalReport(null)
       void loadReports()
     } else {
       showToast(`Action failed: ${res.error}`)
@@ -1216,10 +1183,7 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                             onClick={() => {
                               setActiveNav('QUEUE')
                               setActiveTab('PENDING')
-                              setActiveReviewId(priorityIncident.id)
-                              if (priorityIncident.reported_domain) {
-                                setReviewIndicatorType('domain')
-                              }
+                              setReviewModalReport(priorityIncident)
                             }}
                           >
                             Review in Queue →
@@ -1269,7 +1233,6 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                         className={`neo-filter-tab-btn ${activeTab === tab ? 'active' : ''}`}
                         onClick={() => {
                           setActiveTab(tab)
-                          setActiveReviewId(null)
                         }}
                       >
                         {tab === 'PENDING'
@@ -1291,17 +1254,6 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
                     />
-
-                    {/* Toggle Expand / Collapse All Excerpts */}
-                    <button
-                      type="button"
-                      className="neo-btn-seed-subtle"
-                      onClick={toggleAllExcerpts}
-                      title={isAllExcerptsExpanded ? 'Collapse all table excerpts' : 'Expand all excerpts in queue table'}
-                    >
-                      <Eye size={13} color="#0284c7" aria-hidden="true" />
-                      <span>{isAllExcerptsExpanded ? 'Collapse Excerpts' : 'View All Excerpts'}</span>
-                    </button>
 
                     {/* Seed Demo Reports Button (Cleanly placed in toolbar) */}
                     <button
@@ -1360,268 +1312,114 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                         </tr>
                       ) : (
                         displayedReports.map((item) => {
-                          const isReviewing = activeReviewId === item.id
-                          const parsed = parseReportNotes(item.notes)
-                          const excerpt = item.raw_excerpt || parsed.excerpt
-                          const isExcerptExpanded = expandedExcerptIds.has(item.id)
+                        const parsed = parseReportNotes(item.notes)
+                        const excerpt = item.raw_excerpt || parsed.excerpt
+                        const displayText = excerpt || parsed.userNotes || ''
 
-                          return (
-                            <React.Fragment key={item.id}>
-                              <tr>
-                                {/* Indicator (Clean light pastel badge, no dark block) */}
-                                <td>
-                                  <div className="neo-indicator-cell">
-                                    <Globe size={13} color="#64748b" aria-hidden="true" />
-                                    <span className={`neo-indicator-badge ${!item.reported_domain ? 'text-only' : item.status === 'APPROVED' && item.report_type === 'false_positive' ? 'safe' : ''}`}>
-                                      {formatCleanIndicator(item.reported_domain)}
-                                    </span>
-                                  </div>
-                                </td>
+                        return (
+                          <tr key={item.id}>
+                            {/* Indicator */}
+                            <td>
+                              <div className="neo-indicator-cell">
+                                <Globe size={13} color="#64748b" aria-hidden="true" />
+                                <span
+                                  className={`neo-indicator-badge ${
+                                    !item.reported_domain
+                                      ? 'text-only'
+                                      : item.status === 'APPROVED' && item.report_type === 'false_positive'
+                                        ? 'safe'
+                                        : ''
+                                  }`}
+                                >
+                                  {formatCleanIndicator(item.reported_domain)}
+                                </span>
+                              </div>
+                            </td>
 
-                                {/* Classification (Single-line pill) */}
-                                <td>
-                                  <span className={`neo-pill-badge ${item.report_type}`}>
-                                    {item.report_type === 'suspicious'
-                                      ? 'Reported Threat'
-                                      : item.report_type === 'false_positive'
-                                        ? 'False Alarm'
-                                        : 'Evaded Threat'}
+                            {/* Classification */}
+                            <td>
+                              <span className={`neo-pill-badge ${item.report_type}`}>
+                                {item.report_type === 'suspicious'
+                                  ? 'Reported Threat'
+                                  : item.report_type === 'false_positive'
+                                    ? 'False Alarm'
+                                    : 'Evaded Threat'}
+                              </span>
+                            </td>
+
+                            {/* Submitter Excerpt with Modal Trigger */}
+                            <td style={{ maxWidth: '320px' }}>
+                              {displayText ? (
+                                <div className="neo-excerpt-cell">
+                                  <span
+                                    className="neo-excerpt-text collapsed"
+                                    title="Click to inspect full submission evidence"
+                                    onClick={() => setDetailModalReport(item)}
+                                    style={{ cursor: 'pointer' }}
+                                  >
+                                    {excerpt ? `"${excerpt}"` : parsed.userNotes}
                                   </span>
-                                </td>
-
-                                {/* Submitter Excerpt with Quick Expand / Collapse */}
-                                <td style={{ maxWidth: '320px' }}>
-                                  {excerpt || parsed.userNotes ? (
-                                    <div className="neo-excerpt-cell">
-                                      <span
-                                        className={`neo-excerpt-text ${isExcerptExpanded ? 'expanded' : 'collapsed'}`}
-                                        title={isExcerptExpanded ? '' : excerpt || parsed.userNotes || ''}
-                                      >
-                                        {excerpt ? `"${excerpt}"` : parsed.userNotes}
-                                      </span>
-                                      {(excerpt || parsed.userNotes || '').length > 40 && (
-                                        <button
-                                          type="button"
-                                          className="neo-btn-excerpt-toggle"
-                                          onClick={(e) => {
-                                            e.stopPropagation()
-                                            toggleExcerptExpanded(item.id)
-                                          }}
-                                        >
-                                          {isExcerptExpanded ? 'Show less' : 'View full text'}
-                                        </button>
-                                      )}
-                                    </div>
-                                  ) : (
-                                    <span style={{ fontSize: '11.5px', color: '#94a3b8', fontStyle: 'italic' }}>
-                                      No excerpt provided
-                                    </span>
-                                  )}
-                                </td>
-
-                                {/* SHA-256 (Subtle light badge, no dark box) */}
-                                <td>
-                                  <span className="neo-fingerprint-badge" title={item.content_sha256}>
-                                    {item.content_sha256.slice(0, 10)}...
-                                  </span>
-                                </td>
-
-                                {/* Status */}
-                                <td>
-                                  <span className={`neo-status-pill ${item.status}`}>
-                                    {item.status}
-                                  </span>
-                                </td>
-
-                                {/* Action */}
-                                <td>
-                                  {item.status === 'PENDING' ? (
-                                    <button
-                                      type="button"
-                                      className={`neo-btn-table-action ${isReviewing ? 'active-review' : ''}`}
-                                      onClick={() => {
-                                        if (isReviewing) {
-                                          setActiveReviewId(null)
-                                        } else {
-                                          setActiveReviewId(item.id)
-                                          if (item.reported_domain) {
-                                            setReviewIndicatorType('domain')
-                                          } else {
-                                            setReviewIndicatorType('content_hash')
-                                          }
-                                        }
-                                      }}
-                                    >
-                                      {isReviewing ? 'Close' : 'Review & Decide'}
-                                    </button>
-                                  ) : (
-                                    <span style={{ fontSize: '11px', color: '#94a3b8', fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                      <CheckCircle2 size={11} color="#10b981" aria-hidden="true" />
-                                      <span>{formatRelativeTime(item.updated_at || item.created_at)}</span>
-                                    </span>
-                                  )}
-                                </td>
-                              </tr>
-
-                              {/* Inline Review Drawer with Complete Evidence Details */}
-                              {isReviewing && (
-                                <tr>
-                                  <td colSpan={6} style={{ padding: 0 }}>
-                                    <div className="neo-review-drawer">
-                                      <div className="neo-drawer-header">
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                          <ShieldAlert size={16} color="#d97706" aria-hidden="true" />
-                                          <span>Review Submission Evidence & Consensus (Report ID: {item.id.slice(0, 8)})</span>
-                                        </div>
-                                        <button
-                                          type="button"
-                                          style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: '#64748b' }}
-                                          onClick={() => setActiveReviewId(null)}
-                                          title="Close review drawer"
-                                        >
-                                          <X size={15} aria-hidden="true" />
-                                        </button>
-                                      </div>
-
-                                      {/* ── Complete Submission Details Panel (All details visible) ── */}
-                                      <div className="neo-drawer-preview-card">
-                                        <div className="neo-drawer-preview-meta">
-                                          <div className="neo-preview-meta-item">
-                                            <span className="neo-preview-meta-label">Target Indicator</span>
-                                            <div className="neo-indicator-cell">
-                                              <Globe size={12} color="#64748b" aria-hidden="true" />
-                                              <span className={`neo-indicator-badge ${!item.reported_domain ? 'text-only' : ''}`}>
-                                                {formatCleanIndicator(item.reported_domain)}
-                                              </span>
-                                            </div>
-                                          </div>
-
-                                          <div className="neo-preview-meta-item">
-                                            <span className="neo-preview-meta-label">Citizen Classification</span>
-                                            <span className={`neo-pill-badge ${item.report_type}`}>
-                                              {item.report_type === 'suspicious'
-                                                ? 'Reported Threat'
-                                                : item.report_type === 'false_positive'
-                                                  ? 'False Alarm'
-                                                  : 'Evaded Threat'}
-                                            </span>
-                                          </div>
-
-                                          <div className="neo-preview-meta-item">
-                                            <span className="neo-preview-meta-label">Submitted At</span>
-                                            <span className="neo-preview-meta-val">
-                                              {new Date(item.created_at).toLocaleString()} ({formatRelativeTime(item.created_at)})
-                                            </span>
-                                          </div>
-
-                                          <div className="neo-preview-meta-item full-width">
-                                            <span className="neo-preview-meta-label">Content SHA-256 Fingerprint</span>
-                                            <span className="neo-fingerprint-badge full" title={item.content_sha256}>
-                                              {item.content_sha256}
-                                            </span>
-                                          </div>
-                                        </div>
-
-                                        {/* Full Submitter Message & Notes */}
-                                        <div className="neo-drawer-excerpt-box">
-                                          <div className="neo-drawer-excerpt-header">
-                                            <FileText size={13} color="#475569" aria-hidden="true" />
-                                            <span>Complete Submitter Message Excerpt</span>
-                                          </div>
-                                          <div className="neo-drawer-excerpt-body">
-                                            {excerpt ? (
-                                              <blockquote className="neo-drawer-quote">"{excerpt}"</blockquote>
-                                            ) : (
-                                              <p className="neo-drawer-no-excerpt">No raw message text was attached to this submission.</p>
-                                            )}
-                                            {parsed.userNotes && (
-                                              <div className="neo-drawer-user-notes">
-                                                <strong>Citizen Submitter Notes:</strong> {parsed.userNotes}
-                                              </div>
-                                            )}
-                                          </div>
-                                        </div>
-                                      </div>
-
-                                      {/* Decision Form Card */}
-                                      <div className="neo-drawer-action-card">
-                                        <div className="neo-drawer-action-header">
-                                          <CheckCircle2 size={14} color="#15803d" aria-hidden="true" />
-                                          <span>Publish to Verified Threat Intelligence Shield</span>
-                                        </div>
-
-                                        <div className="neo-drawer-grid">
-                                          <div className="neo-form-field">
-                                            <label>Threat Category</label>
-                                            <select
-                                              value={reviewCategory}
-                                              onChange={(e) => setReviewCategory(e.target.value)}
-                                            >
-                                              {CATEGORIES.map((c) => (
-                                                <option key={c} value={c}>
-                                                  {c}
-                                                </option>
-                                              ))}
-                                            </select>
-                                          </div>
-
-                                          {item.reported_domain && (
-                                            <div className="neo-form-field">
-                                              <label>Publish Target As</label>
-                                              <select
-                                                value={reviewIndicatorType}
-                                                onChange={(e) =>
-                                                  setReviewIndicatorType(
-                                                    e.target.value as 'domain' | 'content_hash' | 'url'
-                                                  )
-                                                }
-                                              >
-                                                <option value="domain">
-                                                  Domain ({formatCleanIndicator(item.reported_domain)})
-                                                </option>
-                                                <option value="content_hash">Full Content Hash</option>
-                                              </select>
-                                            </div>
-                                          )}
-
-                                          <div className="neo-form-field">
-                                            <label>Sanitized Audit Notes</label>
-                                            <input
-                                              type="text"
-                                              value={reviewNotes}
-                                              onChange={(e) => setReviewNotes(e.target.value)}
-                                              placeholder="e.g. Confirmed phishing domain impersonating bank."
-                                            />
-                                          </div>
-
-                                          <div className="neo-drawer-buttons">
-                                            <button
-                                              type="button"
-                                              className="neo-btn-reject-subtle"
-                                              onClick={() => handleReject(item)}
-                                              disabled={isProcessingReview}
-                                            >
-                                              Dismiss / Reject
-                                            </button>
-                                            <button
-                                              type="button"
-                                              className="neo-btn-approve-lime"
-                                              onClick={() => handleApprove(item)}
-                                              disabled={isProcessingReview}
-                                            >
-                                              <ShieldCheck size={14} aria-hidden="true" />
-                                              <span>Confirm & Publish</span>
-                                            </button>
-                                          </div>
-                                        </div>
-                                      </div>
-                                    </div>
-                                  </td>
-                                </tr>
+                                  <button
+                                    type="button"
+                                    className="neo-btn-excerpt-toggle"
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      setDetailModalReport(item)
+                                    }}
+                                  >
+                                    View full text
+                                  </button>
+                                </div>
+                              ) : (
+                                <span style={{ fontSize: '11.5px', color: '#94a3b8', fontStyle: 'italic' }}>
+                                  No excerpt provided
+                                </span>
                               )}
-                            </React.Fragment>
-                          )
-                        })
+                            </td>
+
+                            {/* SHA-256 Fingerprint */}
+                            <td>
+                              <span className="neo-fingerprint-badge" title={item.content_sha256}>
+                                {item.content_sha256.slice(0, 10)}...
+                              </span>
+                            </td>
+
+                            {/* Status */}
+                            <td>
+                              <span className={`neo-status-pill ${item.status}`}>
+                                {item.status}
+                              </span>
+                            </td>
+
+                            {/* Action Trigger */}
+                            <td>
+                              {item.status === 'PENDING' ? (
+                                <button
+                                  type="button"
+                                  className="neo-btn-table-action"
+                                  onClick={() => setReviewModalReport(item)}
+                                >
+                                  Review & Decide
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  className="neo-btn-table-action"
+                                  style={{
+                                    background: '#f1f5f9',
+                                    color: '#475569',
+                                    borderColor: '#cbd5e1',
+                                  }}
+                                  onClick={() => setDetailModalReport(item)}
+                                  title="Inspect submission record"
+                                >
+                                  Inspect
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        )
+                      })
                       )}
                     </tbody>
                   </table>
@@ -1704,20 +1502,23 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                                 {excerpt || parsed.userNotes ? (
                                   <div className="neo-excerpt-cell">
                                     <span
-                                      className={`neo-excerpt-text ${expandedExcerptIds.has(item.id) ? 'expanded' : 'collapsed'}`}
-                                      title={expandedExcerptIds.has(item.id) ? '' : excerpt || parsed.userNotes || ''}
+                                      className="neo-excerpt-text collapsed"
+                                      title="Click to inspect full submission evidence"
+                                      onClick={() => setDetailModalReport(item)}
+                                      style={{ cursor: 'pointer' }}
                                     >
                                       {excerpt ? `"${excerpt}"` : parsed.userNotes}
                                     </span>
-                                    {(excerpt || parsed.userNotes || '').length > 40 && (
-                                      <button
-                                        type="button"
-                                        className="neo-btn-excerpt-toggle"
-                                        onClick={() => toggleExcerptExpanded(item.id)}
-                                      >
-                                        {expandedExcerptIds.has(item.id) ? 'Show less' : 'View full text'}
-                                      </button>
-                                    )}
+                                    <button
+                                      type="button"
+                                      className="neo-btn-excerpt-toggle"
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        setDetailModalReport(item)
+                                      }}
+                                    >
+                                      View full text
+                                    </button>
                                   </div>
                                 ) : (
                                   <span style={{ fontSize: '11.5px', color: '#94a3b8', fontStyle: 'italic' }}>
@@ -1745,6 +1546,31 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
           )}
         </main>
       </div>
+
+      {/* ── Evidence Detail & Full Text Modal (Inspect up to 10,000+ words) ── */}
+      <ReportDetailModal
+        isOpen={Boolean(detailModalReport)}
+        report={detailModalReport}
+        onClose={() => setDetailModalReport(null)}
+        onOpenReview={
+          detailModalReport?.status === 'PENDING'
+            ? (rep) => {
+                setDetailModalReport(null)
+                setReviewModalReport(rep)
+              }
+            : undefined
+        }
+      />
+
+      {/* ── Review Decision Modal (Consensus, Classification & Sanitization) ── */}
+      <ReviewDecisionModal
+        isOpen={Boolean(reviewModalReport)}
+        report={reviewModalReport}
+        onClose={() => setReviewModalReport(null)}
+        onApprove={handleModalApprove}
+        onReject={handleModalReject}
+        isProcessing={isProcessingReview}
+      />
     </div>
   )
 }
