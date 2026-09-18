@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto'
+import { randomUUID, createHash } from 'node:crypto'
 import { SUPABASE_SERVICE_ROLE_KEY, SUPABASE_URL } from '../config/env.mjs'
 import { DEMO_REPORTS } from '../fixtures/demoReports.mjs'
 
@@ -9,7 +9,7 @@ const inMemoryReports = new Map()
 const inMemoryIntel = new Map()
 const inMemoryAuditLogs = []
 
-function isSupabaseConfigured() {
+export function isSupabaseConfigured() {
   return Boolean(SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY)
 }
 
@@ -52,6 +52,9 @@ export function validateCreateReport(body) {
   const validTypes = ['suspicious', 'false_positive', 'false_negative']
   if (!body.reportType || !validTypes.includes(body.reportType)) {
     return `reportType is required and must be one of: ${validTypes.join(', ')}.`
+  }
+  if (!body.contentSha256 && typeof body.text === 'string' && body.text.trim()) {
+    body.contentSha256 = createHash('sha256').update(body.text.trim()).digest('hex')
   }
   if (!body.contentSha256 || typeof body.contentSha256 !== 'string' || !/^[a-f0-9]{64}$/i.test(body.contentSha256)) {
     return 'contentSha256 is required and must be a 64-character hex string.'
@@ -124,7 +127,7 @@ export async function submitReport(payload) {
       throw new Error(`Failed to persist report to Supabase: ${response.statusText}`)
     }
     const [saved] = await response.json()
-    return saved || report
+    return { ...report, ...(saved || {}) }
   }
 
   inMemoryReports.set(report.id, report)

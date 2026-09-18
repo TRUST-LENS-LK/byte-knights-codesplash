@@ -1,1 +1,26 @@
-{"name":"@trustlens/rules","version":"0.1.0","private":true,"type":"module","main":"src/index.ts","dependencies":{"@trustlens/contracts":"file:../contracts"}}
+{
+  "name": "@trustlens/rules",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "node ../../node_modules/typescript/lib/tsc.js -p tsconfig.json",
+    "check": "node ../../node_modules/typescript/lib/tsc.js -p tsconfig.json --noEmit",
+    "test": "node ../../node_modules/vitest/vitest.mjs run"
+  },
+  "dependencies": {
+    "@trustlens/contracts": "file:../contracts"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "vitest": "^3.2.4"
+  }
+}

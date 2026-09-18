@@ -11,6 +11,8 @@ Available endpoints:
 
 - `GET /health`
 - `POST /api/analyze`
+- `POST /api/reports`
+- `POST /api/scanner/preview` validates URL safety without fetching the target.
 
 The service-role key is server-only. Never expose it in the React app or commit `.env`.
 
