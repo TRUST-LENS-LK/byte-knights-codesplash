@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Shield, ArrowLeft, ShieldCheck, AlertOctagon, AlertTriangle } from 'lucide-react'
+import { Shield, ShieldCheck, AlertOctagon, AlertTriangle } from 'lucide-react'
 import { analyzeSubmission, analyzeWithApi } from './services/analysisService'
 import { CommunityReportBar } from './components/CommunityReportBar'
 import { ReportModal } from './components/ReportModal'
@@ -85,6 +85,10 @@ function App() {
 
   const detectedDomain = entities.find((e) => e.type === 'url' || e.type === 'domain')?.value || null
 
+  if (view === 'moderator') {
+    return <ModeratorDashboard onBackToScanner={() => setView('checker')} />
+  }
+
   return (
     <main className="app-shell">
       <nav className="nav">
@@ -92,24 +96,14 @@ function App() {
         <span className="brand" style={{ cursor: 'pointer' }} onClick={() => setView('checker')}>TrustLens <em>LK</em></span>
         <span className="nav-note">Scam decision support</span>
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '10px' }}>
-          {view === 'checker' ? (
-            <button type="button" className="btn-secondary" onClick={() => setView('moderator')} style={{ fontSize: '12px', padding: '6px 14px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-              <Shield size={14} aria-hidden="true" />
-              <span>Moderator Portal</span>
-            </button>
-          ) : (
-            <button type="button" className="btn-secondary" onClick={() => setView('checker')} style={{ fontSize: '12px', padding: '6px 14px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-              <ArrowLeft size={14} aria-hidden="true" />
-              <span>Public Scanner</span>
-            </button>
-          )}
+          <button type="button" className="btn-secondary" onClick={() => setView('moderator')} style={{ fontSize: '12px', padding: '6px 14px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+            <Shield size={14} aria-hidden="true" />
+            <span>Moderator Portal</span>
+          </button>
         </div>
       </nav>
-      {view === 'moderator' ? (
-        <ModeratorDashboard onBackToScanner={() => setView('checker')} />
-      ) : (
-        <>
-          <section className="hero">
+      <>
+        <section className="hero">
             <div className="hero-copy"><p className="eyebrow">Check before you act</p><h1>Does this message deserve your trust?</h1><p className="intro">Paste a suspicious message or link. TrustLens looks for warning signs and explains the safest next step.</p><div className="trust-points"><span>Evidence based</span><span>Private by default</span><span>Built for Sri Lanka</span></div></div>
             <div className="checker-card"><label htmlFor="message">Suspicious message or URL</label><textarea id="message" value={text} maxLength={10000} onChange={(event) => { setText(event.target.value); setChecked(false); setIntelligenceOverlay(null) }} placeholder="Example: Congratulations! You have been selected for a job. Pay Rs. 5,000 today and send your OTP..." /><div className="card-footer"><span>{text.length}/10,000 characters</span><button type="button" onClick={() => void checkMessage()} disabled={!text.trim() || isAnalyzing}>{isAnalyzing ? 'Checking...' : 'Check safely'}</button></div><p className="privacy-note">Do not include passwords, OTPs, or unnecessary private information.</p><small>Analysis: {apiMode === 'api' ? 'local API' : 'offline fallback'}</small></div>
           </section>
@@ -225,7 +219,6 @@ function App() {
           )}
           <ReportModal isOpen={isReportModalOpen} onClose={() => setIsReportModalOpen(false)} content={text} reportedDomain={detectedDomain} />
         </>
-      )}
       <footer><span>TrustLens LK</span><span>Rules and verified checks guide the recommendation.</span></footer>
     </main>
   )
