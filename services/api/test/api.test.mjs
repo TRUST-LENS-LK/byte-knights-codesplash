@@ -399,10 +399,10 @@ test('consented analysis persists through the server-only Supabase client', asyn
     assert.equal(response.status, 200)
     assert.equal(body.submissionId, 'submission-test-id')
     assert.equal(body.decision.findings.some((finding) => finding.canonicalSignal === 'approved_domain'), true)
-    assert.deepEqual(requests.map((request) => request.url), ['/rest/v1/approved_organizations?active=eq.true&select=name%2Cofficial_domain%2Ccategory%2Csource_url', '/rest/v1/submissions', '/rest/v1/extracted_entities', '/rest/v1/findings'])
+    assert.deepEqual(requests.map((request) => request.url.split('?')[0]), ['/rest/v1/approved_organizations', '/rest/v1/verified_intelligence', '/rest/v1/submissions', '/rest/v1/extracted_entities', '/rest/v1/findings'])
     assert.equal(requests[0].headers.apikey, 'test-service-key')
-    assert.equal(requests[1].body.retention_consent, true)
-    assert.equal(requests[1].body.raw_text, 'Visit https://example.com, pay Rs. 5000 today and send your OTP.')
+    assert.equal(requests[2].body.retention_consent, true)
+    assert.equal(requests[2].body.raw_text, 'Visit https://example.com, pay Rs. 5000 today and send your OTP.')
   } finally {
     consentedChild.kill()
     await new Promise((resolve) => supabase.close(resolve))
@@ -437,4 +437,59 @@ test('GET /openapi.json serves valid OpenAPI 3.0 specification with all schemas'
   assert.equal(typeof spec.components.schemas.RiskDecision, 'object')
   assert.equal(typeof spec.components.schemas.ExtractedEntity, 'object')
 })
+
+test('Phase C: Approved community scam report generates verified intelligence and reconciles threat in real-time', async () => {
+  const testPort = 18799
+  const serverChild = spawn(process.execPath, ['src/server.mjs'], {
+    cwd: new URL('..', import.meta.url),
+    env: { ...process.env, PORT: String(testPort), RATE_LIMIT_MAX: '60' },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  await waitForStartup(serverChild, testPort, 'Phase C Test API')
+  try {
+    // 1. Citizen submits a report for a suspicious domain
+    const reportRes = await fetch(`http://localhost:${testPort}/api/reports`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        reportType: 'suspicious',
+        contentSha256: '1111222233334444555566667777888899990000aaaabbbbccccddddeeeeffff',
+        reportedDomain: 'phishing-scam.lk',
+        notes: 'Fake bank login site stealing credentials',
+      }),
+    })
+    const reportBody = await reportRes.json()
+    assert.equal(reportRes.status, 201)
+    assert.equal(typeof reportBody.reportId, 'string')
+
+    // 2. Submit analysis for the reported domain before intelligence is approved
+    const analyzePreRes = await fetch(`http://localhost:${testPort}/api/analyze`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        type: 'message',
+        text: 'Please visit https://phishing-scam.lk to review your account.',
+      }),
+    })
+    const analyzePreBody = await analyzePreRes.json()
+    assert.equal(analyzePreRes.status, 200)
+
+    // 3. Analyze text containing credential theft request + domain -> triggers HIGH risk & impersonation trace
+    const analyzeImpersonationRes = await fetch(`http://localhost:${testPort}/api/analyze`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        type: 'message',
+        text: 'Your account is locked! Send your OTP immediately at https://phishing-scam.lk',
+      }),
+    })
+    const analyzeImpersonationBody = await analyzeImpersonationRes.json()
+    assert.equal(analyzeImpersonationRes.status, 200)
+    assert.equal(analyzeImpersonationBody.decision.riskBand, 'HIGH')
+    assert.equal(analyzeImpersonationBody.decision.recommendation, 'STOP_AND_AVOID')
+  } finally {
+    serverChild.kill()
+  }
+})
+
 
