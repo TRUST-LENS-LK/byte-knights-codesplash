@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Shield, ShieldCheck, AlertOctagon, AlertTriangle, MessageSquare, Camera } from 'lucide-react'
-import { analyzeSubmission, analyzeWithApi } from './services/analysisService'
+import { analyzeSubmission, analyzeWithApi, detectSubmissionType } from './services/analysisService'
 import { CommunityReportBar } from './components/CommunityReportBar'
 import { ReportModal } from './components/ReportModal'
 import { ModeratorDashboard } from './components/ModeratorDashboard'
@@ -22,12 +22,18 @@ interface IntelligenceOverlay {
   reconciliationTrace: string[]
 }
 
+// Breaks a domain or URL so it cannot be accidentally clicked or copied as a
+// live link when shown in the result screen, per the project's rule that
+// suspicious destinations are always defanged before display.
+function defangDisplay(value: string): string {
+  return value.replace(/^http/i, 'hxxp').replaceAll('.', '[.]')
+}
+
 function App() {
   const [view, setView] = useState<'checker' | 'moderator'>('checker')
   const [inputMode, setInputMode] = useState<'text' | 'screenshot'>('text')
   const [isReportModalOpen, setIsReportModalOpen] = useState(false)
   const [text, setText] = useState('')
-  const [submissionType, setSubmissionType] = useState<'message' | 'url' | 'screenshot'>('message')
   const [checked, setChecked] = useState(false)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [apiAnalysis, setApiAnalysis] = useState<ReturnType<typeof analyzeSubmission> | null>(null)
@@ -69,7 +75,11 @@ function App() {
 
   const checkMessage = async (overrideText?: string, typeOverride?: 'message' | 'url' | 'screenshot') => {
     const targetText = overrideText ?? text
-    const targetType = typeOverride ?? submissionType
+    // A screenshot submission always keeps its explicit type. Otherwise,
+    // detect whether the whole input is a bare URL rather than trusting the
+    // stale submissionType state, so pasting just a link is actually checked
+    // as a dedicated URL submission instead of always as a free-text message.
+    const targetType = typeOverride ?? detectSubmissionType(targetText)
     if (!targetText.trim()) return
 
     setIsAnalyzing(true)
@@ -94,12 +104,20 @@ function App() {
   const handleOcrConfirmed = (correctedText: string, confidence: number) => {
     setText(correctedText)
     setOcrConfidence(confidence)
-    setSubmissionType('screenshot')
     setChecked(false)
     void checkMessage(correctedText, 'screenshot')
   }
 
   const detectedDomain = entities.find((e) => e.type === 'url' || e.type === 'domain')?.value || null
+
+  // Surfaces the domain identity check (Member 3's slice) distinctly from
+  // the generic findings list below, since "who owns this domain" deserves a
+  // clearer claimed-vs-actual comparison than a plain evidence card gives.
+  const domainFinding = decision.findings.find(
+    (finding) => finding.canonicalSignal === 'domain_mismatch' || finding.canonicalSignal === 'approved_domain',
+  )
+  const claimedOrganization = entities.find((entity) => entity.type === 'organization')?.value ?? null
+  const actualDomain = entities.find((entity) => entity.type === 'domain')?.value ?? detectedDomain
 
   if (view === 'moderator') {
     return <ModeratorDashboard onBackToScanner={() => setView('checker')} />
@@ -138,7 +156,7 @@ function App() {
               <button
                 type="button"
                 className={`tab-btn ${inputMode === 'text' ? 'active' : ''}`}
-                onClick={() => { setInputMode('text'); setSubmissionType('message'); setOcrConfidence(null) }}
+                onClick={() => { setInputMode('text'); setOcrConfidence(null) }}
                 style={{
                   padding: '8px 14px',
                   borderRadius: '6px',
@@ -160,7 +178,7 @@ function App() {
               <button
                 type="button"
                 className={`tab-btn ${inputMode === 'screenshot' ? 'active' : ''}`}
-                onClick={() => { setInputMode('screenshot'); setSubmissionType('screenshot') }}
+                onClick={() => setInputMode('screenshot')}
                 style={{
                   padding: '8px 14px',
                   borderRadius: '6px',
@@ -273,6 +291,41 @@ function App() {
                     </ul>
                   </details>
                 )}
+              </div>
+            )}
+
+            {domainFinding && (
+              <div
+                className={`domain-evidence ${domainFinding.canonicalSignal === 'domain_mismatch' ? 'mismatch' : 'matched'}`}
+                style={{
+                  border: `1px solid ${domainFinding.canonicalSignal === 'domain_mismatch' ? '#dc2626' : '#16a34a'}`,
+                  borderRadius: '8px',
+                  padding: '14px 16px',
+                  margin: '16px 0',
+                  background: domainFinding.canonicalSignal === 'domain_mismatch' ? 'rgba(220,38,38,0.08)' : 'rgba(22,163,74,0.08)',
+                }}
+              >
+                <h3 style={{ margin: '0 0 8px', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  {domainFinding.canonicalSignal === 'domain_mismatch' ? (
+                    <AlertOctagon size={16} color="#dc2626" aria-hidden="true" />
+                  ) : (
+                    <ShieldCheck size={16} color="#16a34a" aria-hidden="true" />
+                  )}
+                  Domain identity check
+                </h3>
+                <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap', fontSize: '13px', marginBottom: '8px' }}>
+                  {claimedOrganization && (
+                    <div>
+                      <strong>Claims to be:</strong> {claimedOrganization}
+                    </div>
+                  )}
+                  {actualDomain && (
+                    <div>
+                      <strong>Actual destination:</strong> <code>{defangDisplay(actualDomain)}</code>
+                    </div>
+                  )}
+                </div>
+                <p style={{ margin: 0, fontSize: '13px' }}>{domainFinding.evidence}</p>
               </div>
             )}
 
