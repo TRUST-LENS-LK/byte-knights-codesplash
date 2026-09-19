@@ -97,6 +97,7 @@ export const findingSchema = z.object({
   ]),
   strength: z.number().min(0).max(1),
   confidence: z.number().min(0).max(1).optional(),
+  reportCount: z.number().int().nonnegative().optional(),
   limitation: z.string().optional(),
   // Identifies which version of the rule or detector produced this finding,
   // so a stored decision trace stays auditable even after the detector logic
@@ -239,6 +240,7 @@ export const moderationActionSchema = z.object({
   notes: z.string().max(1000).optional().nullable(),
   indicatorType: z.enum(["domain", "content_hash", "phone", "url"]).optional(),
   category: z.string().max(100).optional().nullable(),
+  confidence: z.number().min(0.1).max(1.0).optional().nullable(),
 });
 
 export const verifiedIntelligenceSchema = z.object({
@@ -255,9 +257,25 @@ export const verifiedIntelligenceSchema = z.object({
   createdAt: z.string(),
 });
 
+export const verifiedIntelligenceQuerySchema = z.object({
+  status: z.enum(["active", "retired", "all"]).default("all"),
+  type: z.enum(["domain", "content_hash", "phone", "url", "all"]).default("all"),
+  riskLevel: z.enum(["CONFIRMED_SCAM", "VERIFIED_SAFE", "all"]).default("all"),
+  search: z.string().optional(),
+  page: z.coerce.number().int().positive().default(1),
+  limit: z.coerce.number().int().positive().max(100).default(20),
+});
+
+export const updateIntelligenceStatusSchema = z.object({
+  active: z.boolean(),
+  notes: z.string().max(1000).optional().nullable(),
+});
+
 export type UserReportType = z.infer<typeof userReportTypeSchema>;
 export type UserReportStatus = z.infer<typeof userReportStatusSchema>;
 export type CreateUserReport = z.infer<typeof createUserReportSchema>;
 export type UserReport = z.infer<typeof userReportSchema>;
 export type ModerationAction = z.infer<typeof moderationActionSchema>;
 export type VerifiedIntelligence = z.infer<typeof verifiedIntelligenceSchema>;
+export type VerifiedIntelligenceQuery = z.infer<typeof verifiedIntelligenceQuerySchema>;
+export type UpdateIntelligenceStatus = z.infer<typeof updateIntelligenceStatusSchema>;

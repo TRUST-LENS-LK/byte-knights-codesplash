@@ -1,6 +1,7 @@
 import { randomUUID, createHash } from 'node:crypto'
 import { SUPABASE_SERVICE_ROLE_KEY, SUPABASE_URL } from '../config/env.mjs'
 import { DEMO_REPORTS } from '../fixtures/demoReports.mjs'
+import { analyzeMessage } from '@trustlens/rules'
 
 const REQUEST_TIMEOUT_MS = 8_000
 
@@ -8,6 +9,244 @@ const REQUEST_TIMEOUT_MS = 8_000
 const inMemoryReports = new Map()
 const inMemoryIntel = new Map()
 const inMemoryAuditLogs = []
+
+/**
+ * Extracts normalized plain text from a report for deep deterministic rules analysis.
+ */
+export function extractCleanTextForAnalysis(report) {
+  if (!report) return ''
+  const parts = []
+  if (report.raw_excerpt) parts.push(report.raw_excerpt)
+  if (report.notes) {
+    const match = report.notes.match(/\[Reported Message Excerpt\]:\s*"([^"]+)"/i)
+    if (match) {
+      parts.push(match[1])
+    }
+    const userMatch = report.notes.match(/\[Submitter Context\]:\s*([\s\S]+)$/i)
+    if (userMatch) {
+      parts.push(userMatch[1])
+    } else if (!match) {
+      parts.push(report.notes)
+    }
+  }
+  return parts.join(' ').trim()
+}
+
+/**
+ * Automates deterministic threat triage and risk signal evaluation using @trustlens/rules
+ * and verified threat intelligence matching.
+ */
+export function enrichReportWithTriage(report) {
+  if (!report) return report
+
+  // 1. False positive: Submitter reporting legitimate message incorrectly flagged
+  if (report.report_type === 'false_positive') {
+    return {
+      ...report,
+      threat: { title: 'False Alarm', subtitle: 'User Dispute', type: 'safe' },
+      risk_signal: { level: 'LOW', color: '#10B981' },
+      detected_signals: ['user_dispute'],
+    }
+  }
+
+  const rawDomain = report.reported_domain || ''
+  const domain = rawDomain.toLowerCase().replace(/hxxps?:\/\//i, '').replace(/\[\.\]/g, '.').replace(/\[@\]/g, '@').trim()
+
+  // 2. Check known verified intelligence
+  if (domain) {
+    const knownIntel = Array.from(inMemoryIntel.values()).find(
+      (item) => item.active && item.indicator_value?.toLowerCase() === domain
+    )
+    if (knownIntel) {
+      if (knownIntel.risk_level === 'CONFIRMED_SCAM') {
+        return {
+          ...report,
+          threat: { title: 'Confirmed Threat', subtitle: knownIntel.category || 'Verified Malicious Indicator', type: 'phishing' },
+          risk_signal: { level: 'HIGH', color: '#EF4444' },
+          detected_signals: ['verified_threat_intelligence_match'],
+        }
+      }
+      if (knownIntel.risk_level === 'VERIFIED_SAFE') {
+        return {
+          ...report,
+          threat: { title: 'Official Domain', subtitle: knownIntel.category || 'Verified Entity', type: 'safe' },
+          risk_signal: { level: 'LOW', color: '#10B981' },
+          detected_signals: ['verified_safe_match'],
+        }
+      }
+    }
+  }
+
+  // 3. Check for raw IP address infrastructure (e.g. 192.168.21.144)
+  if (domain && /^(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?$/.test(domain)) {
+    return {
+      ...report,
+      threat: { title: 'Suspicious Domain', subtitle: 'Raw IP Infrastructure', type: 'phishing' },
+      risk_signal: { level: 'HIGH', color: '#EF4444' },
+      detected_signals: ['raw_ip_host'],
+    }
+  }
+
+  // 4. Run deterministic rules engine on content (notes + excerpt)
+  const textToAnalyze = extractCleanTextForAnalysis(report)
+  const decision = textToAnalyze ? analyzeMessage(textToAnalyze) : null
+
+  let title = domain ? 'Suspicious Domain' : 'Suspicious Message'
+  let subtitle = domain ? 'Unverified Web Target' : 'Citizen Submission'
+  let type = domain ? 'phishing' : 'scam'
+  let riskLevel = 'MEDIUM'
+  const detectedSignals = decision?.findings?.map((f) => f.canonicalSignal) || []
+  const lowerText = (textToAnalyze || '').toLowerCase()
+
+  if (decision && decision.findings.length > 0) {
+    const findingCategories = new Set(decision.findings.map((f) => f.category))
+
+    if (findingCategories.has('CREDENTIAL_THEFT')) {
+      title = 'Phishing'
+      subtitle = 'Credential Harvesting'
+      type = 'phishing'
+    } else if (findingCategories.has('ADVANCE_FEE_FRAUD')) {
+      title = 'Scam'
+      subtitle = 'Advance Fee Fraud'
+      type = 'scam'
+    } else if (findingCategories.has('EMPLOYMENT_FRAUD')) {
+      title = 'Scam'
+      subtitle = 'Fake Job Offer'
+      type = 'scam'
+    } else if (findingCategories.has('URGENCY_MANIPULATION')) {
+      title = 'Social Engineering'
+      subtitle = 'Urgency Pressure'
+      type = 'scam'
+    } else if (!domain) {
+      if (/subscription|invoice|refund|renew|charge|geek squad|norton|mcafee|paypal|apple/.test(lowerText)) {
+        title = 'Scam'
+        subtitle = 'Subscription / Invoice Fraud'
+        type = 'scam'
+      } else {
+        title = 'Suspicious Message'
+        subtitle = 'Citizen Submission'
+        type = 'scam'
+      }
+    }
+
+    riskLevel = decision.riskBand === 'HIGH' ? 'HIGH' : decision.riskBand === 'LOW' ? 'LOW' : 'MEDIUM'
+  } else if (!domain) {
+    if (/subscription|invoice|refund|renew|charge|geek squad|norton|mcafee|paypal|apple/.test(lowerText)) {
+      title = 'Scam'
+      subtitle = 'Subscription / Invoice Fraud'
+      type = 'scam'
+    } else if (/job|salary|part-time|hiring|earn|bonus/.test(lowerText)) {
+      title = 'Scam'
+      subtitle = 'Fake Job Offer'
+      type = 'scam'
+    } else if (/lottery|prize|won|lucky|cash|gift|reward/.test(lowerText)) {
+      title = 'Scam'
+      subtitle = 'Lottery / Prize Fraud'
+      type = 'scam'
+    } else if (/boc|combank|bank|hnb|sampath|card|debit|credit|fund|login|verify|otp|pin|password|credential|security/.test(lowerText)) {
+      title = 'Phishing'
+      subtitle = 'Credential Harvesting'
+      type = 'phishing'
+    } else {
+      title = 'Suspicious Message'
+      subtitle = 'Citizen Submission'
+      type = 'scam'
+    }
+  }
+
+  // If report_type === 'false_negative', user reported an evasion that bypassed automated filters
+  if (report.report_type === 'false_negative' && riskLevel === 'LOW') {
+    riskLevel = 'MEDIUM'
+  }
+
+  const colorMap = {
+    HIGH: '#EF4444',
+    MEDIUM: '#F59E0B',
+    LOW: '#10B981',
+  }
+
+  return {
+    ...report,
+    threat: { title, subtitle, type },
+    risk_signal: { level: riskLevel, color: colorMap[riskLevel] || '#F59E0B' },
+    detected_signals: detectedSignals,
+  }
+}
+
+const initialDemoIntel = [
+  {
+    id: 'intel-demo-001',
+    source_report_id: 'report-demo-001',
+    indicator_type: 'domain',
+    indicator_value: 'ceb-bill-pay.top',
+    defanged_value: 'hxxps://ceb-bill-pay[.]top',
+    risk_level: 'CONFIRMED_SCAM',
+    category: 'Utility Phishing',
+    confidence: 0.98,
+    notes: 'Impersonates Ceylon Electricity Board payment portal with fake bill settlement gateway.',
+    report_count: 3,
+    active: true,
+    created_at: new Date(Date.now() - 86400000 * 2).toISOString(),
+    updated_at: new Date(Date.now() - 86400000 * 2).toISOString(),
+  },
+  {
+    id: 'intel-demo-002',
+    source_report_id: 'report-demo-002',
+    indicator_type: 'domain',
+    indicator_value: 'srilanka-telecom-rewards.xyz',
+    defanged_value: 'hxxps://srilanka-telecom-rewards[.]xyz',
+    risk_level: 'CONFIRMED_SCAM',
+    category: 'Telecom Impersonation',
+    confidence: 0.95,
+    notes: 'Fraudulent SMS campaign offering fake data packages requiring OTP entry.',
+    report_count: 5,
+    active: true,
+    created_at: new Date(Date.now() - 86400000 * 4).toISOString(),
+    updated_at: new Date(Date.now() - 86400000 * 4).toISOString(),
+  },
+  {
+    id: 'intel-demo-003',
+    source_report_id: null,
+    indicator_type: 'domain',
+    indicator_value: 'gov.lk',
+    defanged_value: 'hxxps://gov[.]lk',
+    risk_level: 'VERIFIED_SAFE',
+    category: 'Government Portal',
+    confidence: 1.0,
+    notes: 'Official Sri Lanka Government Web Portal top-level domain.',
+    report_count: 1,
+    active: true,
+    created_at: new Date(Date.now() - 86400000 * 10).toISOString(),
+    updated_at: new Date(Date.now() - 86400000 * 10).toISOString(),
+  },
+]
+
+for (const item of initialDemoIntel) {
+  inMemoryIntel.set(item.id, { ...item })
+}
+
+let engineSettings = {
+  enableVerifiedIntel: process.env.ENABLE_VERIFIED_INTEL !== 'false',
+  lastUpdated: new Date().toISOString(),
+  updatedBy: 'system',
+}
+
+export function isVerifiedIntelEnabled() {
+  return engineSettings.enableVerifiedIntel
+}
+
+export function getEngineSettings() {
+  return { ...engineSettings }
+}
+
+export function updateEngineSettings(newSettings = {}, actor = 'moderator') {
+  if (typeof newSettings.enableVerifiedIntel === 'boolean') {
+    engineSettings.enableVerifiedIntel = newSettings.enableVerifiedIntel
+    engineSettings.lastUpdated = new Date().toISOString()
+    engineSettings.updatedBy = actor
+  }
+  return { ...engineSettings }
+}
 
 export function isSupabaseConfigured() {
   return Boolean(SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY)
@@ -77,6 +316,23 @@ export function validateCreateReport(body) {
   return null
 }
 
+/**
+ * Compute dynamically scaled confidence incorporating corroboration count.
+ * Formula: Doubt(n) = (1 - C_base) * (0.65)^(n - 1)
+ *          C_effective = 1 - Doubt(n)
+ * @param {number} baseConfidence - Initial moderator confidence (e.g. 0.70, 0.85, 1.0)
+ * @param {number} reportCount - Number of independent corroborating reports (>= 1)
+ * @returns {number} Effective confidence between 0.5 and 1.0 (rounded to 3 decimals)
+ */
+export function computeEffectiveConfidence(baseConfidence = 1.0, reportCount = 1) {
+  const base = Math.max(0.1, Math.min(1.0, Number(baseConfidence) || 1.0))
+  const n = Math.max(1, Number(reportCount) || 1)
+  if (base >= 0.999 || n === 1) return Number(base.toFixed(3))
+  const doubt = (1.0 - base) * Math.pow(0.65, n - 1)
+  const effective = Math.min(1.0, 1.0 - doubt)
+  return Number(effective.toFixed(3))
+}
+
 export function validateModerationAction(body) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
     return 'Request body must be a JSON object.'
@@ -96,6 +352,12 @@ export function validateModerationAction(body) {
   const validIndicators = ['domain', 'content_hash', 'phone', 'url']
   if (body.indicatorType !== undefined && body.indicatorType !== null && !validIndicators.includes(body.indicatorType)) {
     return `indicatorType must be one of: ${validIndicators.join(', ')}.`
+  }
+  if (body.confidence !== undefined && body.confidence !== null) {
+    const conf = Number(body.confidence)
+    if (isNaN(conf) || conf < 0.1 || conf > 1.0) {
+      return 'confidence must be a number between 0.1 and 1.0.'
+    }
   }
   return null
 }
@@ -170,7 +432,7 @@ export async function getModerationQueue(statusOrOptions = 'PENDING') {
     const contentRange = response.headers.get('content-range') || ''
     const match = contentRange.match(/\/(\d+|\*)$/)
     const total = match && match[1] !== '*' ? parseInt(match[1], 10) : reports.length
-    return { reports, total }
+    return { reports: reports.map(enrichReportWithTriage), total }
   }
 
   const list = Array.from(inMemoryReports.values()).sort(
@@ -179,7 +441,7 @@ export async function getModerationQueue(statusOrOptions = 'PENDING') {
   const filtered = status && status !== 'ALL' ? list.filter((r) => r.status === status) : list
   const total = filtered.length
   const reports = limit !== null && limit > 0 ? filtered.slice(offset, offset + limit) : filtered
-  return { reports, total }
+  return { reports: reports.map(enrichReportWithTriage), total }
 }
 
 function computeStatsFromReports(reports) {
@@ -240,7 +502,7 @@ function computeStatsFromReports(reports) {
             if (report.status === 'APPROVED' || report.status === 'REJECTED') entry.resolved++
           }
         }
-      } catch (_) {}
+      } catch (_) { }
     }
 
     // Categorization
@@ -358,7 +620,7 @@ export function extractDomainVariants(domain) {
 }
 
 export async function processModerationReview(reviewPayload, actorRole = 'moderator') {
-  const { reportId, action, notes, indicatorType, category } = reviewPayload
+  const { reportId, action, notes, indicatorType, category, confidence } = reviewPayload
 
   const report = await getReportById(reportId)
   if (!report) {
@@ -412,6 +674,9 @@ export async function processModerationReview(reviewPayload, actorRole = 'modera
     const rawDomain = rehydrate(storedDomain)
     const primaryVal = rawDomain || report.content_sha256
     const indType = indicatorType || (rawDomain ? 'domain' : 'content_hash')
+    const chosenConfidence = typeof confidence === 'number' && confidence >= 0.1 && confidence <= 1.0
+      ? Number(confidence.toFixed(3))
+      : 1.0
     const intelRecords = []
 
     // Primary indicator record
@@ -423,32 +688,69 @@ export async function processModerationReview(reviewPayload, actorRole = 'modera
       defanged_value: defang(primaryVal),
       risk_level: report.report_type === 'false_positive' ? 'VERIFIED_SAFE' : 'CONFIRMED_SCAM',
       category: category || (report.report_type === 'false_positive' ? 'False Alarm' : 'Reported Scam'),
-      confidence: 1.0,
-      notes: notes || 'Verified by moderator approval',
+      confidence: chosenConfidence,
+      notes: notes || report.notes || 'Verified by moderator approval',
+      report_count: 1,
       active: true,
       created_at: new Date().toISOString(),
     })
 
-    // Dual-index content SHA256 if distinct from primaryVal
-    if (rawDomain && report.content_sha256 && /^[a-f0-9]{64}$/i.test(report.content_sha256)) {
-      intelRecords.push({
-        id: randomUUID(),
-        source_report_id: reportId,
-        indicator_type: 'content_hash',
-        indicator_value: report.content_sha256.toLowerCase(),
-        defanged_value: report.content_sha256.toLowerCase(),
-        risk_level: report.report_type === 'false_positive' ? 'VERIFIED_SAFE' : 'CONFIRMED_SCAM',
-        category: category || (report.report_type === 'false_positive' ? 'False Alarm' : 'Reported Scam'),
-        confidence: 0.95,
-        notes: `Cryptographic fingerprint for verified report ${reportId.slice(0, 8)}`,
-        active: true,
-        created_at: new Date().toISOString(),
-      })
+    // Option A: Only create content_hash if NO rawDomain exists (pure text/phone scam)
+    if (!rawDomain && report.content_sha256 && /^[a-f0-9]{64}$/i.test(report.content_sha256)) {
+      if (primaryVal.toLowerCase() !== report.content_sha256.toLowerCase()) {
+        intelRecords.push({
+          id: randomUUID(),
+          source_report_id: reportId,
+          indicator_type: 'content_hash',
+          indicator_value: report.content_sha256.toLowerCase(),
+          defanged_value: report.content_sha256.toLowerCase(),
+          risk_level: report.report_type === 'false_positive' ? 'VERIFIED_SAFE' : 'CONFIRMED_SCAM',
+          category: category || (report.report_type === 'false_positive' ? 'False Alarm' : 'Reported Scam'),
+          confidence: chosenConfidence < 1.0 ? chosenConfidence : 0.95,
+          notes: notes || report.notes || `Cryptographic fingerprint for verified report ${reportId.slice(0, 8)}`,
+          report_count: 1,
+          active: true,
+          created_at: new Date().toISOString(),
+        })
+      }
     }
 
     for (const intelRecord of intelRecords) {
       if (isSupabaseConfigured()) {
         try {
+          // Check if an indicator with the exact same indicator_value already exists (Deduplication)
+          const checkQuery = `${SUPABASE_URL}/rest/v1/verified_intelligence?indicator_value=eq.${encodeURIComponent(intelRecord.indicator_value)}&limit=1`
+          const checkRes = await fetch(checkQuery, {
+            headers: getHeaders(),
+            signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+          })
+          if (checkRes.ok) {
+            const [existing] = await checkRes.json()
+            if (existing) {
+              const updatedCount = (existing.report_count || 1) + 1
+              const baseConf = Math.max(Number(existing.confidence) || 0.85, chosenConfidence)
+              const updatedConfidence = computeEffectiveConfidence(baseConf, updatedCount)
+              const updatedNotes = notes && !existing.notes?.includes(notes) ? `${existing.notes} | ${notes}` : existing.notes
+              const updatePayload = {
+                report_count: updatedCount,
+                confidence: updatedConfidence,
+                updated_at: new Date().toISOString(),
+                ...(updatedNotes ? { notes: updatedNotes } : {}),
+              }
+              const updateRes = await fetch(`${SUPABASE_URL}/rest/v1/verified_intelligence?id=eq.${existing.id}`, {
+                method: 'PATCH',
+                headers: getHeaders(),
+                body: JSON.stringify(updatePayload),
+                signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+              })
+              if (updateRes.ok) {
+                if (!verifiedIntelligenceId) verifiedIntelligenceId = existing.id
+                continue
+              }
+            }
+          }
+
+          // Not found, insert new indicator
           const intelRes = await fetch(`${SUPABASE_URL}/rest/v1/verified_intelligence`, {
             method: 'POST',
             headers: getHeaders(),
@@ -463,8 +765,31 @@ export async function processModerationReview(reviewPayload, actorRole = 'modera
           // Non-blocking if table migration pending
         }
       } else {
-        inMemoryIntel.set(intelRecord.id, intelRecord)
-        if (!verifiedIntelligenceId) verifiedIntelligenceId = intelRecord.id
+        // In-memory Deduplication & Frequency Counter
+        let existing = null
+        for (const item of inMemoryIntel.values()) {
+          if (item.indicator_value === intelRecord.indicator_value) {
+            existing = item
+            break
+          }
+        }
+
+        if (existing) {
+          existing.report_count = (existing.report_count || 1) + 1
+          const baseConf = Math.max(Number(existing.confidence) || 0.85, chosenConfidence)
+          existing.confidence = computeEffectiveConfidence(baseConf, existing.report_count)
+          existing.updated_at = new Date().toISOString()
+          if (notes && !existing.notes?.includes(notes)) {
+            existing.notes = `${existing.notes} | ${notes}`
+          }
+          inMemoryIntel.set(existing.id, existing)
+          if (!verifiedIntelligenceId) verifiedIntelligenceId = existing.id
+        } else {
+          intelRecord.report_count = 1
+          intelRecord.confidence = chosenConfidence
+          inMemoryIntel.set(intelRecord.id, intelRecord)
+          if (!verifiedIntelligenceId) verifiedIntelligenceId = intelRecord.id
+        }
       }
     }
   }
@@ -493,7 +818,7 @@ export async function checkVerifiedIntelligence(entities = [], contentSha256 = n
     try {
       const hostname = new URL(u.startsWith('http') ? u : `https://${u}`).hostname
       if (hostname) expandedDomains.push(...extractDomainVariants(hostname))
-    } catch {}
+    } catch { }
   }
 
   const rawIndicators = [...new Set([...rawDomains, ...expandedDomains, ...urls, ...phones, ...emails])].filter(Boolean)
@@ -514,6 +839,7 @@ export async function checkVerifiedIntelligence(entities = [], contentSha256 = n
       if (indicators.length) {
         const quoted = indicators.map((ind) => `"${ind.replace(/"/g, '')}"`).join(',')
         filters.push(`indicator_value.in.(${quoted})`)
+        filters.push(`defanged_value.in.(${quoted})`)
       }
       if (contentSha256) {
         filters.push(`indicator_value.eq.${contentSha256}`)
@@ -534,6 +860,7 @@ export async function checkVerifiedIntelligence(entities = [], contentSha256 = n
             source: 'APPROVED_REPORT',
             strength: match.risk_level === 'CONFIRMED_SCAM' ? 1.0 : 0.0,
             confidence: Number(match.confidence) || 1.0,
+            reportCount: Number(match.report_count) || 1,
             limitation: 'Verified via community intelligence reports.',
           })
         }
@@ -544,14 +871,15 @@ export async function checkVerifiedIntelligence(entities = [], contentSha256 = n
   } else {
     for (const intel of inMemoryIntel.values()) {
       if (!intel.active) continue
-      if (indicators.includes(intel.indicator_value) || contentSha256 === intel.indicator_value) {
+      if (indicators.includes(intel.indicator_value) || indicators.includes(intel.defanged_value) || contentSha256 === intel.indicator_value) {
         findings.push({
           canonicalSignal: intel.risk_level === 'CONFIRMED_SCAM' ? 'verified_scam_intelligence' : 'verified_safe_intelligence',
           category: intel.category || 'Threat Intelligence',
           evidence: `Indicator ${intel.defanged_value} confirmed by moderator review.`,
           source: 'APPROVED_REPORT',
           strength: intel.risk_level === 'CONFIRMED_SCAM' ? 1.0 : 0.0,
-          confidence: intel.confidence,
+          confidence: Number(intel.confidence) || 1.0,
+          reportCount: Number(intel.report_count) || 1,
           limitation: 'Verified via community intelligence reports.',
         })
       }
@@ -567,17 +895,194 @@ export function resetInMemoryStores() {
   inMemoryAuditLogs.length = 0
 }
 
+export async function getVerifiedIntelligenceList(options = {}) {
+  const {
+    status = 'all',
+    type = 'all',
+    riskLevel = 'all',
+    search = '',
+    page = 1,
+    limit = 20,
+  } = options
+
+  const parsedPage = Math.max(1, parseInt(page, 10) || 1)
+  const parsedLimit = Math.min(100, Math.max(1, parseInt(limit, 10) || 20))
+  const offset = (parsedPage - 1) * parsedLimit
+
+  if (isSupabaseConfigured()) {
+    try {
+      const filters = []
+      if (status === 'active') filters.push('active=eq.true')
+      if (status === 'retired') filters.push('active=eq.false')
+      if (type && type !== 'all') filters.push(`indicator_type=eq.${type}`)
+      if (riskLevel && riskLevel !== 'all') filters.push(`risk_level=eq.${riskLevel}`)
+      if (search && search.trim()) {
+        const cleanSearch = search.trim().replace(/"/g, '')
+        filters.push(`or=(indicator_value.ilike.*${cleanSearch}*,defanged_value.ilike.*${cleanSearch}*,notes.ilike.*${cleanSearch}*,category.ilike.*${cleanSearch}*)`)
+      }
+
+      const queryString = filters.length ? `?${filters.join('&')}` : ''
+      const url = `${SUPABASE_URL}/rest/v1/verified_intelligence${queryString}${queryString ? '&' : '?'}order=created_at.desc&limit=${parsedLimit}&offset=${offset}`
+
+      const res = await fetch(url, {
+        headers: {
+          ...getHeaders(),
+          Prefer: 'count=exact',
+        },
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      })
+
+      if (res.ok) {
+        const rawIntelligence = await res.json()
+        const intelligence = rawIntelligence.map((item) => ({
+          ...item,
+          report_count: item.report_count || 1,
+        }))
+        const contentRange = res.headers.get('content-range')
+        let total = intelligence.length
+        if (contentRange) {
+          const match = contentRange.match(/\/(\d+|\*)$/)
+          if (match && match[1] !== '*') total = parseInt(match[1], 10)
+        }
+        return {
+          intelligence,
+          total,
+          page: parsedPage,
+          limit: parsedLimit,
+          totalPages: Math.ceil(total / parsedLimit) || 1,
+        }
+      }
+    } catch {
+      // Fallback to in-memory on connection or query error
+    }
+  }
+
+  // In-memory fallback
+  let items = Array.from(inMemoryIntel.values())
+  if (status === 'active') items = items.filter((item) => item.active === true)
+  if (status === 'retired') items = items.filter((item) => item.active === false)
+  if (type && type !== 'all') items = items.filter((item) => item.indicator_type === type)
+  if (riskLevel && riskLevel !== 'all') items = items.filter((item) => item.risk_level === riskLevel)
+  if (search && search.trim()) {
+    const s = search.trim().toLowerCase()
+    items = items.filter(
+      (item) =>
+        (item.indicator_value && item.indicator_value.toLowerCase().includes(s)) ||
+        (item.defanged_value && item.defanged_value.toLowerCase().includes(s)) ||
+        (item.notes && item.notes.toLowerCase().includes(s)) ||
+        (item.category && item.category.toLowerCase().includes(s))
+    )
+  }
+
+  items.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+
+  const total = items.length
+  const paginated = items.slice(offset, offset + parsedLimit).map((item) => ({
+    ...item,
+    report_count: item.report_count || 1,
+  }))
+
+  return {
+    intelligence: paginated,
+    total,
+    page: parsedPage,
+    limit: parsedLimit,
+    totalPages: Math.ceil(total / parsedLimit) || 1,
+  }
+}
+
+export async function updateIntelligenceStatus(id, { active, notes, category, actorRole = 'moderator' } = {}) {
+  const updatedAt = new Date().toISOString()
+
+  if (isSupabaseConfigured()) {
+    try {
+      const updatePayload = {
+        updated_at: updatedAt,
+      }
+      if (typeof active === 'boolean') {
+        updatePayload.active = active
+      }
+      if (typeof notes === 'string') {
+        updatePayload.notes = notes.trim()
+      }
+      if (typeof category === 'string' && category.trim()) {
+        updatePayload.category = category.trim()
+      }
+
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/verified_intelligence?id=eq.${id}`, {
+        method: 'PATCH',
+        headers: getHeaders(),
+        body: JSON.stringify(updatePayload),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      })
+
+      if (res.ok) {
+        const [updated] = await res.json()
+        if (updated) {
+          const actionType = typeof active === 'boolean'
+            ? (active ? 'REACTIVATE_INTEL' : 'RETIRE_INTEL')
+            : 'UPDATE_INTEL_NOTE'
+          inMemoryAuditLogs.push({
+            id: randomUUID(),
+            report_id: updated.source_report_id || id,
+            actor_role: actorRole,
+            action: actionType,
+            notes: notes || `Intelligence ${active ? 'reactivated' : 'retired'}`,
+            created_at: updatedAt,
+          })
+          return { ...updated, report_count: updated.report_count || 1 }
+        }
+      }
+    } catch {
+      // Fallback to in-memory on error
+    }
+  }
+
+  const existing = inMemoryIntel.get(id)
+  if (!existing) {
+    throw new Error('Intelligence item not found.')
+  }
+
+  if (typeof active === 'boolean') {
+    existing.active = active
+  }
+  if (typeof notes === 'string') {
+    existing.notes = notes.trim()
+  }
+  if (typeof category === 'string' && category.trim()) {
+    existing.category = category.trim()
+  }
+  existing.updated_at = updatedAt
+  inMemoryIntel.set(id, existing)
+
+  const actionType = typeof active === 'boolean'
+    ? (active ? 'REACTIVATE_INTEL' : 'RETIRE_INTEL')
+    : 'UPDATE_INTEL_NOTE'
+
+  inMemoryAuditLogs.push({
+    id: randomUUID(),
+    report_id: existing.source_report_id || id,
+    actor_role: actorRole,
+    action: actionType,
+    notes: notes || `Intelligence ${active ? 'reactivated' : 'retired'}`,
+    created_at: updatedAt,
+  })
+
+  return { ...existing, report_count: existing.report_count || 1 }
+}
+
 export async function seedDemoQueue() {
   const seeded = []
   for (const demo of DEMO_REPORTS) {
+    const freshId = randomUUID()
     const dbPayload = {
-      id: demo.id,
+      id: freshId,
       report_type: demo.report_type,
       content_sha256: demo.content_sha256,
       reported_domain: demo.reported_domain,
-      notes: `[Reported Message Excerpt]: "${demo.raw_excerpt}"\n\n[Submitter Context]: ${demo.notes}`,
+      notes: `[Reported Message Excerpt]: "${demo.raw_excerpt}"\n\n[Submitter Context]: ${demo.notes} [DEMO_FIXTURE]`,
       status: demo.status,
-      created_at: demo.created_at,
+      created_at: new Date().toISOString(),
     }
     if (isSupabaseConfigured()) {
       try {
@@ -596,5 +1101,93 @@ export async function seedDemoQueue() {
       seeded.push(dbPayload)
     }
   }
+
+  // Ensure demo intelligence items are seeded as well
+  for (const item of initialDemoIntel) {
+    if (isSupabaseConfigured()) {
+      try {
+        await fetch(`${SUPABASE_URL}/rest/v1/verified_intelligence`, {
+          method: 'POST',
+          headers: { ...getHeaders(), Prefer: 'resolution=ignore-duplicates' },
+          body: JSON.stringify(item),
+        })
+      } catch {}
+    }
+    if (!inMemoryIntel.has(item.id)) {
+      inMemoryIntel.set(item.id, { ...item })
+    }
+  }
+
   return seeded
 }
+
+export async function clearDemoQueue() {
+  const demoDomains = [
+    'ceb-billpay-portal.xyz',
+    'combank-secure-update.online',
+    'mohe.gov.lk',
+    'phishing-scam.lk',
+    'srilanka-telecom-rewards.xyz',
+    'fake-prize.lk',
+    'news-alert.lk',
+    'bank-login.lk',
+    'lottery-win.lk',
+    'update-security.lk',
+    'election-result.lk',
+    'health-offer.lk',
+    'boc-ebank-login.info',
+    'dialog-mega-cash-win.top',
+  ]
+
+  let deletedCount = 0
+
+  if (isSupabaseConfigured()) {
+    try {
+      // 1. Delete reports matching [DEMO_FIXTURE]
+      const resFixture = await fetch(
+        `${SUPABASE_URL}/rest/v1/user_reports?notes=ilike.*DEMO_FIXTURE*`,
+        {
+          method: 'DELETE',
+          headers: { ...getHeaders(), Prefer: 'return=representation' },
+          signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        }
+      )
+      if (resFixture.ok) {
+        const deleted = await resFixture.json()
+        deletedCount += Array.isArray(deleted) ? deleted.length : 0
+      }
+
+      // 2. Delete reports matching demo domains
+      for (const domain of demoDomains) {
+        const res = await fetch(
+          `${SUPABASE_URL}/rest/v1/user_reports?reported_domain=eq.${encodeURIComponent(domain)}`,
+          {
+            method: 'DELETE',
+            headers: { ...getHeaders(), Prefer: 'return=representation' },
+            signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+          }
+        )
+        if (res.ok) {
+          const deleted = await res.json()
+          deletedCount += Array.isArray(deleted) ? deleted.length : 0
+        }
+      }
+    } catch {
+      // Fallback
+    }
+  }
+
+  // Clear from in-memory fallback store
+  for (const [id, report] of inMemoryReports.entries()) {
+    if (
+      report.notes?.includes('DEMO_FIXTURE') ||
+      demoDomains.includes(report.reported_domain)
+    ) {
+      inMemoryReports.delete(id)
+      deletedCount++
+    }
+  }
+
+  return { count: deletedCount }
+}
+

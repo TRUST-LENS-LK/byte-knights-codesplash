@@ -114,6 +114,18 @@ test.before(async () => {
       return res.end(JSON.stringify([{ status: 'ok' }]))
     }
 
+    if (req.method === 'DELETE' && req.url.startsWith('/rest/v1/user_reports')) {
+      const deletedItems = []
+      for (const [id, report] of mockReports.entries()) {
+        if (report.notes?.includes('DEMO_FIXTURE') || ['phishing-scam.lk', 'fake-ceb-bill.lk', 'suspicious-lottery.lk'].includes(report.reported_domain)) {
+          deletedItems.push(report)
+          mockReports.delete(id)
+        }
+      }
+      res.writeHead(200, { 'content-type': 'application/json' })
+      return res.end(JSON.stringify(deletedItems))
+    }
+
     // Default REST endpoints simulation
     res.writeHead(200, { 'content-type': 'application/json' })
     res.end(JSON.stringify([]))
@@ -425,3 +437,108 @@ test('POST /api/moderation/seed-demo: populates demo fixtures when called by ver
   assert.ok(Array.isArray(body.seeded))
   assert.equal(body.count, 3)
 })
+
+test('GET & PATCH /api/moderation/settings: manages engine settings dynamically', async () => {
+  // 1. Blocks unauthorized
+  const unauthRes = await fetch(`http://localhost:${apiPort}/api/moderation/settings`)
+  assert.equal(unauthRes.status, 401)
+
+  // 2. GET settings with valid token
+  const getRes = await fetch(`http://localhost:${apiPort}/api/moderation/settings`, {
+    headers: { Authorization: `Bearer ${validModeratorToken}` },
+  })
+  assert.equal(getRes.status, 200)
+  const getBody = await getRes.json()
+  assert.equal(getBody.success, true)
+  assert.equal(typeof getBody.settings.enableVerifiedIntel, 'boolean')
+
+  // 3. PATCH settings to toggle off
+  const patchRes = await fetch(`http://localhost:${apiPort}/api/moderation/settings`, {
+    method: 'PATCH',
+    headers: {
+      'content-type': 'application/json',
+      Authorization: `Bearer ${validModeratorToken}`,
+    },
+    body: JSON.stringify({ enableVerifiedIntel: false }),
+  })
+  assert.equal(patchRes.status, 200)
+  const patchBody = await patchRes.json()
+  assert.equal(patchBody.settings.enableVerifiedIntel, false)
+
+  // 4. Restore setting to true
+  await fetch(`http://localhost:${apiPort}/api/moderation/settings`, {
+    method: 'PATCH',
+    headers: {
+      'content-type': 'application/json',
+      Authorization: `Bearer ${validModeratorToken}`,
+    },
+    body: JSON.stringify({ enableVerifiedIntel: true }),
+  })
+})
+
+test('GET & PATCH /api/moderation/intelligence: lists and toggles verified intelligence', async () => {
+  // 1. Blocks unauthorized
+  const unauthRes = await fetch(`http://localhost:${apiPort}/api/moderation/intelligence`)
+  assert.equal(unauthRes.status, 401)
+
+  // 2. GET intelligence with valid token
+  const getRes = await fetch(`http://localhost:${apiPort}/api/moderation/intelligence?status=all&page=1&limit=10`, {
+    headers: { Authorization: `Bearer ${validModeratorToken}` },
+  })
+  assert.equal(getRes.status, 200)
+  const getBody = await getRes.json()
+  assert.equal(getBody.success, true)
+  assert.ok(Array.isArray(getBody.intelligence))
+  assert.ok(getBody.total >= 0)
+
+  // 3. PATCH status if an item exists
+  if (getBody.intelligence.length > 0) {
+    const item = getBody.intelligence[0]
+    const patchRes = await fetch(`http://localhost:${apiPort}/api/moderation/intelligence/${item.id}`, {
+      method: 'PATCH',
+      headers: {
+        'content-type': 'application/json',
+        Authorization: `Bearer ${validModeratorToken}`,
+      },
+      body: JSON.stringify({ active: false, notes: 'Retired for test' }),
+    })
+    assert.equal(patchRes.status, 200)
+    const patchBody = await patchRes.json()
+    assert.equal(patchBody.success, true)
+    assert.equal(patchBody.updated.active, false)
+  }
+})
+
+test('POST /api/moderation/clear-demo: blocks requests without moderator token', async () => {
+  const unauthRes = await fetch(`http://localhost:${apiPort}/api/moderation/clear-demo`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+  })
+  assert.equal(unauthRes.status, 401)
+})
+
+test('POST /api/moderation/clear-demo: clears demo reports when called by verified moderator', async () => {
+  // First ensure there is at least one seed
+  await fetch(`http://localhost:${apiPort}/api/moderation/seed-demo`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      Authorization: `Bearer ${validModeratorToken}`,
+    },
+  })
+
+  // Clear demo data
+  const clearRes = await fetch(`http://localhost:${apiPort}/api/moderation/clear-demo`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      Authorization: `Bearer ${validModeratorToken}`,
+    },
+  })
+
+  assert.equal(clearRes.status, 200)
+  const body = await clearRes.json()
+  assert.equal(body.success, true)
+  assert.ok(typeof body.count === 'number')
+})
+

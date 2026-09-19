@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Shield, ShieldCheck, AlertOctagon, AlertTriangle, MessageSquare, Camera } from 'lucide-react'
 import { analyzeSubmission, analyzeWithApi, detectSubmissionType } from './services/analysisService'
 import { CommunityReportBar } from './components/CommunityReportBar'
@@ -30,8 +30,42 @@ function defangDisplay(value: string): string {
 }
 
 function App() {
-  const [view, setView] = useState<'checker' | 'moderator'>('checker')
+  const [view, setView] = useState<'checker' | 'moderator'>(() => {
+    if (typeof window !== 'undefined') {
+      const hash = window.location.hash
+      if (hash.startsWith('#moderator')) return 'moderator'
+      const stored = sessionStorage.getItem('trustlens_view')
+      if (stored === 'moderator') return 'moderator'
+    }
+    return 'checker'
+  })
   const [inputMode, setInputMode] = useState<'text' | 'screenshot'>('text')
+
+  // Sync view changes to sessionStorage and URL hash
+  useEffect(() => {
+    if (view === 'moderator') {
+      sessionStorage.setItem('trustlens_view', 'moderator')
+      if (!window.location.hash.startsWith('#moderator')) {
+        window.location.hash = '#moderator'
+      }
+    } else {
+      sessionStorage.setItem('trustlens_view', 'checker')
+      if (window.location.hash.startsWith('#moderator')) {
+        window.history.replaceState(null, '', window.location.pathname + window.location.search)
+      }
+    }
+  }, [view])
+
+  // Listen to browser back/forward hash changes
+  useEffect(() => {
+    const handleHashChange = () => {
+      const isMod = window.location.hash.startsWith('#moderator')
+      setView(isMod ? 'moderator' : 'checker')
+    }
+    window.addEventListener('hashchange', handleHashChange)
+    return () => window.removeEventListener('hashchange', handleHashChange)
+  }, [])
+
   const [isReportModalOpen, setIsReportModalOpen] = useState(false)
   const [text, setText] = useState('')
   const [checked, setChecked] = useState(false)
@@ -110,6 +144,15 @@ function App() {
 
   const detectedDomain = entities.find((e) => e.type === 'url' || e.type === 'domain')?.value || null
 
+  const handleBackToScanner = () => {
+    sessionStorage.setItem('trustlens_view', 'checker')
+    sessionStorage.removeItem('trustlens_mod_nav')
+    if (typeof window !== 'undefined') {
+      window.history.replaceState(null, '', window.location.pathname + window.location.search)
+    }
+    setView('checker')
+  }
+
   // Surfaces the domain identity check (Member 3's slice) distinctly from
   // the generic findings list below, since "who owns this domain" deserves a
   // clearer claimed-vs-actual comparison than a plain evidence card gives.
@@ -120,17 +163,25 @@ function App() {
   const actualDomain = entities.find((entity) => entity.type === 'domain')?.value ?? detectedDomain
 
   if (view === 'moderator') {
-    return <ModeratorDashboard onBackToScanner={() => setView('checker')} />
+    return <ModeratorDashboard onBackToScanner={handleBackToScanner} />
   }
 
   return (
     <main className="app-shell">
       <nav className="nav">
         <span className="brand-mark">TL</span>
-        <span className="brand" style={{ cursor: 'pointer' }} onClick={() => setView('checker')}>TrustLens <em>LK</em></span>
+        <span className="brand" style={{ cursor: 'pointer' }} onClick={handleBackToScanner}>TrustLens <em>LK</em></span>
         <span className="nav-note">Scam decision support</span>
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <button type="button" className="btn-secondary" onClick={() => setView('moderator')} style={{ fontSize: '12px', padding: '6px 14px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => {
+              sessionStorage.setItem('trustlens_view', 'moderator')
+              setView('moderator')
+            }}
+            style={{ fontSize: '12px', padding: '6px 14px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+          >
             <Shield size={14} aria-hidden="true" />
             <span>Moderator Portal</span>
           </button>
@@ -258,6 +309,7 @@ function App() {
               <p className="result-action">{decision.recommendation.replaceAll('_', ' ')}</p>
             </div>
 
+            {/* Contextual summary based on verdict */}
             <p className="result-summary">
               {isOfficialEntity
                 ? `This domain is verified in the official Sri Lankan national registry as the digital property of ${intelligenceOverlay?.officialOrganization || 'an approved institution'}.`
@@ -276,21 +328,69 @@ function App() {
                             : 'No significant indicators were found in the submitted content.'}
             </p>
 
+            {/* Intelligence Overlay Banner */}
             {intelligenceOverlay && intelligenceOverlay.netVerdict !== 'NO_INTEL' && (
               <div className={`intel-overlay ${intelligenceOverlay.netVerdict.toLowerCase().replace(/_/g, '-')}`}>
-                <div className="intel-summary">
-                  <strong>Community Consensus:</strong> {intelligenceOverlay.consensusSummary}
+                <div className="intel-overlay-header">
+                  {isOfficialEntity && <ShieldCheck size={18} aria-hidden="true" />}
+                  {!isOfficialEntity && isVerifiedSafe && <ShieldCheck size={18} aria-hidden="true" />}
+                  {isConfirmedScam && <AlertOctagon size={18} aria-hidden="true" />}
+                  {isConflicted && <AlertTriangle size={18} aria-hidden="true" />}
+                  <strong>
+                    {intelligenceOverlay.netVerdict === 'OFFICIAL_ENTITY' && `National Registry — ${intelligenceOverlay.officialOrganization || 'Verified Official'}`}
+                    {intelligenceOverlay.netVerdict === 'POSSIBLE_IMPERSONATION' && 'Impersonation Alert — Threat Override'}
+                    {intelligenceOverlay.netVerdict === 'VERIFIED_SAFE' && 'Community Verified — Safe'}
+                    {intelligenceOverlay.netVerdict === 'CONFIRMED_SCAM' && 'Threat Intelligence — Confirmed Scam'}
+                    {intelligenceOverlay.netVerdict === 'CONFLICTED' && 'Conflicting Submissions — Fail-Closed Warning'}
+                  </strong>
+                  <span className="intel-confidence">
+                    {isVerifiedSafe
+                      ? `${Math.round(intelligenceOverlay.safeConfidence * 100)}% safe confidence`
+                      : `${Math.round(intelligenceOverlay.scamConfidence * 100)}% scam confidence`}
+                  </span>
                 </div>
-                {intelligenceOverlay.reconciliationTrace.length > 0 && (
-                  <details className="intel-trace-details">
-                    <summary>View Audit Trace ({intelligenceOverlay.reconciliationTrace.length} steps)</summary>
-                    <ul>
-                      {intelligenceOverlay.reconciliationTrace.map((step, idx) => (
-                        <li key={idx}>{step}</li>
-                      ))}
-                    </ul>
-                  </details>
+
+                {/* Community Consensus Bar (displayed when both safe and scam submissions exist) */}
+                {Boolean((intelligenceOverlay.scamCount ?? 0) > 0 && (intelligenceOverlay.safeCount ?? 0) > 0) && (
+                  <div className="consensus-meter">
+                    <div className="consensus-bar-header">
+                      <span>Community Consensus Ratio</span>
+                      <span>{intelligenceOverlay.consensusSummary}</span>
+                    </div>
+                    <div className="consensus-bar-track">
+                      <div
+                        className="consensus-bar-safe"
+                        style={{
+                          width: `${Math.round(
+                            ((intelligenceOverlay.safeCount ?? 0) /
+                              ((intelligenceOverlay.safeCount ?? 0) + (intelligenceOverlay.scamCount ?? 0))) *
+                            100
+                          )}%`,
+                        }}
+                      />
+                      <div
+                        className="consensus-bar-scam"
+                        style={{
+                          width: `${Math.round(
+                            ((intelligenceOverlay.scamCount ?? 0) /
+                              ((intelligenceOverlay.safeCount ?? 0) + (intelligenceOverlay.scamCount ?? 0))) *
+                            100
+                          )}%`,
+                        }}
+                      />
+                    </div>
+                    <div className="consensus-labels">
+                      <span className="safe-label">🛡️ {intelligenceOverlay.safeCount} Verified Safe</span>
+                      <span className="scam-label">⚠️ {intelligenceOverlay.scamCount} Threat Reports</span>
+                    </div>
+                  </div>
                 )}
+
+                <div className="intel-trace">
+                  {intelligenceOverlay.reconciliationTrace.map((line, i) => (
+                    <p key={i}>{line}</p>
+                  ))}
+                </div>
               </div>
             )}
 
@@ -366,17 +466,18 @@ function App() {
                 )}
               </div>
             </div>
+
+            <CommunityReportBar onReportClick={() => setIsReportModalOpen(true)} />
           </section>
         )}
+        <ReportModal
+          isOpen={isReportModalOpen}
+          onClose={() => setIsReportModalOpen(false)}
+          content={text}
+          reportedDomain={detectedDomain}
+        />
       </>
-
-      <CommunityReportBar onReportClick={() => setIsReportModalOpen(true)} />
-      <ReportModal
-        isOpen={isReportModalOpen}
-        onClose={() => setIsReportModalOpen(false)}
-        content={text}
-        reportedDomain={detectedDomain}
-      />
+      <footer><span>TrustLens LK</span><span>Rules and verified checks guide the recommendation.</span></footer>
     </main>
   )
 }

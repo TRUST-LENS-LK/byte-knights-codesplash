@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 500" width="240" height="500" fill="none">
+  <defs>
+    <!-- Soft radial glow inside the arc -->
+    <radialGradient id="lensGlow" cx="0%" cy="85%" r="85%">
+      <stop offset="0%" stop-color="#0066FF" stop-opacity="0.09" />
+      <stop offset="45%" stop-color="#38BDF8" stop-opacity="0.05" />
+      <stop offset="80%" stop-color="#38BDF8" stop-opacity="0.01" />
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0" />
+    </radialGradient>
+
+    <!-- Secondary soft ambient fill -->
+    <radialGradient id="subtleAura" cx="30%" cy="60%" r="60%">
+      <stop offset="0%" stop-color="#00E5FF" stop-opacity="0.05" />
+      <stop offset="60%" stop-color="#0066FF" stop-opacity="0.015" />
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0" />
+    </radialGradient>
+
+    <!-- Glow filter for cyan nodes -->
+    <filter id="nodeGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3.5" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+
+    <filter id="softGlow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="1.8" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Transparent Background with zero rectangular artifacts -->
+  <rect width="240" height="500" fill="none" />
+
+  <!-- Soft Ambient Glow Shading -->
+  <path d="M -30, 160 A 300 300 0 0 1 250, 440 L 250, 500 L -30, 500 Z" fill="url(#lensGlow)" />
+  <circle cx="20" cy="380" r="220" fill="url(#subtleAura)" />
+
+  <!-- Outer Faint Arc -->
+  <path
+    d="M -30, 140 A 320 320 0 0 1 250, 420"
+    stroke="#0066FF"
+    stroke-width="0.75"
+    stroke-opacity="0.18"
+    stroke-dasharray="3 4"
+  />
+
+  <!-- Primary Thin Curved Arc Line -->
+  <path
+    d="M -30, 160 A 300 300 0 0 1 250, 440"
+    stroke="#00C4FF"
+    stroke-width="1.1"
+    stroke-opacity="0.55"
+    filter="url(#softGlow)"
+  />
+
+  <!-- Inner Delicate Arc Line -->
+  <path
+    d="M -30, 185 A 280 280 0 0 1 250, 465"
+    stroke="#38BDF8"
+    stroke-width="0.65"
+    stroke-opacity="0.25"
+  />
+
+  <!-- Glowing Cyber Node 1 (Upper-Middle) -->
+  <circle cx="92" cy="226" r="4.5" fill="#00F0FF" filter="url(#nodeGlow)" opacity="0.85" />
+  <circle cx="92" cy="226" r="2.2" fill="#00B4D8" />
+  <circle cx="92" cy="226" r="1.1" fill="#FFFFFF" />
+
+  <!-- Glowing Cyber Node 2 (Center-Right) -->
+  <circle cx="168" cy="305" r="3.8" fill="#00F0FF" filter="url(#nodeGlow)" opacity="0.75" />
+  <circle cx="168" cy="305" r="1.8" fill="#00B4D8" />
+  <circle cx="168" cy="305" r="0.9" fill="#FFFFFF" />
+
+  <!-- Glowing Cyber Node 3 (Lower-Right) -->
+  <circle cx="218" cy="382" r="3.2" fill="#38BDF8" filter="url(#nodeGlow)" opacity="0.65" />
+  <circle cx="218" cy="382" r="1.4" fill="#FFFFFF" />
+</svg>

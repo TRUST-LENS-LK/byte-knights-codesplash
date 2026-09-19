@@ -125,7 +125,6 @@ export function ScreenshotOcrUploader({ onTextConfirmed, onCancel }: ScreenshotO
           onClick={() => fileInputRef.current?.click()}
         >
           <input
-            type="ref"
             ref={fileInputRef}
             aria-label="Upload screenshot image"
             type="file"

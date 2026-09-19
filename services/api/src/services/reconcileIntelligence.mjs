@@ -43,7 +43,7 @@ function classifySignal(finding) {
 
 /**
  * @typedef {Object} IntelligenceOverlay
- * @property {'CONFIRMED_SCAM' | 'VERIFIED_SAFE' | 'CONFLICTED' | 'OFFICIAL_ENTITY' | 'POSSIBLE_IMPERSONATION' | 'NO_INTEL'} netVerdict
+ * @property {'CONFIRMED_SCAM' | 'SUSPICIOUS_INDICATOR' | 'VERIFIED_SAFE' | 'CONFLICTED' | 'OFFICIAL_ENTITY' | 'OFFICIAL_ENTITY_WITH_CAUTION' | 'POSSIBLE_IMPERSONATION' | 'NO_INTEL'} netVerdict
  * @property {number} scamConfidence    – Weighted scam signal confidence [0..1]
  * @property {number} safeConfidence    – Weighted safe signal confidence [0..1]
  * @property {number} signalCount       – Total verified signals analyzed
@@ -70,7 +70,7 @@ export function reconcileDecision(decision, verifiedFindings = []) {
   const hasDirectoryMatch = approvedDomainFindings.length > 0
   const officialOrg = hasDirectoryMatch ? approvedDomainFindings[0].organization || approvedDomainFindings[0].evidence : null
 
-  // 1. Bucket verified intelligence findings
+  // 1. Bucket verified intelligence findings and aggregate report counts
   const scamFindings = []
   const safeFindings = []
 
@@ -80,8 +80,8 @@ export function reconcileDecision(decision, verifiedFindings = []) {
     else if (bucket === 'SAFE') safeFindings.push(finding)
   }
 
-  const scamCount = scamFindings.length
-  const safeCount = safeFindings.length
+  const scamCount = scamFindings.reduce((acc, f) => acc + (Number(f.reportCount) || 1), 0)
+  const safeCount = safeFindings.reduce((acc, f) => acc + (Number(f.reportCount) || 1), 0)
   const totalVerified = scamCount + safeCount
 
   // 2. Base confidence calculations
@@ -126,27 +126,18 @@ export function reconcileDecision(decision, verifiedFindings = []) {
     return { decision, intelligenceOverlay: overlay }
   }
 
-  // ── CASE 2: Official Directory Match (0 Community Reports) ─────────────────
-  if (!totalVerified && hasDirectoryMatch) {
+  // ── CASE 2: Official Directory Match (Authoritative National Registry) ─────
+  if (hasDirectoryMatch) {
     trace.push(`🏛️ Official Directory Match: Domain is verified as the official digital property of "${officialOrg}".`)
 
     if (hasCriticalRuleThreat) {
       // Impersonation attack: official domain quoted in message asking for OTP/money
-      overlay.netVerdict = 'POSSIBLE_IMPERSONATION'
-      overlay.behavioralOverride = true
-      overlay.scamConfidence = 0.95
-      decision.riskBand = 'HIGH'
-      decision.recommendation = 'STOP_AND_AVOID'
-      decision.safeActions = [
-        `Do not share OTPs, passwords, or send funds. Official organizations (${officialOrg}) never request credentials via SMS or unverified links.`,
-        `Contact ${officialOrg} directly through verified public telephone channels to confirm this request.`,
-      ]
-      trace.push(
-        `⚠ CRITICAL IMPERSONATION ALERT: Although the domain belongs to "${officialOrg}", the message contains high-risk threat indicators (${criticalRuleFinding.category}: ${criticalRuleFinding.canonicalSignal}).`,
-        `Threat actors frequently reference legitimate institutions to trick victims into surrendering banking credentials.`,
-        `Behavioral threat overrides domain reputation. Risk escalated to HIGH.`
-      )
-    } else {
+      applyBehavioralImpersonationOverride(decision, overlay, trace, criticalRuleFinding, officialOrg)
+      overlay.consensusSummary = `Official Registry (${officialOrg}) with Threat Override`
+      return { decision, intelligenceOverlay: overlay }
+    }
+
+    if (scamCount === 0) {
       overlay.netVerdict = 'OFFICIAL_ENTITY'
       decision.riskBand = 'LOW'
       decision.recommendation = 'VERIFIED_SAFE'
@@ -158,13 +149,41 @@ export function reconcileDecision(decision, verifiedFindings = []) {
         `✅ Official registry confirmation: Identity verified as legitimate entity (${officialOrg}).`,
         `No critical threat signals detected. Risk set to LOW (VERIFIED_SAFE).`
       )
+      overlay.consensusSummary = `Official Registry (${officialOrg})`
+      return { decision, intelligenceOverlay: overlay }
     }
 
-    overlay.consensusSummary = `Official Registry (${officialOrg})`
+    if (scamCount <= 1) {
+      // 1 isolated citizen report against official government/bank directory
+      overlay.netVerdict = 'OFFICIAL_ENTITY_WITH_CAUTION'
+      decision.riskBand = 'LOW'
+      decision.recommendation = 'PROCEED_CAUTIOUSLY'
+      decision.safeActions = [
+        `This domain is verified in the official Sri Lankan national registry for ${officialOrg}.`,
+        `1 citizen report was filed against this domain, noted as a likely dispute or false report. Exercise standard digital caution.`,
+      ]
+      trace.push(
+        `🏛️ Official National Registry Entity: Domain is verified as "${officialOrg}".`,
+        `⚠ 1 citizen report flagged this domain. The official national registry possesses authoritative cryptographic and legal status.`,
+        `Official identity preserved with caution note. Recommendation set to PROCEED_CAUTIOUSLY.`
+      )
+      overlay.consensusSummary = `Official Registry (${officialOrg}) with 1 Caution Report`
+      return { decision, intelligenceOverlay: overlay }
+    }
+
+    // scamCount >= 2 on an official domain -> potential infrastructure compromise or severe dispute
+    overlay.netVerdict = 'CONFLICTED'
+    overlay.consensusSummary = `${scamCount} Scam Reports vs Official Registry (${officialOrg})`
+    trace.push(
+      `⚠ CRITICAL ALERT: Official domain "${officialOrg}" has ${scamCount} active threat reports on file.`,
+      `Infrastructure may be experiencing an active breach, compromised subdomain, or spoofed campaign.`,
+      `🛡️ Fail-Closed Security Policy: Risk escalated to HIGH (STOP_AND_AVOID) until verified by security analysts.`
+    )
+    applyScamEscalation(decision, overlay, trace, scamFindings)
     return { decision, intelligenceOverlay: overlay }
   }
 
-  // ── CASE 3: Active Community Intelligence Reports Exist ───────────────────
+  // ── CASE 3: Active Community Intelligence Reports Exist (No Directory Match) ───
 
   // Scenario 3A: Conflicting reports exist (Both Scam and Safe submitted)
   if (scamCount > 0 && safeCount > 0) {
@@ -177,52 +196,52 @@ export function reconcileDecision(decision, verifiedFindings = []) {
       `📊 Community consensus analysis: ${scamCount} scam report(s) vs ${safeCount} safe report(s) (Total: ${totalVerified}).`
     )
 
-    // Subcase 3A-1: Overwhelming Safe Consensus (e.g. 1 scam vs 40 safe -> scamRatio = 2.4% < 15%)
-    if (scamRatio < 0.15 && safeCount >= 3) {
-      if (hasCriticalRuleThreat) {
-        // Even with 40 safe votes, if message currently asks for OTP, behavioral rule wins!
-        applyBehavioralImpersonationOverride(decision, overlay, trace, criticalRuleFinding, officialOrg)
-      } else {
-        overlay.netVerdict = 'VERIFIED_SAFE'
-        trace.push(
-          `✅ Overwhelming community consensus: ${(safeRatio * 100).toFixed(1)}% of submissions confirm this is safe/legitimate.`,
-          `The ${scamCount} minority threat report(s) are considered isolated disputes, resolved issues, or false alarms.`,
-          `⚠ Minority notice: ${scamCount} historical report(s) flagged this indicator. Exercise standard digital caution.`
-        )
-        applyVerifiedSafeDeescalation(decision, overlay, trace, safeFindings, approvedDomainFindings)
-      }
-
-    // Subcase 3A-2: Clear Scam Majority (e.g. 40 scam vs 1 safe -> scamRatio = 97.6% > 55%)
-    } else if (scamRatio > 0.55) {
-      overlay.netVerdict = 'CONFIRMED_SCAM'
-      trace.push(
-        `🔴 Threat consensus established: ${(scamRatio * 100).toFixed(1)}% of reports confirm active scam/fraud.`,
-        `The ${safeCount} safe report(s) are considered outdated, mistaken, or malicious attempts to whitewash the indicator.`,
-        `Risk escalated to HIGH (STOP_AND_AVOID).`
-      )
-      applyScamEscalation(decision, overlay, trace, scamFindings)
-
-    // Subcase 3A-3: Split / Contested Consensus (e.g. 5 vs 5, 2 vs 5, 1 vs 1)
-    } else {
-      overlay.netVerdict = 'CONFLICTED'
-      trace.push(
-        `⚠ SPLIT INTELLIGENCE DISPUTE: Submissions are divided (${scamCount} threat vs ${safeCount} safe). Neither side has sufficient consensus.`,
-        `🛡️ Fail-Closed Security Policy: The indicator is treated as HIGH RISK until further independent verification.`,
-        `Recommendation: Do not interact with this content until community moderators review recent reports.`
-      )
-      applyScamEscalation(decision, overlay, trace, scamFindings)
+    if (hasCriticalRuleThreat) {
+      applyBehavioralImpersonationOverride(decision, overlay, trace, criticalRuleFinding, officialOrg)
+      return { decision, intelligenceOverlay: overlay }
     }
+
+    // A moderator-verified scam indicator can NEVER be overturned by crowd safe votes!
+    overlay.netVerdict = 'CONFLICTED'
+    decision.riskBand = 'HIGH'
+    decision.recommendation = 'VERIFY_INDEPENDENTLY'
+    if (!decision.safeActions.some((a) => a.includes('Verify independently before clicking, paying, or replying.'))) {
+      decision.safeActions.unshift('Verify independently before clicking, paying, or replying.')
+    }
+    trace.push(
+      `⚠ CONFLICTED THREAT INTELLIGENCE: Submissions contain conflicting assessments (${scamCount} threat vs ${safeCount} safe).`,
+      `🛡️ Fail-Safe Defaults (Saltzer & Schroeder 1975): Verified threat evidence cannot be overridden by unverified crowd votes.`,
+      `In digital fraud prevention, threat evidence takes precedence to prevent whitewashing attacks and protect citizens from financial loss.`,
+      `Risk set to HIGH. Recommendation: VERIFY_INDEPENDENTLY (independent verification recommended).`
+    )
 
   // Scenario 3B: Pure Scam Intelligence (1 or more scam reports, 0 safe reports)
   } else if (scamCount > 0) {
-    overlay.netVerdict = 'CONFIRMED_SCAM'
     overlay.consensusRatio = 1.0
-    overlay.consensusSummary = `${scamCount} Scam Report(s) (100% Threat Consensus)`
-    trace.push(
-      `🔴 Confirmed Threat Intelligence: ${scamCount} report(s) verified as malicious by community moderators (Confidence: ${(scamConfidence * 100).toFixed(0)}%).`,
-      `Matched threat indicators have been cryptographically indexed in the TrustLens Sri Lanka threat register.`
-    )
-    applyScamEscalation(decision, overlay, trace, scamFindings)
+    overlay.consensusSummary = `${scamCount} Threat Report(s) (${(scamConfidence * 100).toFixed(0)}% Confidence)`
+
+    // Gated by effective confidence:
+    // C_effective >= 0.85 -> CONFIRMED_SCAM (HIGH risk, STOP_AND_AVOID)
+    // C_effective < 0.85  -> SUSPICIOUS_INDICATOR (MEDIUM risk, VERIFY_INDEPENDENTLY)
+    if (scamConfidence >= 0.85) {
+      overlay.netVerdict = 'CONFIRMED_SCAM'
+      trace.push(
+        `🔴 Confirmed Threat Intelligence: ${scamCount} report(s) verified as high-confidence threat (Confidence: ${(scamConfidence * 100).toFixed(0)}%).`
+      )
+      applyScamEscalation(decision, overlay, trace, scamFindings)
+    } else {
+      overlay.netVerdict = 'SUSPICIOUS_INDICATOR'
+      decision.riskBand = 'MEDIUM'
+      decision.recommendation = 'VERIFY_INDEPENDENTLY'
+      if (!decision.safeActions.some((a) => a.includes('Verify the sender or domain through independent channels'))) {
+        decision.safeActions.unshift('Verify the sender or domain through independent channels before engaging.')
+      }
+      trace.push(
+        `⚠ Suspicious Threat Indicator: ${scamCount} report(s) flagged with moderate certainty (Confidence: ${(scamConfidence * 100).toFixed(0)}%).`,
+        `Evidence meets suspicious threshold but requires further corroboration or moderator confirmation to escalate to HIGH.`,
+        `Risk set to MEDIUM. Recommendation: VERIFY_INDEPENDENTLY.`
+      )
+    }
 
   // Scenario 3C: Pure Safe Intelligence (1 or more safe reports, 0 scam reports)
   } else if (safeCount > 0) {
@@ -299,7 +318,7 @@ function applyBehavioralImpersonationOverride(decision, overlay, trace, critical
   ]
 
   trace.push(
-    `⚠ CRITICAL BEHAVIORAL OVERRIDE: The message contains severe scam indicators (${criticalFinding.category}: ${criticalFinding.canonicalSignal}).`,
+    `⚠ CRITICAL IMPERSONATION ALERT: Although the domain belongs to or references "${entityLabel}", the message contains high-risk threat indicators (${criticalFinding.category}: ${criticalFinding.canonicalSignal}).`,
     `Even though community reports or directory entries exist for this indicator, safe intelligence CANNOT override active credential or payment harvesting.`,
     `This pattern matches domain impersonation and credential phishing campaigns. Risk escalated to HIGH.`
   )

@@ -17,6 +17,16 @@ export interface ModerationQueueItem {
   status: 'PENDING' | 'REVIEWED' | 'REJECTED' | 'APPROVED'
   created_at: string
   updated_at: string
+  threat?: {
+    title: string
+    subtitle: string
+    type: 'phishing' | 'scam' | 'malware' | 'safe'
+  }
+  risk_signal?: {
+    level: 'HIGH' | 'MEDIUM' | 'LOW'
+    color: string
+  }
+  detected_signals?: string[]
 }
 
 export interface ModerationReviewPayload {
@@ -25,6 +35,7 @@ export interface ModerationReviewPayload {
   notes?: string
   indicatorType?: 'domain' | 'url' | 'content_hash'
   category?: string
+  confidence?: number
 }
 
 export interface ModerationReviewResult {
@@ -309,3 +320,190 @@ export async function seedDemoReports(
     }
   }
 }
+
+export async function clearDemoReports(
+  token: string
+): Promise<{ success: boolean; count?: number; error?: string }> {
+  try {
+    const response = await fetch(`${API_BASE}/api/moderation/clear-demo`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({}),
+    })
+
+    const data = await response.json()
+
+    if (!response.ok) {
+      return {
+        success: false,
+        error: data.message || `Clear failed (${response.status})`,
+      }
+    }
+
+    return {
+      success: true,
+      count: data.count,
+    }
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Network error clearing demo reports.',
+    }
+  }
+}
+
+export interface EngineSettings {
+  enableVerifiedIntel: boolean
+  lastUpdated?: string
+  updatedBy?: string
+}
+
+export async function fetchEngineSettings(
+  token: string
+): Promise<{ success: boolean; settings?: EngineSettings; error?: string }> {
+  try {
+    const res = await fetch(`${API_BASE}/api/moderation/settings`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+    const data = await res.json()
+    if (!res.ok) {
+      return { success: false, error: data.message || `Failed to fetch engine settings (${res.status})` }
+    }
+    return { success: true, settings: data.settings }
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : 'Network error' }
+  }
+}
+
+export async function updateEngineSettings(
+  token: string,
+  settings: { enableVerifiedIntel: boolean }
+): Promise<{ success: boolean; settings?: EngineSettings; error?: string }> {
+  try {
+    const res = await fetch(`${API_BASE}/api/moderation/settings`, {
+      method: 'PATCH',
+      headers: {
+        'content-type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(settings),
+    })
+    const data = await res.json()
+    if (!res.ok) {
+      return { success: false, error: data.message || `Failed to update engine settings (${res.status})` }
+    }
+    return { success: true, settings: data.settings }
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : 'Network error' }
+  }
+}
+
+export interface VerifiedIntelligenceItem {
+  id: string
+  source_report_id: string | null
+  indicator_type: 'domain' | 'content_hash' | 'phone' | 'url'
+  indicator_value: string
+  defanged_value: string
+  risk_level: 'CONFIRMED_SCAM' | 'VERIFIED_SAFE'
+  category: string | null
+  confidence: number
+  notes: string | null
+  report_count?: number
+  active: boolean
+  created_at: string
+  updated_at?: string
+}
+
+export interface VerifiedIntelligenceResponse {
+  success: boolean
+  intelligence?: VerifiedIntelligenceItem[]
+  total?: number
+  page?: number
+  limit?: number
+  totalPages?: number
+  error?: string
+}
+
+export async function fetchVerifiedIntelligence(
+  token: string,
+  options: {
+    status?: 'active' | 'retired' | 'all'
+    type?: 'domain' | 'content_hash' | 'phone' | 'url' | 'all'
+    riskLevel?: 'CONFIRMED_SCAM' | 'VERIFIED_SAFE' | 'all'
+    search?: string
+    page?: number
+    limit?: number
+  } = {}
+): Promise<VerifiedIntelligenceResponse> {
+  const { status = 'all', type = 'all', riskLevel = 'all', search = '', page = 1, limit = 20 } = options
+  const queryParams = new URLSearchParams()
+  if (status) queryParams.set('status', status)
+  if (type) queryParams.set('type', type)
+  if (riskLevel) queryParams.set('riskLevel', riskLevel)
+  if (search.trim()) queryParams.set('search', search.trim())
+  queryParams.set('page', String(page))
+  queryParams.set('limit', String(limit))
+
+  try {
+    const res = await fetch(`${API_BASE}/api/moderation/intelligence?${queryParams.toString()}`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+    const data = await res.json()
+    if (!res.ok) {
+      return { success: false, error: data.message || `Failed to fetch intelligence (${res.status})` }
+    }
+    return {
+      success: true,
+      intelligence: data.intelligence || [],
+      total: data.total || 0,
+      page: data.page || 1,
+      limit: data.limit || 20,
+      totalPages: data.totalPages || 1,
+    }
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : 'Network error' }
+  }
+}
+
+export async function updateIntelligenceItem(
+  token: string,
+  id: string,
+  updates: { active?: boolean; notes?: string; category?: string }
+): Promise<{ success: boolean; updated?: VerifiedIntelligenceItem; error?: string }> {
+  try {
+    const res = await fetch(`${API_BASE}/api/moderation/intelligence/${id}`, {
+      method: 'PATCH',
+      headers: {
+        'content-type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(updates),
+    })
+    const data = await res.json()
+    if (!res.ok) {
+      return { success: false, error: data.message || `Failed to update intelligence (${res.status})` }
+    }
+    return { success: true, updated: data.updated }
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : 'Network error' }
+  }
+}
+
+export async function toggleIntelligenceStatus(
+  token: string,
+  id: string,
+  active: boolean,
+  notes?: string
+): Promise<{ success: boolean; updated?: VerifiedIntelligenceItem; error?: string }> {
+  return updateIntelligenceItem(token, id, { active, notes })
+}
+
+
+

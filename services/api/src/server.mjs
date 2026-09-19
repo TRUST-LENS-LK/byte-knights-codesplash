@@ -19,6 +19,12 @@ import {
   validateCreateReport,
   validateModerationAction,
   seedDemoQueue,
+  clearDemoQueue,
+  getVerifiedIntelligenceList,
+  updateIntelligenceStatus,
+  getEngineSettings,
+  updateEngineSettings,
+  isVerifiedIntelEnabled,
 } from './services/reportingService.mjs'
 import { reconcileDecision } from './services/reconcileIntelligence.mjs'
 import { getOpenApiSpec, getSwaggerHtml } from './http/swagger.mjs'
@@ -121,9 +127,60 @@ const server = createServer(async (req, res) => {
     }
   }
 
-  // Routes below require POST
-  const validPostRoutes = ['/api/analyze', '/api/reports', '/api/scanner/preview', '/api/moderation/review', '/api/moderation/login', '/api/moderation/seed-demo']
-  if (req.method !== 'POST' || !validPostRoutes.includes(pathname)) {
+  // Moderation Settings (Protected GET)
+  if (req.method === 'GET' && pathname === '/api/moderation/settings') {
+    const auth = await authorizeModerator(req)
+    if (!auth.authorized) {
+      return send(res, 401, { code: 'UNAUTHORIZED', message: auth.error || 'Moderator access required.', requestId }, requestId)
+    }
+    const settings = getEngineSettings()
+    return send(res, 200, { success: true, settings, requestId }, requestId)
+  }
+
+  // Verified Intelligence Query (Protected GET)
+  if (req.method === 'GET' && pathname === '/api/moderation/intelligence') {
+    const auth = await authorizeModerator(req)
+    if (!auth.authorized) {
+      return send(res, 401, { code: 'UNAUTHORIZED', message: auth.error || 'Moderator access required.', requestId }, requestId)
+    }
+    try {
+      const statusParam = parsedUrl.searchParams.get('status') || 'all'
+      const typeParam = parsedUrl.searchParams.get('type') || 'all'
+      const riskLevelParam = parsedUrl.searchParams.get('riskLevel') || 'all'
+      const searchParam = parsedUrl.searchParams.get('search') || ''
+      const pageParam = parseInt(parsedUrl.searchParams.get('page') || '1', 10)
+      const limitParam = parseInt(parsedUrl.searchParams.get('limit') || '20', 10)
+
+      const result = await getVerifiedIntelligenceList({
+        status: statusParam,
+        type: typeParam,
+        riskLevel: riskLevelParam,
+        search: searchParam,
+        page: pageParam,
+        limit: limitParam,
+      })
+
+      return send(res, 200, { success: true, ...result, requestId }, requestId)
+    } catch (error) {
+      return send(res, 502, { code: 'INTELLIGENCE_FETCH_ERROR', message: error.message, requestId }, requestId)
+    }
+  }
+
+  // Routes below require POST or PATCH with a JSON body
+  const validPostRoutes = [
+    '/api/analyze',
+    '/api/reports',
+    '/api/scanner/preview',
+    '/api/moderation/review',
+    '/api/moderation/login',
+    '/api/moderation/seed-demo',
+    '/api/moderation/clear-demo',
+  ]
+  const isPatchSettings = req.method === 'PATCH' && pathname === '/api/moderation/settings'
+  const isPatchIntel = req.method === 'PATCH' && pathname.startsWith('/api/moderation/intelligence/')
+  const isValidPost = req.method === 'POST' && validPostRoutes.includes(pathname)
+
+  if (!isValidPost && !isPatchSettings && !isPatchIntel) {
     return send(res, 404, { code: 'NOT_FOUND', message: 'Route not found.', requestId }, requestId)
   }
 
@@ -238,6 +295,63 @@ const server = createServer(async (req, res) => {
     }
   }
 
+  // Route: POST /api/moderation/clear-demo (Protected Demo Clear)
+  if (pathname === '/api/moderation/clear-demo' && req.method === 'POST') {
+    const auth = await authorizeModerator(req)
+    if (!auth.authorized) {
+      return send(res, 401, { code: 'UNAUTHORIZED', message: auth.error || 'Moderator access required.', requestId }, requestId)
+    }
+    try {
+      const result = await clearDemoQueue()
+      return send(res, 200, { success: true, count: result.count, requestId }, requestId)
+    } catch (error) {
+      return send(res, 502, { code: 'CLEAR_FAILED', message: error.message, requestId }, requestId)
+    }
+  }
+
+  // Route: PATCH /api/moderation/settings (Protected)
+  if (pathname === '/api/moderation/settings' && req.method === 'PATCH') {
+    const auth = await authorizeModerator(req)
+    if (!auth.authorized) {
+      return send(res, 401, { code: 'UNAUTHORIZED', message: auth.error || 'Moderator access required.', requestId }, requestId)
+    }
+    if (typeof body.enableVerifiedIntel !== 'boolean') {
+      return send(res, 400, { code: 'INVALID_SETTINGS', message: 'enableVerifiedIntel must be a boolean.', requestId }, requestId)
+    }
+    const settings = updateEngineSettings(body, auth.user?.email || auth.actorRole || 'moderator')
+    return send(res, 200, { success: true, settings, requestId }, requestId)
+  }
+
+  // Route: PATCH /api/moderation/intelligence/:id (Protected)
+  if (pathname.startsWith('/api/moderation/intelligence/') && req.method === 'PATCH') {
+    const auth = await authorizeModerator(req)
+    if (!auth.authorized) {
+      return send(res, 401, { code: 'UNAUTHORIZED', message: auth.error || 'Moderator access required.', requestId }, requestId)
+    }
+    const intelId = pathname.slice('/api/moderation/intelligence/'.length)
+    if (!intelId) {
+      return send(res, 400, { code: 'INVALID_ID', message: 'Intelligence ID is required.', requestId }, requestId)
+    }
+    if (typeof body.active !== 'boolean' && typeof body.notes !== 'string' && typeof body.category !== 'string') {
+      return send(res, 400, { code: 'INVALID_PAYLOAD', message: 'At least one of active, notes, or category must be provided.', requestId }, requestId)
+    }
+    try {
+      const updated = await updateIntelligenceStatus(intelId, {
+        active: body.active,
+        notes: body.notes,
+        category: body.category,
+        actorRole: auth.actorRole,
+      })
+      return send(res, 200, { success: true, updated, requestId }, requestId)
+    } catch (error) {
+      return send(res, error.message === 'Intelligence item not found.' ? 404 : 502, {
+        code: error.message === 'Intelligence item not found.' ? 'NOT_FOUND' : 'UPDATE_FAILED',
+        message: error.message,
+        requestId,
+      }, requestId)
+    }
+  }
+
   // Route: POST /api/analyze
   try {
     const validationError = validateSubmission(body)
@@ -265,7 +379,7 @@ const server = createServer(async (req, res) => {
     let finalScanText = text
     let scannerFailed = false
     const urlEntities = entities.filter(e => e.type === 'url').slice(0, 3) // Scan up to 3 URLs max
-    
+
     if (urlEntities.length > 0 && process.env.SCANNER_URL) {
       const scanPromises = urlEntities.map(async (urlEntity) => {
         const scanRes = await fetch(`${process.env.SCANNER_URL}/scan`, {
@@ -291,7 +405,7 @@ const server = createServer(async (req, res) => {
     }
 
     const decision = analyze(finalScanText)
-    
+
     if (scannerFailed) {
       decision.limitations.push('The remote URL scanner was unavailable or timed out. The URL content could not be verified.')
     }
@@ -315,10 +429,14 @@ const server = createServer(async (req, res) => {
     applyDomainMismatchRisk(decision)
 
     // ── Intelligence Reconciliation Engine ─────────────────────────────
-    const verifiedFindings = await checkVerifiedIntelligence(entities, contentSha256).catch(() => [])
-    if (verifiedFindings.length) decision.findings.push(...verifiedFindings)
-    const reconciled = reconcileDecision(decision, verifiedFindings)
-    const intelligenceOverlay = reconciled.intelligenceOverlay
+    let verifiedFindings = []
+    let intelligenceOverlay = undefined
+    if (isVerifiedIntelEnabled()) {
+      verifiedFindings = await checkVerifiedIntelligence(entities, contentSha256).catch(() => [])
+      if (verifiedFindings.length) decision.findings.push(...verifiedFindings)
+      const reconciled = reconcileDecision(decision, verifiedFindings)
+      intelligenceOverlay = reconciled.intelligenceOverlay
+    }
 
     const submissionId = await persistIfConsented({ ...body, text }, decision, entities)
     return send(res, 200, {

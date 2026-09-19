@@ -1,33 +1,54 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Poppins:wght@500;600;700;800&family=Roboto:wght@400;500;700&display=swap');
+
 :root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
-  --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
+  /* ==========================================================================
+     TrustLens LK — Central Master Color Palette & Theme Tokens
+     Change colors HERE to update the entire application automatically!
+     ========================================================================== */
+  --brand-primary: #075ECE;
+  --brand-primary-hover: #0548a3;
+  --brand-primary-active: #043880;
+  --brand-primary-light: rgba(7, 94, 206, 0.08);
+  --brand-primary-border: rgba(7, 94, 206, 0.2);
+  --brand-primary-glow: rgba(7, 94, 206, 0.28);
+
+  --brand-navy: #061733;
+  --brand-navy-surface: #0a2048;
+  --brand-navy-border: rgba(6, 23, 51, 0.12);
+  --brand-navy-light: rgba(6, 23, 51, 0.05);
+
+  --brand-white: #FFFFFF;
+
+  /* Legacy aliases pointing to central master tokens */
+  --color-primary: var(--brand-primary);
+  --color-navy: var(--brand-navy);
+  --color-white: var(--brand-white);
+
+  --text: #475569;
+  --text-h: var(--brand-navy);
+  --bg: #f8fafc;
+  --border: #e2e8f0;
+  --code-bg: #f1f5f9;
+  --accent: var(--brand-primary);
+  --accent-bg: var(--brand-primary-light);
+  --accent-border: var(--brand-primary-border);
   --social-bg: rgba(244, 243, 236, 0.5);
   --shadow:
-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
+    0 10px 25px -5px rgba(6, 23, 51, 0.08), 0 4px 10px -3px rgba(6, 23, 51, 0.04);
 
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
+  --sans: 'Inter', 'Poppins', 'Roboto', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  --heading: 'Poppins', 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
-  font: 18px/145% var(--sans);
-  letter-spacing: 0.18px;
-  color-scheme: light dark;
+  font: 16px/150% var(--sans);
+  letter-spacing: -0.01em;
+  color-scheme: light;
   color: var(--text);
   background: var(--bg);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-
-  @media (max-width: 1024px) {
-    font-size: 16px;
-  }
 }
 
 @media (prefers-color-scheme: dark) {
