@@ -492,4 +492,38 @@ test('Phase C: Approved community scam report generates verified intelligence an
   }
 })
 
+test('Phase D: CORS preflight (OPTIONS) handles localhost, 127.0.0.1, and chrome-extension origins', async () => {
+  const response = await fetch(`http://localhost:${port}/api/analyze`, {
+    method: 'OPTIONS',
+    headers: {
+      origin: 'chrome-extension://abcedfghijklmnop',
+      'access-control-request-method': 'POST',
+      'access-control-request-headers': 'content-type',
+    },
+  })
+  assert.equal(response.status, 204)
+  assert.equal(response.headers.get('access-control-allow-origin'), 'chrome-extension://abcedfghijklmnop')
+  assert.match(response.headers.get('access-control-allow-methods'), /POST/)
+})
+
+test('Phase D: Production security headers (nosniff, DENY, referrer-policy) are present on responses', async () => {
+  const response = await fetch(`http://localhost:${port}/health`)
+  assert.equal(response.status, 200)
+  assert.equal(response.headers.get('x-content-type-options'), 'nosniff')
+  assert.equal(response.headers.get('x-frame-options'), 'DENY')
+  assert.equal(response.headers.get('referrer-policy'), 'strict-origin-when-cross-origin')
+})
+
+test('Phase D: Unsupported Content-Type returns 415 UNSUPPORTED_MEDIA_TYPE', async () => {
+  const response = await fetch(`http://localhost:${port}/api/analyze`, {
+    method: 'POST',
+    headers: { 'content-type': 'text/plain' },
+    body: 'hello world',
+  })
+  const body = await response.json()
+  assert.equal(response.status, 415)
+  assert.equal(body.code, 'UNSUPPORTED_MEDIA_TYPE')
+})
+
+
 

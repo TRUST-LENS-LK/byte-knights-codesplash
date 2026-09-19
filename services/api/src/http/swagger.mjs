@@ -6,8 +6,7 @@ export function getOpenApiSpec() {
       version: '1.0.0',
       description: 'Sri Lanka Scam Decision Support and Community Intelligence Platform API.',
       contact: {
-        name: 'TrustLens LK Engineering Team',
-        url: 'https://github.com/TrustLens-LK',
+        name: 'Byte Knights',
       },
     },
     servers: [

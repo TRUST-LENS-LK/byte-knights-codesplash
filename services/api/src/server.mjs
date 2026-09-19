@@ -23,6 +23,7 @@ import { reconcileDecision } from './services/reconcileIntelligence.mjs'
 import { getOpenApiSpec, getSwaggerHtml } from './http/swagger.mjs'
 
 const server = createServer(async (req, res) => {
+  res.req = req
   const requestId = randomUUID()
   const parsedUrl = new URL(req.url, 'http://localhost')
   const pathname = parsedUrl.pathname
