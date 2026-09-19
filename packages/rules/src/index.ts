@@ -1,69 +1,138 @@
-import { findingSchema, type Finding, type RiskDecision } from '@trustlens/contracts'
+import { type RiskDecision } from '@trustlens/contracts'
+import { detectUrgency } from './detectors/urgencyDetector.js'
+import { detectAdvancePayment } from './detectors/paymentDetector.js'
+import { detectCredentialRequest } from './detectors/credentialDetector.js'
+import { detectJobScam } from './detectors/jobScamDetector.js'
 
-type Rule = { signal: string; category: string; pattern: RegExp; evidence: string; strength: number; critical?: boolean }
+// ---------------------------------------------------------------------------
+// Policy version — increment when rule logic changes significantly
+// ---------------------------------------------------------------------------
+const POLICY_VERSION = 'rules-v2'
 
-const RULES: Rule[] = [
-  {
-    signal: 'credential_request',
-    category: 'Sensitive information',
-    pattern: /otp|one[- ]time password|pin|password|bank(?:ing)? details?|otp\s+eka|otp\s+ewanna|otp\s+denna|රහස්\s*(?:කේතය|අංකය)|මුරපදය|ගිණුම්\s*විස්තර|bank\s*details|account\s*(?:number|details)/i,
-    evidence: 'OTP, PIN, password, or banking details requested',
-    strength: 0.98,
-    critical: true,
-  },
-  {
-    signal: 'advance_payment',
-    category: 'Financial request',
-    pattern: /registration fee|upfront|deposit|send (?:rs\.?|lkr)|payment|pay today|transfer|pay\s+(?:the\s+)?fee|salli\s+(?:ewanna|gewanna|denna)|gaasthu|ගාස්තු|මුදල්\s*(?:ගෙවන්න|දෙන්න)|ගෙවන්න|තැන්පතු|fee\s+(?:ewanna|denna)|rs\s*\./i,
-    evidence: 'Payment or upfront-fee language',
-    strength: 0.95,
-    critical: true,
-  },
-  {
-    signal: 'urgency',
-    category: 'Social engineering',
-    pattern: /urgent|immediately|today only|expires|act now|last chance|limited time|ada\s+(?:pay|denna|ewanna)|danma|ikmanata|වහාම|අදම|හදිසි|දැන්ම|ඉක්මනින්|කල\s*ඉකුත්/i,
-    evidence: 'Urgent or pressure-based timing language',
-    strength: 0.55,
-  },
-  {
-    signal: 'job_offer',
-    category: 'Job scam',
-    pattern: /job|salary|vacancy|work from home|work\s*from\s*home|hiring|you(?:'ve| have) been selected|selected for|job\s+ekak|job\s+offer|රැකියාව|රැකියා\s*අවස්ථාව|වැටුප්|තෝරාගෙන|තෝරා\s*ගත්|ගෙදර\s*ඉඳන්\s*වැඩ/i,
-    evidence: 'Recruitment or job-offer language',
-    strength: 0.65,
-  },
+// ---------------------------------------------------------------------------
+// Critical signal names — their presence alone forces STOP_AND_AVOID
+// ---------------------------------------------------------------------------
+const CRITICAL_SIGNALS = new Set(['credential_request', 'advance_payment'])
+
+// ---------------------------------------------------------------------------
+// Safe action guidance by risk band
+// ---------------------------------------------------------------------------
+const SAFE_ACTIONS: Record<string, string[]> = {
+  HIGH: [
+    'Do not click any links, make any payments, or share any personal information.',
+    'Verify directly through the organisation\'s official website or hotline.',
+    'Report this message to Sri Lanka Police Cybercrime Division: 1930 or cybercrime@police.lk',
+  ],
+  MEDIUM: [
+    'Do not act on this message until you have independently verified the sender.',
+    'Search for the organisation\'s official contact details separately — do not use links in this message.',
+    'If in doubt, call the organisation\'s official hotline directly.',
+  ],
+  LOW: [
+    'No significant warning signs were detected, but always verify important requests independently.',
+    'Never share OTPs, PINs, or passwords — no legitimate organisation will ask for them.',
+  ],
+  UNKNOWN: [
+    'Insufficient information to make a determination. Treat with caution.',
+    'Verify the sender through official channels before taking any action.',
+  ],
+}
+
+// ---------------------------------------------------------------------------
+// System limitations — always disclosed per NIST XAI principles
+// ---------------------------------------------------------------------------
+const SYSTEM_LIMITATIONS = [
+  'This analysis uses deterministic keyword rules only. It does not have access to real-time domain verification or AI context analysis in offline mode.',
+  'Legitimate messages may occasionally trigger false positives. Always apply independent judgement.',
+  'Sinhala script (Unicode) detection is limited in the offline rules engine. Use the full analysis pipeline for Sinhala screenshots.',
 ]
 
+// ---------------------------------------------------------------------------
+// Main public API
+// ---------------------------------------------------------------------------
+
+/**
+ * Analyses a text message for scam indicators using the deterministic rules engine.
+ *
+ * Decision logic:
+ *   1. Run all 4 detectors in parallel (urgency, payment, credential, job).
+ *   2. CRITICAL OVERRIDE: if credential_request OR advance_payment is detected,
+ *      force riskBand=HIGH and recommendation=STOP_AND_AVOID regardless of
+ *      other signals. This is the most important safety guarantee.
+ *   3. Otherwise: riskBand is derived from the number and strength of findings:
+ *      - 0 findings    → LOW  / PROCEED_CAUTIOUSLY
+ *      - 1–2 findings  → MEDIUM / VERIFY_INDEPENDENTLY
+ *      - 3+ findings   → HIGH  / STOP_AND_AVOID
+ *
+ * Returns a fully structured RiskDecision conforming to the shared contracts schema.
+ */
 export function analyzeMessage(text: string): RiskDecision {
-  const findings: Finding[] = RULES
-    .filter((rule) => rule.pattern.test(text))
-    .map((rule) =>
-      findingSchema.parse({
-        canonicalSignal: rule.signal,
-        category: rule.category,
-        evidence: rule.evidence,
-        source: 'RULE',
-        strength: rule.strength,
-        confidence: rule.strength,
-        limitation: 'Keyword rule; context should be verified independently.',
-      }),
-    )
-  const critical = findings.some(
-    (f) => f.canonicalSignal === 'credential_request' || f.canonicalSignal === 'advance_payment',
+  if (!text || text.trim().length === 0) {
+    return {
+      riskBand: 'UNKNOWN',
+      recommendation: 'UNABLE_TO_VERIFY',
+      findings: [],
+      limitations: SYSTEM_LIMITATIONS,
+      safeActions: SAFE_ACTIONS.UNKNOWN,
+      policyVersion: POLICY_VERSION,
+    }
+  }
+
+  // Run all detectors
+  const allFindings = [
+    ...detectCredentialRequest(text),  // Run first — highest priority
+    ...detectAdvancePayment(text),
+    ...detectUrgency(text),
+    ...detectJobScam(text),
+  ]
+
+  // -------------------------------------------------------------------------
+  // CRITICAL OVERRIDE: credential or payment demand → always STOP_AND_AVOID
+  // -------------------------------------------------------------------------
+  const hasCriticalSignal = allFindings.some((f) =>
+    CRITICAL_SIGNALS.has(f.canonicalSignal)
   )
-  const riskBand = critical || findings.length >= 3 ? 'HIGH' : findings.length ? 'MEDIUM' : 'LOW'
-  const recommendation =
-    riskBand === 'HIGH' ? 'STOP_AND_AVOID' : riskBand === 'MEDIUM' ? 'VERIFY_INDEPENDENTLY' : 'PROCEED_CAUTIOUSLY'
+
+  if (hasCriticalSignal) {
+    return {
+      riskBand: 'HIGH',
+      recommendation: 'STOP_AND_AVOID',
+      findings: allFindings,
+      limitations: SYSTEM_LIMITATIONS,
+      safeActions: SAFE_ACTIONS.HIGH,
+      policyVersion: POLICY_VERSION,
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Standard risk banding (no critical signals present)
+  // -------------------------------------------------------------------------
+  const findingCount = allFindings.length
+  const maxStrength = findingCount > 0
+    ? Math.max(...allFindings.map((f) => f.strength))
+    : 0
+
+  let riskBand: RiskDecision['riskBand']
+  let recommendation: RiskDecision['recommendation']
+
+  if (findingCount === 0) {
+    riskBand = 'LOW'
+    recommendation = 'PROCEED_CAUTIOUSLY'
+  } else if (findingCount >= 3 || maxStrength >= 0.75) {
+    riskBand = 'HIGH'
+    recommendation = 'STOP_AND_AVOID'
+  } else {
+    riskBand = 'MEDIUM'
+    recommendation = 'VERIFY_INDEPENDENTLY'
+  }
+
   return {
     riskBand,
     recommendation,
-    findings,
-    limitations: ['Analysis uses deterministic keyword rules. Context and language nuance may affect accuracy.'],
-    safeActions:
-      riskBand === 'HIGH'
-        ? ['Do not click, pay, reply, or share credentials.', "Verify through the organisation’s official website."]
-        : ['Verify the sender and organisation independently.'],
-    policyVersion: 'rules-v2',
+    findings: allFindings,
+    limitations: SYSTEM_LIMITATIONS,
+    safeActions: SAFE_ACTIONS[riskBand],
+    policyVersion: POLICY_VERSION,
   }
 }
+

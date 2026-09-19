@@ -3,8 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "main": "src/index.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -14,7 +13,8 @@
   "scripts": {
     "build": "node ../../node_modules/typescript/lib/tsc.js -p tsconfig.json",
     "check": "node ../../node_modules/typescript/lib/tsc.js -p tsconfig.json --noEmit",
-    "test": "node ../../node_modules/vitest/vitest.mjs run"
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@trustlens/contracts": "file:../contracts"

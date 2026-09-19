@@ -23,7 +23,7 @@
     "test:packages": "npm --workspace packages/rules run test && npm --workspace packages/extraction run test"
   },
   "devDependencies": {
-    "@esbuild/win32-x64": "^0.28.2",
     "concurrently": "^10.0.5"
   }
 }
+

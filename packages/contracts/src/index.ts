@@ -43,9 +43,7 @@ export const CANONICAL_SIGNALS = [
 export type CanonicalSignal = (typeof CANONICAL_SIGNALS)[number];
 
 // A submission's required fields depend on its type: a "message" needs text, a
-// "url" needs a proper url string, and a "screenshot" needs an image reference
-// (added as an optional field for now; Member 2 owns tightening this once the
-// upload/OCR flow exists).
+// "url" needs a proper url string, and a "screenshot" needs an image reference.
 export const submissionSchema = z
   .object({
     type: z.enum(["message", "url", "screenshot"]),
@@ -77,7 +75,12 @@ export const extractedEntitySchema = z.object({
   ]),
   value: z.string(),
   normalizedValue: z.string().optional(),
+  /** The matched substring as it appeared in the raw input text */
   sourceSpan: z.string().optional(),
+  /** Zero-based character index where this entity starts in the raw input */
+  startIndex: z.number().int().nonnegative().optional(),
+  /** Zero-based character index immediately after this entity ends in the raw input */
+  endIndex: z.number().int().nonnegative().optional(),
   confidence: z.number().min(0).max(1).optional(),
 });
 
@@ -101,7 +104,7 @@ export const findingSchema = z.object({
   detectorVersion: z.string().optional(),
 });
 
-// All three additions below are optional, not defaulted, on purpose: several
+// All additions below are optional, not defaulted, on purpose: several
 // detectors (packages/rules, services/api) already return a RiskDecision as a
 // plain object literal without calling riskDecisionSchema.parse(). A default()
 // would make these fields required in the inferred output type and break
@@ -152,10 +155,6 @@ export type ApiError = z.infer<typeof apiErrorSchema>;
 // Member 3: Official domain directory and verification contracts
 // ============================================================================
 
-// Mirrors the approved_organizations table, once Stage 3 adds the governance
-// columns (reviewer, nextReviewDate, status) alongside the ones that already
-// exist. id is optional because a record does not have one yet before it is
-// first inserted.
 export const domainDirectoryStatusSchema = z.enum(["ACTIVE", "STALE", "RETIRED"]);
 
 export const officialDomainRecordSchema = z.object({
@@ -171,11 +170,6 @@ export const officialDomainRecordSchema = z.object({
   active: z.boolean().default(true),
 });
 
-// The result of checking one submitted domain against the official directory,
-// and, per docs/decisions.md, against Member 5's verifiedIntelligenceSchema
-// data too once Stage 5 wires that in. UNKNOWN means "not verified", never
-// "fraudulent". STALE means a directory match exists but its review date has
-// expired, so it cannot contribute positive evidence.
 export const domainVerificationOutcomeSchema = z.enum([
   "MATCHED",
   "MISMATCH",
@@ -266,4 +260,4 @@ export type UserReportStatus = z.infer<typeof userReportStatusSchema>;
 export type CreateUserReport = z.infer<typeof createUserReportSchema>;
 export type UserReport = z.infer<typeof userReportSchema>;
 export type ModerationAction = z.infer<typeof moderationActionSchema>;
-export type VerifiedIntelligence = z.infer<typeof verifiedIntelligenceSchema>;
+export type VerifiedIntelligence = z.infer<typeof verifiedIntelligenceSchema>;
