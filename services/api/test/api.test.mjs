@@ -408,3 +408,33 @@ test('consented analysis persists through the server-only Supabase client', asyn
     await new Promise((resolve) => supabase.close(resolve))
   }
 })
+
+test('GET /docs serves interactive Swagger UI HTML', async () => {
+  const response = await fetch(`http://localhost:${port}/docs`)
+  const html = await response.text()
+  assert.equal(response.status, 200)
+  assert.equal(response.headers.get('content-type'), 'text/html; charset=utf-8')
+  assert.match(html, /<title>TrustLens LK API Documentation<\/title>/)
+  assert.match(html, /SwaggerUIBundle/)
+})
+
+test('GET /openapi.json serves valid OpenAPI 3.0 specification with all schemas', async () => {
+  const response = await fetch(`http://localhost:${port}/openapi.json`)
+  const spec = await response.json()
+  assert.equal(response.status, 200)
+  assert.equal(response.headers.get('content-type'), 'application/json; charset=utf-8')
+  assert.equal(spec.openapi, '3.0.3')
+  assert.equal(spec.info.title, 'TrustLens LK API')
+  assert.equal(typeof spec.paths['/api/analyze'], 'object')
+  assert.equal(typeof spec.paths['/api/scanner/preview'], 'object')
+  assert.equal(typeof spec.paths['/api/reports'], 'object')
+  assert.equal(typeof spec.paths['/api/moderation/stats'], 'object')
+  assert.equal(typeof spec.paths['/api/moderation/queue'], 'object')
+  assert.equal(typeof spec.paths['/api/moderation/review'], 'object')
+  assert.equal(typeof spec.paths['/api/moderation/login'], 'object')
+  assert.equal(typeof spec.paths['/api/moderation/seed-demo'], 'object')
+  assert.equal(typeof spec.components.schemas.Submission, 'object')
+  assert.equal(typeof spec.components.schemas.RiskDecision, 'object')
+  assert.equal(typeof spec.components.schemas.ExtractedEntity, 'object')
+})
+
