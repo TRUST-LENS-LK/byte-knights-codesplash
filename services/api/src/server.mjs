@@ -6,7 +6,7 @@ import { authorizeModerator, loginModeratorWithPassword } from './http/auth.mjs'
 import { analyze, applyScannerRisk, extractEntities, validateSubmission } from './services/analysis.mjs'
 import { persistIfConsented } from './services/persistence.mjs'
 import { consumeRateLimit } from './services/rateLimit.mjs'
-import { verifyApprovedDomains } from './services/domainVerification.mjs'
+import { applyDomainMismatchRisk, checkClaimedOrganizationDomain, verifyApprovedDomains } from './services/domainVerification.mjs'
 import { listDomainDirectory, lookupDomainDirectory } from './services/domainDirectory.mjs'
 import { inspectScannerUrl, scannerFindings } from './services/urlSafety.mjs'
 import {
@@ -295,6 +295,11 @@ const server = createServer(async (req, res) => {
       return []
     })
     if (approvedDomainFindings.length) decision.findings.push(...approvedDomainFindings)
+
+    const organizationDomainCheck = await checkClaimedOrganizationDomain(entities).catch(() => ({ findings: [], limitations: [] }))
+    if (organizationDomainCheck.findings.length) decision.findings.push(...organizationDomainCheck.findings)
+    if (organizationDomainCheck.limitations.length) decision.limitations.push(...organizationDomainCheck.limitations)
+    applyDomainMismatchRisk(decision)
 
     // ── Intelligence Reconciliation Engine ─────────────────────────────
     const verifiedFindings = await checkVerifiedIntelligence(entities, contentSha256).catch(() => [])
