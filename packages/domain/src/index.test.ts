@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { isDirectoryEntryStale, matchesOfficialDomain } from './index'
+import type { OfficialDomainRecord } from '@trustlens/contracts'
+import {
+  checkOrganizationDomainMatch,
+  findOrganizationRecord,
+  isDirectoryEntryStale,
+  matchesOfficialDomain,
+} from './index'
 
 const FIXED_NOW = new Date('2026-09-19T00:00:00Z')
 
@@ -54,5 +60,65 @@ describe('matchesOfficialDomain', () => {
   it('rejects empty inputs', () => {
     expect(matchesOfficialDomain('', 'boc.lk')).toBe(false)
     expect(matchesOfficialDomain('boc.lk', '')).toBe(false)
+  })
+})
+
+const DIRECTORY: OfficialDomainRecord[] = [
+  { name: 'Bank of Ceylon', officialDomain: 'boc.lk', status: 'ACTIVE', nextReviewDate: '2026-12-12', active: true },
+  { name: 'Virtusa', officialDomain: 'virtusa.com', status: 'ACTIVE', nextReviewDate: '2026-12-12', active: true },
+  { name: 'Sri Lanka CERT', officialDomain: 'cert.gov.lk', status: 'STALE', nextReviewDate: '2020-01-01', active: true },
+]
+
+describe('findOrganizationRecord', () => {
+  it('finds an exact, case-insensitive name match', () => {
+    expect(findOrganizationRecord('bank of ceylon', DIRECTORY)?.officialDomain).toBe('boc.lk')
+  })
+
+  it('finds a directory entry via a longer extracted phrase (trailing company suffix)', () => {
+    expect(findOrganizationRecord('Virtusa Pvt Ltd', DIRECTORY)?.officialDomain).toBe('virtusa.com')
+  })
+
+  it('returns null for an organization not in the directory', () => {
+    expect(findOrganizationRecord('Some Random Company', DIRECTORY)).toBeNull()
+  })
+
+  it('returns null for an empty name', () => {
+    expect(findOrganizationRecord('', DIRECTORY)).toBeNull()
+  })
+})
+
+describe('checkOrganizationDomainMatch', () => {
+  it('returns MATCHED when the claimed organization owns the destination domain', () => {
+    const result = checkOrganizationDomainMatch('Bank of Ceylon', 'boc.lk', DIRECTORY, FIXED_NOW)
+    expect(result.outcome).toBe('MATCHED')
+    expect(result.matchedRecord?.officialDomain).toBe('boc.lk')
+  })
+
+  it('returns MATCHED for a subdomain of the claimed organization\'s official domain', () => {
+    const result = checkOrganizationDomainMatch('Bank of Ceylon', 'secure.boc.lk', DIRECTORY, FIXED_NOW)
+    expect(result.outcome).toBe('MATCHED')
+  })
+
+  it('returns MISMATCH when the claimed organization does not own the destination domain', () => {
+    const result = checkOrganizationDomainMatch('Virtusa Pvt Ltd', 'virtusa-careers-login.com', DIRECTORY, FIXED_NOW)
+    expect(result.outcome).toBe('MISMATCH')
+    expect(result.matchedRecord?.officialDomain).toBe('virtusa.com')
+    expect(result.evidence).toContain('virtusa.com')
+  })
+
+  it('returns UNKNOWN when the claimed organization is not in the directory', () => {
+    const result = checkOrganizationDomainMatch('Totally Unknown Company', 'unknown-domain.com', DIRECTORY, FIXED_NOW)
+    expect(result.outcome).toBe('UNKNOWN')
+    expect(result.matchedRecord).toBeNull()
+  })
+
+  it('returns UNKNOWN rather than throwing when inputs are missing', () => {
+    expect(checkOrganizationDomainMatch('', 'boc.lk', DIRECTORY, FIXED_NOW).outcome).toBe('UNKNOWN')
+    expect(checkOrganizationDomainMatch('Bank of Ceylon', '', DIRECTORY, FIXED_NOW).outcome).toBe('UNKNOWN')
+  })
+
+  it('returns STALE when the matched directory entry is due for re-review, even if the domain matches', () => {
+    const result = checkOrganizationDomainMatch('Sri Lanka CERT', 'cert.gov.lk', DIRECTORY, FIXED_NOW)
+    expect(result.outcome).toBe('STALE')
   })
 })
