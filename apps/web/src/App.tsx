@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Shield, ShieldCheck, AlertOctagon, AlertTriangle } from 'lucide-react'
-import { analyzeSubmission, analyzeWithApi } from './services/analysisService'
+import { Shield, ShieldCheck, AlertOctagon, AlertTriangle, MessageSquare, Camera } from 'lucide-react'
+import { analyzeSubmission, analyzeWithApi, detectSubmissionType } from './services/analysisService'
 import { CommunityReportBar } from './components/CommunityReportBar'
 import { ReportModal } from './components/ReportModal'
 import { ModeratorDashboard } from './components/ModeratorDashboard'
+import { ScreenshotOcrUploader } from './components/ScreenshotOcrUploader'
 import './App.css'
 
 interface IntelligenceOverlay {
@@ -21,6 +22,13 @@ interface IntelligenceOverlay {
   reconciliationTrace: string[]
 }
 
+// Breaks a domain or URL so it cannot be accidentally clicked or copied as a
+// live link when shown in the result screen, per the project's rule that
+// suspicious destinations are always defanged before display.
+function defangDisplay(value: string): string {
+  return value.replace(/^http/i, 'hxxp').replaceAll('.', '[.]')
+}
+
 function App() {
   const [view, setView] = useState<'checker' | 'moderator'>(() => {
     if (typeof window !== 'undefined') {
@@ -31,6 +39,7 @@ function App() {
     }
     return 'checker'
   })
+  const [inputMode, setInputMode] = useState<'text' | 'screenshot'>('text')
 
   // Sync view changes to sessionStorage and URL hash
   useEffect(() => {
@@ -64,6 +73,8 @@ function App() {
   const [apiAnalysis, setApiAnalysis] = useState<ReturnType<typeof analyzeSubmission> | null>(null)
   const [apiMode, setApiMode] = useState<'local' | 'api'>('local')
   const [intelligenceOverlay, setIntelligenceOverlay] = useState<IntelligenceOverlay | null>(null)
+  const [ocrConfidence, setOcrConfidence] = useState<number | null>(null)
+
   const analysis = useMemo(() => analyzeSubmission(text), [text])
   const { decision, entities } = apiAnalysis ?? analysis
 
@@ -96,14 +107,21 @@ function App() {
         ? 'conflicted'
         : risk.toLowerCase().replace(/[^a-z0-9]+/g, '-')
 
-  const checkMessage = async () => {
+  const checkMessage = async (overrideText?: string, typeOverride?: 'message' | 'url' | 'screenshot') => {
+    const targetText = overrideText ?? text
+    // A screenshot submission always keeps its explicit type. Otherwise,
+    // detect whether the whole input is a bare URL rather than trusting the
+    // stale submissionType state, so pasting just a link is actually checked
+    // as a dedicated URL submission instead of always as a free-text message.
+    const targetType = typeOverride ?? detectSubmissionType(targetText)
+    if (!targetText.trim()) return
+
     setIsAnalyzing(true)
     setIntelligenceOverlay(null)
     try {
-      const result = await analyzeWithApi(text)
+      const result = await analyzeWithApi(targetText, targetType)
       setApiAnalysis(result)
       setApiMode('api')
-      // Extract intelligenceOverlay from the raw API response if present
       if ((result as Record<string, unknown>).intelligenceOverlay) {
         setIntelligenceOverlay((result as Record<string, unknown>).intelligenceOverlay as IntelligenceOverlay)
       }
@@ -117,6 +135,13 @@ function App() {
     }
   }
 
+  const handleOcrConfirmed = (correctedText: string, confidence: number) => {
+    setText(correctedText)
+    setOcrConfidence(confidence)
+    setChecked(false)
+    void checkMessage(correctedText, 'screenshot')
+  }
+
   const detectedDomain = entities.find((e) => e.type === 'url' || e.type === 'domain')?.value || null
 
   const handleBackToScanner = () => {
@@ -127,6 +152,15 @@ function App() {
     }
     setView('checker')
   }
+
+  // Surfaces the domain identity check (Member 3's slice) distinctly from
+  // the generic findings list below, since "who owns this domain" deserves a
+  // clearer claimed-vs-actual comparison than a plain evidence card gives.
+  const domainFinding = decision.findings.find(
+    (finding) => finding.canonicalSignal === 'domain_mismatch' || finding.canonicalSignal === 'approved_domain',
+  )
+  const claimedOrganization = entities.find((entity) => entity.type === 'organization')?.value ?? null
+  const actualDomain = entities.find((entity) => entity.type === 'domain')?.value ?? detectedDomain
 
   if (view === 'moderator') {
     return <ModeratorDashboard onBackToScanner={handleBackToScanner} />
@@ -153,11 +187,109 @@ function App() {
           </button>
         </div>
       </nav>
+
       <>
         <section className="hero">
-          <div className="hero-copy"><p className="eyebrow">Check before you act</p><h1>Does this message deserve your trust?</h1><p className="intro">Paste a suspicious message or link. TrustLens looks for warning signs and explains the safest next step.</p><div className="trust-points"><span>Evidence based</span><span>Private by default</span><span>Built for Sri Lanka</span></div></div>
-          <div className="checker-card"><label htmlFor="message">Suspicious message or URL</label><textarea id="message" value={text} maxLength={10000} onChange={(event) => { setText(event.target.value); setChecked(false); setIntelligenceOverlay(null) }} placeholder="Example: Congratulations! You have been selected for a job. Pay Rs. 5,000 today and send your OTP..." /><div className="card-footer"><span>{text.length}/10,000 characters</span><button type="button" onClick={() => void checkMessage()} disabled={!text.trim() || isAnalyzing}>{isAnalyzing ? 'Checking...' : 'Check safely'}</button></div><p className="privacy-note">Do not include passwords, OTPs, or unnecessary private information.</p><small>Analysis: {apiMode === 'api' ? 'local API' : 'offline fallback'}</small></div>
+          <div className="hero-copy">
+            <p className="eyebrow">Check before you act</p>
+            <h1>Does this message deserve your trust?</h1>
+            <p className="intro">Paste a suspicious message, URL link, or upload a screenshot. TrustLens looks for warning signs and explains the safest next step.</p>
+            <div className="trust-points">
+              <span>Evidence based</span>
+              <span>Private by default</span>
+              <span>Built for Sri Lanka</span>
+            </div>
+          </div>
+
+          <div className="checker-card">
+            {/* Input Mode Tabs */}
+            <div className="input-mode-tabs" style={{ display: 'flex', gap: '8px', marginBottom: '14px' }}>
+              <button
+                type="button"
+                className={`tab-btn ${inputMode === 'text' ? 'active' : ''}`}
+                onClick={() => { setInputMode('text'); setOcrConfidence(null) }}
+                style={{
+                  padding: '8px 14px',
+                  borderRadius: '6px',
+                  border: inputMode === 'text' ? '1px solid #38bdf8' : '1px solid #334155',
+                  background: inputMode === 'text' ? '#0369a1' : '#1e293b',
+                  color: '#fff',
+                  cursor: 'pointer',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                }}
+              >
+                <MessageSquare size={14} />
+                Text / URL
+              </button>
+
+              <button
+                type="button"
+                className={`tab-btn ${inputMode === 'screenshot' ? 'active' : ''}`}
+                onClick={() => setInputMode('screenshot')}
+                style={{
+                  padding: '8px 14px',
+                  borderRadius: '6px',
+                  border: inputMode === 'screenshot' ? '1px solid #38bdf8' : '1px solid #334155',
+                  background: inputMode === 'screenshot' ? '#0369a1' : '#1e293b',
+                  color: '#fff',
+                  cursor: 'pointer',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                }}
+              >
+                <Camera size={14} />
+                Upload Screenshot (OCR)
+              </button>
+            </div>
+
+            {inputMode === 'screenshot' ? (
+              <ScreenshotOcrUploader
+                onTextConfirmed={handleOcrConfirmed}
+                onCancel={() => setInputMode('text')}
+              />
+            ) : (
+              <>
+                <label htmlFor="message">Suspicious message or URL</label>
+                <textarea
+                  id="message"
+                  value={text}
+                  maxLength={10000}
+                  onChange={(event) => {
+                    setText(event.target.value)
+                    setChecked(false)
+                    setIntelligenceOverlay(null)
+                    setOcrConfidence(null)
+                  }}
+                  placeholder="Example: Congratulations! You have been selected for a job. Pay Rs. 5,000 today and send your OTP..."
+                />
+                <div className="card-footer">
+                  <span>{text.length}/10,000 characters</span>
+                  <button
+                    type="button"
+                    onClick={() => void checkMessage()}
+                    disabled={!text.trim() || isAnalyzing}
+                  >
+                    {isAnalyzing ? 'Checking...' : 'Check safely'}
+                  </button>
+                </div>
+              </>
+            )}
+
+            <p className="privacy-note">Do not include passwords, OTPs, or unnecessary private information.</p>
+            <small>
+              Analysis: {apiMode === 'api' ? 'local API' : 'offline fallback'}
+              {ocrConfidence !== null && ` | OCR Confidence: ${ocrConfidence}%`}
+            </small>
+          </div>
         </section>
+
         {checked && (
           <section className={`result ${resultClass}`} aria-live="polite">
             <div className="result-header">
@@ -262,13 +394,88 @@ function App() {
               </div>
             )}
 
-            {entities.length > 0 && <div className="entities"><div className="section-label">Detected details</div><div className="entity-list">{entities.map((entity, index) => <span className="entity" key={`${entity.type}-${index}`}><strong>{entity.type}</strong> {entity.type === 'url' ? entity.value.replace(/^https?:\/\//, 'hxxps://').replaceAll('.', '[.]') : entity.normalizedValue ?? entity.value}</span>)}</div></div>}
-            {decision.findings.length ? <div className="findings">{decision.findings.map((finding, idx) => <article className="finding" key={`${finding.canonicalSignal}-${idx}`}><span className={`signal-dot ${finding.strength > .8 ? 'high' : finding.strength === 0.0 ? 'safe' : 'medium'}`}></span><div><strong>{finding.category}</strong><p>{finding.canonicalSignal.replaceAll('_', ' ')}</p><small>Evidence: {finding.evidence}</small></div></article>)}</div> : <p className="empty-finding">This does not guarantee that the content is safe. Verify important requests through an official channel.</p>}
-            <div className="next-step"><strong>Recommended action</strong><span>{decision.safeActions[0]}</span></div>
+            {domainFinding && (
+              <div
+                className={`domain-evidence ${domainFinding.canonicalSignal === 'domain_mismatch' ? 'mismatch' : 'matched'}`}
+                style={{
+                  border: `1px solid ${domainFinding.canonicalSignal === 'domain_mismatch' ? '#dc2626' : '#16a34a'}`,
+                  borderRadius: '8px',
+                  padding: '14px 16px',
+                  margin: '16px 0',
+                  background: domainFinding.canonicalSignal === 'domain_mismatch' ? 'rgba(220,38,38,0.08)' : 'rgba(22,163,74,0.08)',
+                }}
+              >
+                <h3 style={{ margin: '0 0 8px', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  {domainFinding.canonicalSignal === 'domain_mismatch' ? (
+                    <AlertOctagon size={16} color="#dc2626" aria-hidden="true" />
+                  ) : (
+                    <ShieldCheck size={16} color="#16a34a" aria-hidden="true" />
+                  )}
+                  Domain identity check
+                </h3>
+                <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap', fontSize: '13px', marginBottom: '8px' }}>
+                  {claimedOrganization && (
+                    <div>
+                      <strong>Claims to be:</strong> {claimedOrganization}
+                    </div>
+                  )}
+                  {actualDomain && (
+                    <div>
+                      <strong>Actual destination:</strong> <code>{defangDisplay(actualDomain)}</code>
+                    </div>
+                  )}
+                </div>
+                <p style={{ margin: 0, fontSize: '13px' }}>{domainFinding.evidence}</p>
+              </div>
+            )}
+
+            <div className="result-grid">
+              <div className="findings">
+                <h3>Detected signals ({decision.findings.length})</h3>
+                {decision.findings.length === 0 && <p className="empty-state">No explicit scam indicators matched standard rules.</p>}
+                {decision.findings.map((finding, idx) => (
+                  <article key={`${finding.canonicalSignal}-${idx}`} className="finding-card">
+                    <header>
+                      <span className="signal">{finding.canonicalSignal}</span>
+                      <span className="source">{finding.source}</span>
+                    </header>
+                    <p className="evidence">"{finding.evidence}"</p>
+                    <small className="category">{finding.category}</small>
+                    {finding.limitation && <p className="limitation">{finding.limitation}</p>}
+                  </article>
+                ))}
+              </div>
+
+              <div className="actions">
+                <h3>Recommended safe actions</h3>
+                <ul>
+                  {decision.safeActions.map((actionItem, index) => (
+                    <li key={index}>{actionItem}</li>
+                  ))}
+                </ul>
+
+                {decision.limitations.length > 0 && (
+                  <div className="limitations-box">
+                    <h4>System Knowledge Limits</h4>
+                    <ul>
+                      {decision.limitations.map((limit, idx) => (
+                        <li key={idx}>{limit}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            </div>
+
             <CommunityReportBar onReportClick={() => setIsReportModalOpen(true)} />
           </section>
         )}
-        <ReportModal isOpen={isReportModalOpen} onClose={() => setIsReportModalOpen(false)} content={text} reportedDomain={detectedDomain} />
+        <ReportModal
+          isOpen={isReportModalOpen}
+          onClose={() => setIsReportModalOpen(false)}
+          content={text}
+          reportedDomain={detectedDomain}
+        />
       </>
       <footer><span>TrustLens LK</span><span>Rules and verified checks guide the recommendation.</span></footer>
     </main>
@@ -276,4 +483,3 @@ function App() {
 }
 
 export default App
-

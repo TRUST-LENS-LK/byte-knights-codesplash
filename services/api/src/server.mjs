@@ -4,9 +4,10 @@ import { MAX_BODY_BYTES, MAX_TEXT, PORT } from './config/env.mjs'
 import { send } from './http/response.mjs'
 import { authorizeModerator, loginModeratorWithPassword } from './http/auth.mjs'
 import { analyze, applyScannerRisk, extractEntities, validateSubmission } from './services/analysis.mjs'
-import { persistIfConsented } from './services/persistence.mjs'
+import { persistIfConsented, purgeExpiredSubmissions } from './services/persistence.mjs'
 import { consumeRateLimit } from './services/rateLimit.mjs'
-import { verifyApprovedDomains } from './services/domainVerification.mjs'
+import { applyDomainMismatchRisk, checkClaimedOrganizationDomain, verifyApprovedDomains } from './services/domainVerification.mjs'
+import { listDomainDirectory, lookupDomainDirectory } from './services/domainDirectory.mjs'
 import { inspectScannerUrl, scannerFindings } from './services/urlSafety.mjs'
 import {
   checkVerifiedIntelligence,
@@ -43,6 +44,36 @@ const server = createServer(async (req, res) => {
   if (req.method === 'GET' && pathname === '/openapi.json') {
     res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' })
     return res.end(JSON.stringify(getOpenApiSpec(), null, 2))
+  }
+
+  // Domain Directory (Public GET) — matches the RLS policy, which already
+  // lets anon/authenticated callers read active organizations directly, so
+  // this endpoint requires no auth. It exists so the frontend and other
+  // members can get a validated, camelCase response instead of talking to
+  // Supabase's REST API directly.
+  if (req.method === 'GET' && pathname === '/api/domain-directory') {
+    try {
+      const category = parsedUrl.searchParams.get('category') || undefined
+      const includeStale = parsedUrl.searchParams.get('includeStale') === 'true'
+      const entries = await listDomainDirectory({ category, includeStale })
+      return send(res, 200, { entries, count: entries.length, requestId }, requestId)
+    } catch (error) {
+      return send(res, 502, { code: 'DIRECTORY_FETCH_ERROR', message: error.message, requestId }, requestId)
+    }
+  }
+
+  // Domain Directory Lookup (Public GET)
+  if (req.method === 'GET' && pathname === '/api/domain-directory/lookup') {
+    const domain = parsedUrl.searchParams.get('domain')
+    if (!domain || !domain.trim()) {
+      return send(res, 400, { code: 'INVALID_SUBMISSION', message: 'domain query parameter is required.', requestId }, requestId)
+    }
+    try {
+      const result = await lookupDomainDirectory(domain)
+      return send(res, 200, { ...result, submittedDomain: domain.trim().toLowerCase(), requestId }, requestId)
+    } catch (error) {
+      return send(res, 502, { code: 'DIRECTORY_LOOKUP_ERROR', message: error.message, requestId }, requestId)
+    }
   }
 
   // Moderation Stats & High-Level Aggregations (Protected GET)
@@ -326,8 +357,21 @@ const server = createServer(async (req, res) => {
     const validationError = validateSubmission(body)
     if (validationError) return send(res, 400, { code: 'INVALID_SUBMISSION', message: validationError, requestId }, requestId)
 
-    const text = typeof body.text === 'string' ? body.text.trim() : ''
-    if (!text || text.length > MAX_TEXT) return send(res, 400, { code: 'INVALID_SUBMISSION', message: 'text is required and must be at most 10,000 characters.', requestId }, requestId)
+    // A dedicated URL submission (type: 'url') sends `url`, not `text`. Treat
+    // the URL itself as the analysis input so it flows through the same
+    // extraction, rules, and domain-verification pipeline as a message that
+    // happens to contain a link, rather than duplicating that pipeline behind
+    // a second endpoint. A bare URL naturally cannot trigger keyword-based
+    // scam rules or the organization-mismatch check, since there is no
+    // surrounding claim of identity to compare against, only message-mode
+    // submissions can do that, but directory and structural URL checks still
+    // apply.
+    const text = typeof body.text === 'string' && body.text.trim()
+      ? body.text.trim()
+      : typeof body.url === 'string'
+        ? body.url.trim()
+        : ''
+    if (!text || text.length > MAX_TEXT) return send(res, 400, { code: 'INVALID_SUBMISSION', message: 'text or url is required and must be at most 10,000 characters.', requestId }, requestId)
 
     const entities = extractEntities(text)
 
@@ -379,6 +423,11 @@ const server = createServer(async (req, res) => {
     })
     if (approvedDomainFindings.length) decision.findings.push(...approvedDomainFindings)
 
+    const organizationDomainCheck = await checkClaimedOrganizationDomain(entities).catch(() => ({ findings: [], limitations: [] }))
+    if (organizationDomainCheck.findings.length) decision.findings.push(...organizationDomainCheck.findings)
+    if (organizationDomainCheck.limitations.length) decision.limitations.push(...organizationDomainCheck.limitations)
+    applyDomainMismatchRisk(decision)
+
     // ── Intelligence Reconciliation Engine ─────────────────────────────
     let verifiedFindings = []
     let intelligenceOverlay = undefined
@@ -417,8 +466,26 @@ server.on('error', (error) => {
   process.exitCode = 1
 })
 
+// Retention enforcement: this project has no separate cron infrastructure,
+// so the running API process itself purges submissions past their
+// expires_at once a day, plus once shortly after startup. A failure here is
+// logged, not thrown, since a missed purge should never take the API down.
+const PURGE_INTERVAL_MS = 24 * 60 * 60 * 1000
+async function runRetentionPurge() {
+  try {
+    const deleted = await purgeExpiredSubmissions()
+    if (deleted) console.log(`Retention purge removed ${deleted} expired submission(s).`)
+  } catch (error) {
+    console.error('Retention purge failed:', error.message)
+  }
+}
+const purgeTimer = setInterval(runRetentionPurge, PURGE_INTERVAL_MS)
+purgeTimer.unref?.()
+setTimeout(runRetentionPurge, 5_000).unref?.()
+
 function shutdown(signal) {
   console.log(`${signal} received; shutting down TrustLens API.`)
+  clearInterval(purgeTimer)
   server.close(() => process.exit(0))
 }
 

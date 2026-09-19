@@ -1,0 +1,266 @@
+.ocr-uploader-card {
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 20px;
+  color: #f8fafc;
+}
+
+.ocr-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.ocr-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 14px;
+  color: #38bdf8;
+}
+
+.ocr-icon-sparkle {
+  color: #38bdf8;
+}
+
+.ocr-btn-close {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+}
+
+.ocr-btn-close:hover {
+  color: #f8fafc;
+  background: #334155;
+}
+
+.ocr-dropzone {
+  border: 2px dashed #475569;
+  border-radius: 8px;
+  padding: 24px 16px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  background: #0f172a;
+}
+
+.ocr-dropzone:hover,
+.ocr-dropzone.drag-over {
+  border-color: #38bdf8;
+  background: #1e293b;
+}
+
+.ocr-drop-icon {
+  color: #38bdf8;
+  margin-bottom: 8px;
+}
+
+.ocr-drop-text {
+  font-size: 14px;
+  color: #e2e8f0;
+  margin: 0 0 4px 0;
+}
+
+.ocr-drop-hint {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.ocr-active-container {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ocr-preview-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #0f172a;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid #334155;
+}
+
+.ocr-preview-box {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  overflow: hidden;
+}
+
+.ocr-thumbnail {
+  width: 44px;
+  height: 44px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid #475569;
+}
+
+.ocr-file-name {
+  font-size: 13px;
+  color: #cbd5e1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 220px;
+}
+
+.ocr-progress-box {
+  background: #0f172a;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid #334155;
+}
+
+.ocr-progress-bar-bg {
+  width: 100%;
+  height: 6px;
+  background: #334155;
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.ocr-progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #38bdf8, #818cf8);
+  transition: width 0.3s ease;
+}
+
+.ocr-progress-msg {
+  font-size: 12px;
+  color: #94a3b8;
+  margin: 0;
+}
+
+.ocr-error-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #450a0a;
+  border: 1px solid #7f1d1d;
+  color: #fca5a5;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.ocr-result-box {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ocr-result-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.ocr-conf-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 12px;
+}
+
+.conf-high {
+  background: #064e3b;
+  color: #34d399;
+  border: 1px solid #059669;
+}
+
+.conf-med {
+  background: #451a03;
+  color: #fbbf24;
+  border: 1px solid #d97706;
+}
+
+.conf-low {
+  background: #450a0a;
+  color: #fca5a5;
+  border: 1px solid #dc2626;
+}
+
+.ocr-lang-badge {
+  font-size: 12px;
+  color: #94a3b8;
+  background: #0f172a;
+  padding: 3px 8px;
+  border-radius: 12px;
+  border: 1px solid #334155;
+}
+
+.ocr-editable-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ocr-label {
+  font-size: 12px;
+  color: #cbd5e1;
+  font-weight: 500;
+}
+
+.ocr-textarea {
+  width: 100%;
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  color: #f8fafc;
+  padding: 10px;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  resize: vertical;
+  box-sizing: border-box;
+}
+
+.ocr-textarea:focus {
+  outline: none;
+  border-color: #38bdf8;
+}
+
+.ocr-action-row {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.ocr-btn-confirm {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #0284c7;
+  color: #ffffff;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.ocr-btn-confirm:hover:not(:disabled) {
+  background: #0369a1;
+}
+
+.ocr-btn-confirm:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
