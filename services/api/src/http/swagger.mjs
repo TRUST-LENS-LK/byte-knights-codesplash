@@ -3,8 +3,11 @@ export function getOpenApiSpec() {
     openapi: '3.0.3',
     info: {
       title: 'TrustLens LK API',
-      version: '0.1.0',
+      version: '1.0.0',
       description: 'Sri Lanka Scam Decision Support and Community Intelligence Platform API.',
+      contact: {
+        name: 'Byte Knights',
+      },
     },
     servers: [
       {
@@ -21,18 +24,180 @@ export function getOpenApiSpec() {
           description: 'Supabase Auth JWT Bearer token (from moderator login)',
         },
       },
+      schemas: {
+        Submission: {
+          type: 'object',
+          properties: {
+            type: { type: 'string', enum: ['message', 'url', 'screenshot'], default: 'message', description: 'Submission content type' },
+            text: { type: 'string', maxLength: 10000, example: 'Congratulations! You won Rs. 50,000. Send OTP to claim.' },
+            url: { type: 'string', format: 'uri', maxLength: 2048, example: 'https://scam-lottery-lk.xyz/claim' },
+            imageRef: { type: 'string', maxLength: 512 },
+            languageHint: { type: 'string', enum: ['en', 'si', 'singlish', 'mixed'], default: 'en' },
+            retentionConsent: { type: 'boolean', default: false, description: 'Explicit user consent for privacy-preserved research data retention' },
+          },
+        },
+        ExtractedEntity: {
+          type: 'object',
+          required: ['type', 'value'],
+          properties: {
+            type: { type: 'string', enum: ['url', 'domain', 'phone', 'email', 'amount', 'organization'] },
+            value: { type: 'string', example: 'https://scam.lk' },
+            normalizedValue: { type: 'string', nullable: true, example: 'scam.lk' },
+            sourceSpan: { type: 'string', nullable: true, example: 'https://scam.lk' },
+            startIndex: { type: 'integer', nullable: true, example: 12 },
+            endIndex: { type: 'integer', nullable: true, example: 27 },
+            confidence: { type: 'number', minimum: 0, maximum: 1, example: 0.99 },
+          },
+        },
+        Finding: {
+          type: 'object',
+          required: ['canonicalSignal', 'category', 'evidence', 'source', 'strength'],
+          properties: {
+            canonicalSignal: { type: 'string', example: 'credential_request' },
+            category: { type: 'string', example: 'Sensitive information theft' },
+            evidence: { type: 'string', example: 'OTP or one-time verification code requested' },
+            source: { type: 'string', enum: ['RULE', 'LLM', 'DOMAIN_DIRECTORY', 'SCANNER', 'APPROVED_REPORT'] },
+            strength: { type: 'number', minimum: 0, maximum: 1, example: 0.99 },
+            confidence: { type: 'number', minimum: 0, maximum: 1, example: 0.99 },
+            limitation: { type: 'string', example: 'Keyword rule; cross-verify through official channels.' },
+            detectorVersion: { type: 'string', example: 'rules-v2' },
+          },
+        },
+        RiskDecision: {
+          type: 'object',
+          required: ['riskBand', 'recommendation', 'findings', 'limitations', 'safeActions', 'policyVersion'],
+          properties: {
+            riskBand: { type: 'string', enum: ['LOW', 'MEDIUM', 'HIGH', 'UNKNOWN'] },
+            recommendation: { type: 'string', enum: ['PROCEED_CAUTIOUSLY', 'VERIFY_INDEPENDENTLY', 'STOP_AND_AVOID', 'UNABLE_TO_VERIFY'] },
+            findings: { type: 'array', items: { $ref: '#/components/schemas/Finding' } },
+            counterEvidence: { type: 'array', items: { $ref: '#/components/schemas/Finding' } },
+            overridesApplied: { type: 'array', items: { type: 'string' } },
+            missingChecks: { type: 'array', items: { type: 'string', enum: ['RULE', 'LLM', 'DOMAIN_DIRECTORY', 'SCANNER', 'APPROVED_REPORT'] } },
+            limitations: { type: 'array', items: { type: 'string' } },
+            safeActions: { type: 'array', items: { type: 'string' } },
+            policyVersion: { type: 'string', example: 'rules-v2' },
+          },
+        },
+        AnalyzeResponse: {
+          type: 'object',
+          required: ['inputType', 'decision', 'entities', 'requestId'],
+          properties: {
+            inputType: { type: 'string', enum: ['message', 'url', 'screenshot'] },
+            submissionId: { type: 'string', format: 'uuid', nullable: true },
+            decision: { $ref: '#/components/schemas/RiskDecision' },
+            entities: { type: 'array', items: { $ref: '#/components/schemas/ExtractedEntity' } },
+            requestId: { type: 'string', format: 'uuid' },
+          },
+        },
+        ScannerPreviewRequest: {
+          type: 'object',
+          required: ['url'],
+          properties: {
+            url: { type: 'string', format: 'uri', example: 'https://login.example.com/verify' },
+          },
+        },
+        ScannerPreviewResponse: {
+          type: 'object',
+          required: ['safeToFetch', 'hostname', 'url', 'requestId'],
+          properties: {
+            safeToFetch: { type: 'boolean', example: true },
+            hostname: { type: 'string', example: 'login.example.com' },
+            url: { type: 'string', format: 'uri', example: 'https://login.example.com/verify' },
+            requestId: { type: 'string', format: 'uuid' },
+          },
+        },
+        UserReportInput: {
+          type: 'object',
+          required: ['reportType', 'contentSha256'],
+          properties: {
+            reportType: { type: 'string', enum: ['suspicious', 'false_positive', 'false_negative'] },
+            contentSha256: { type: 'string', pattern: '^[a-f0-9]{64}$', example: 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f61234' },
+            reportedDomain: { type: 'string', maxLength: 255, nullable: true, example: 'scam-lottery-lk.xyz' },
+            notes: { type: 'string', maxLength: 2000, nullable: true, example: 'WhatsApp message demanding fee upfront.' },
+          },
+        },
+        UserReport: {
+          type: 'object',
+          required: ['id', 'reportType', 'contentSha256', 'status', 'createdAt'],
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            reportType: { type: 'string', enum: ['suspicious', 'false_positive', 'false_negative'] },
+            contentSha256: { type: 'string' },
+            reportedDomain: { type: 'string', nullable: true },
+            notes: { type: 'string', nullable: true },
+            status: { type: 'string', enum: ['PENDING', 'REVIEWED', 'REJECTED', 'APPROVED', 'RETIRED'] },
+            createdAt: { type: 'string', format: 'date-time' },
+          },
+        },
+        ModerationActionInput: {
+          type: 'object',
+          required: ['reportId', 'action'],
+          properties: {
+            reportId: { type: 'string', format: 'uuid' },
+            action: { type: 'string', enum: ['APPROVE', 'REJECT', 'RETIRE'] },
+            notes: { type: 'string', maxLength: 1000, nullable: true, example: 'Confirmed phishing website.' },
+            indicatorType: { type: 'string', enum: ['domain', 'content_hash', 'phone', 'url'], nullable: true },
+            category: { type: 'string', maxLength: 100, nullable: true, example: 'Phishing' },
+          },
+        },
+        ModerationQueueResponse: {
+          type: 'object',
+          required: ['reports', 'count', 'total', 'page', 'limit', 'totalPages', 'status', 'requestId'],
+          properties: {
+            reports: { type: 'array', items: { $ref: '#/components/schemas/UserReport' } },
+            count: { type: 'integer', example: 1 },
+            total: { type: 'integer', example: 1 },
+            page: { type: 'integer', example: 1 },
+            limit: { type: 'integer', example: 20 },
+            totalPages: { type: 'integer', example: 1 },
+            status: { type: 'string', example: 'PENDING' },
+            requestId: { type: 'string', format: 'uuid' },
+          },
+        },
+        ModerationStatsResponse: {
+          type: 'object',
+          required: ['totalReports', 'pendingCount', 'approvedCount', 'rejectedCount', 'reportsVelocity24h', 'threatCategories', 'requestId'],
+          properties: {
+            totalReports: { type: 'integer', example: 42 },
+            pendingCount: { type: 'integer', example: 5 },
+            approvedCount: { type: 'integer', example: 35 },
+            rejectedCount: { type: 'integer', example: 2 },
+            reportsVelocity24h: { type: 'integer', example: 8 },
+            threatCategories: { type: 'object', additionalProperties: { type: 'integer' } },
+            requestId: { type: 'string', format: 'uuid' },
+          },
+        },
+        ApiError: {
+          type: 'object',
+          required: ['code', 'message'],
+          properties: {
+            code: { type: 'string', example: 'INVALID_SUBMISSION' },
+            message: { type: 'string', example: 'text or url is required.' },
+            requestId: { type: 'string', format: 'uuid' },
+          },
+        },
+      },
     },
 
     paths: {
       '/health': {
         get: {
           summary: 'Service Health Check',
+          description: 'Returns API health status, service identifier, and unique request trace ID.',
           responses: {
             200: {
               description: 'Service is healthy',
               content: {
                 'application/json': {
-                  example: { status: 'ok', service: 'trustlens-api', requestId: '123e4567-e89b-12d3-a456-426614174000' },
+                  schema: {
+                    type: 'object',
+                    required: ['status', 'service', 'requestId'],
+                    properties: {
+                      status: { type: 'string', example: 'ok' },
+                      service: { type: 'string', example: 'trustlens-api' },
+                      requestId: { type: 'string', format: 'uuid' },
+                    },
+                  },
                 },
               },
             },
@@ -42,69 +207,133 @@ export function getOpenApiSpec() {
       '/api/analyze': {
         post: {
           summary: 'Analyze text message or URL for scam indicators',
+          description: 'Runs deterministic rule engine, remote URL scanner, and entity extraction to produce risk decisions.',
           requestBody: {
             required: true,
             content: {
               'application/json': {
-                schema: {
-                  type: 'object',
-                  required: ['text'],
-                  properties: {
-                    type: { type: 'string', enum: ['message', 'url', 'screenshot'], default: 'message' },
-                    text: { type: 'string', example: 'Congratulations! You won Rs. 50,000. Send OTP to claim.' },
-                    languageHint: { type: 'string', enum: ['en', 'si', 'singlish', 'mixed'], default: 'en' },
-                    retentionConsent: { type: 'boolean', default: false },
-                  },
-                },
+                schema: { $ref: '#/components/schemas/Submission' },
               },
             },
           },
           responses: {
-            200: { description: 'Analysis decision and extracted entities' },
-            400: { description: 'Invalid submission' },
+            200: {
+              description: 'Analysis decision and extracted entities',
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/AnalyzeResponse' },
+                },
+              },
+            },
+            400: {
+              description: 'Invalid submission payload',
+              content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } },
+            },
+            413: {
+              description: 'Payload exceeds maximum size limit (100KB)',
+              content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } },
+            },
+            429: {
+              description: 'Rate limit exceeded',
+              content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } },
+            },
+          },
+        },
+      },
+      '/api/scanner/preview': {
+        post: {
+          summary: 'Inspect URL for SSRF safety and security signals',
+          description: 'Validates URL target against private IPv4/IPv6 ranges and evaluates structural URL scam signals without performing HTTP fetch.',
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/ScannerPreviewRequest' },
+              },
+            },
+          },
+          responses: {
+            200: {
+              description: 'URL is safe for scanning',
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/ScannerPreviewResponse' },
+                },
+              },
+            },
+            400: {
+              description: 'URL is unsafe or malformed',
+              content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } },
+            },
           },
         },
       },
       '/api/reports': {
         post: {
           summary: 'Submit a community scam report',
-          description: 'Allows citizens to report suspicious content, false positives, or false negatives with a SHA-256 hash.',
+          description: 'Allows citizens to report suspicious content, false positives, or false negatives with a privacy-preserving SHA-256 hash.',
           requestBody: {
             required: true,
             content: {
               'application/json': {
-                schema: {
-                  type: 'object',
-                  required: ['reportType', 'contentSha256'],
-                  properties: {
-                    reportType: { type: 'string', enum: ['suspicious', 'false_positive', 'false_negative'] },
-                    contentSha256: { type: 'string', example: 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f61234' },
-                    reportedDomain: { type: 'string', example: 'scam-lottery-lk.xyz' },
-                    notes: { type: 'string', example: 'WhatsApp message demanding fee upfront.' },
-                  },
-                },
+                schema: { $ref: '#/components/schemas/UserReportInput' },
               },
             },
           },
           responses: {
-            201: { description: 'Report successfully recorded with PENDING status' },
-            400: { description: 'Invalid report payload' },
+            201: {
+              description: 'Report successfully recorded with PENDING status',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    required: ['report', 'reportId', 'status', 'requestId'],
+                    properties: {
+                      report: { $ref: '#/components/schemas/UserReport' },
+                      reportId: { type: 'string', format: 'uuid' },
+                      status: { type: 'string', example: 'PENDING' },
+                      requestId: { type: 'string', format: 'uuid' },
+                    },
+                  },
+                },
+              },
+            },
+            400: {
+              description: 'Invalid report payload',
+              content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } },
+            },
+            503: {
+              description: 'Reporting storage unavailable',
+              content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } },
+            },
           },
         },
       },
       '/api/moderation/stats': {
         get: {
-          summary: 'Fetch aggregated moderation dashboard statistics, velocity, and category distribution',
+          summary: 'Fetch aggregated moderation dashboard statistics',
+          description: 'Returns metrics on report volumes, pending queue size, 24h velocity, and threat category distribution.',
           security: [{ BearerAuth: [] }],
           responses: {
-            200: { description: 'Aggregated moderation statistics and metrics overview' },
-            401: { description: 'Unauthorized - moderator credentials required' },
+            200: {
+              description: 'Aggregated moderation statistics and metrics overview',
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/ModerationStatsResponse' },
+                },
+              },
+            },
+            401: {
+              description: 'Unauthorized - moderator credentials required',
+              content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } },
+            },
           },
         },
       },
       '/api/moderation/queue': {
         get: {
           summary: 'Fetch paginated reports for moderation',
+          description: 'Returns reports filtered by status (PENDING, APPROVED, REJECTED, ALL) with offset pagination support.',
           security: [{ BearerAuth: [] }],
           parameters: [
             {
@@ -130,45 +359,53 @@ export function getOpenApiSpec() {
             },
           ],
           responses: {
-            200: { description: 'Paginated list of reports matching the status filter' },
-            401: { description: 'Unauthorized - moderator credentials required' },
+            200: {
+              description: 'Paginated list of reports matching the status filter',
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/ModerationQueueResponse' },
+                },
+              },
+            },
+            401: {
+              description: 'Unauthorized - moderator credentials required',
+              content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } },
+            },
           },
         },
       },
       '/api/moderation/review': {
         post: {
           summary: 'Review and approve/reject a pending report',
+          description: 'Updates report status and automatically creates sanitized community intelligence if approved.',
           security: [{ BearerAuth: [] }],
-
           requestBody: {
             required: true,
             content: {
               'application/json': {
-                schema: {
-                  type: 'object',
-                  required: ['reportId', 'action'],
-                  properties: {
-                    reportId: { type: 'string', format: 'uuid' },
-                    action: { type: 'string', enum: ['APPROVE', 'REJECT', 'RETIRE'] },
-                    notes: { type: 'string', example: 'Confirmed scam mimicking bank.' },
-                    indicatorType: { type: 'string', enum: ['domain', 'content_hash', 'phone', 'url'] },
-                    category: { type: 'string', example: 'Phishing' },
-                  },
-                },
+                schema: { $ref: '#/components/schemas/ModerationActionInput' },
               },
             },
           },
           responses: {
-            200: { description: 'Report updated and verified intelligence created if approved' },
-            401: { description: 'Unauthorized' },
-            404: { description: 'Report not found' },
+            200: {
+              description: 'Report updated and verified intelligence created if approved',
+            },
+            401: {
+              description: 'Unauthorized - moderator credentials required',
+              content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } },
+            },
+            404: {
+              description: 'Report not found',
+              content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } },
+            },
           },
         },
       },
       '/api/moderation/login': {
         post: {
           summary: 'Moderator Authentication Login',
-          description: 'Authenticates a moderator via Supabase Auth and returns an access token JWT.',
+          description: 'Authenticates a moderator via Supabase Auth and returns a JWT access token.',
           requestBody: {
             required: true,
             content: {
@@ -185,9 +422,26 @@ export function getOpenApiSpec() {
             },
           },
           responses: {
-            200: { description: 'Successful login returning JWT access token and role' },
-            401: { description: 'Invalid email or password' },
-            403: { description: 'Account lacks moderator privileges' },
+            200: {
+              description: 'Successful login returning JWT access token and user info',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    required: ['accessToken', 'user', 'requestId'],
+                    properties: {
+                      accessToken: { type: 'string', example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...' },
+                      user: { type: 'object' },
+                      requestId: { type: 'string', format: 'uuid' },
+                    },
+                  },
+                },
+              },
+            },
+            401: {
+              description: 'Invalid credentials or non-moderator account',
+              content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } },
+            },
           },
         },
       },
@@ -197,8 +451,26 @@ export function getOpenApiSpec() {
           description: 'Populates 3 realistic Sri Lankan scam reports into the moderation queue for demonstration and testing.',
           security: [{ BearerAuth: [] }],
           responses: {
-            200: { description: 'Reports successfully seeded' },
-            401: { description: 'Unauthorized' },
+            200: {
+              description: 'Reports successfully seeded',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    required: ['seeded', 'count', 'requestId'],
+                    properties: {
+                      seeded: { type: 'array', items: { $ref: '#/components/schemas/UserReport' } },
+                      count: { type: 'integer', example: 3 },
+                      requestId: { type: 'string', format: 'uuid' },
+                    },
+                  },
+                },
+              },
+            },
+            401: {
+              description: 'Unauthorized - moderator credentials required',
+              content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } },
+            },
           },
         },
       },
@@ -215,10 +487,26 @@ export function getSwaggerHtml() {
   <title>TrustLens LK API Documentation</title>
   <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css" />
   <style>
-    body { margin: 0; background: #fafbfc; }
+    body { margin: 0; background: #0f172a; color: #f8fafc; font-family: system-ui, -apple-system, sans-serif; }
     .topbar { display: none !important; }
-    .swagger-ui .info { margin: 25px 0; }
-    .swagger-ui .info .title { color: #087f8c; font-family: system-ui, sans-serif; }
+    .swagger-ui { font-family: inherit; }
+    .swagger-ui .info { margin: 30px 0; background: #1e293b; padding: 24px; border-radius: 12px; border: 1px solid #334155; }
+    .swagger-ui .info .title { color: #38bdf8; font-weight: 700; }
+    .swagger-ui .info p, .swagger-ui .info li { color: #94a3b8; }
+    .swagger-ui .scheme-container { background: #1e293b; border-radius: 8px; border: 1px solid #334155; box-shadow: none; margin: 0 0 20px 0; padding: 15px; }
+    .swagger-ui .opblock { border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.3); border: 1px solid #334155; background: #1e293b; }
+    .swagger-ui .opblock .opblock-summary-method { border-radius: 6px; font-weight: 700; }
+    .swagger-ui .opblock-summary-path { color: #f1f5f9 !important; font-weight: 600; }
+    .swagger-ui .opblock-description-wrapper p { color: #cbd5e1; }
+    .swagger-ui table thead tr th { color: #f8fafc; border-bottom: 1px solid #334155; }
+    .swagger-ui table tbody tr td { color: #cbd5e1; border-bottom: 1px solid #1e293b; }
+    .swagger-ui .parameter__name { color: #38bdf8; font-weight: 600; }
+    .swagger-ui .parameter__type { color: #94a3b8; }
+    .swagger-ui section.models { border: 1px solid #334155; border-radius: 12px; background: #1e293b; }
+    .swagger-ui section.models h4 { color: #38bdf8; border-bottom: 1px solid #334155; }
+    .swagger-ui .model-title { color: #f8fafc; }
+    .swagger-ui .model { color: #cbd5e1; }
+    .swagger-ui .btn { border-radius: 6px; font-weight: 600; }
   </style>
 </head>
 <body>

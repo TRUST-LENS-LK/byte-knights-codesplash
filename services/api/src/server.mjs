@@ -23,6 +23,7 @@ import { reconcileDecision } from './services/reconcileIntelligence.mjs'
 import { getOpenApiSpec, getSwaggerHtml } from './http/swagger.mjs'
 
 const server = createServer(async (req, res) => {
+  res.req = req
   const requestId = randomUUID()
   const parsedUrl = new URL(req.url, 'http://localhost')
   const pathname = parsedUrl.pathname
@@ -265,11 +266,8 @@ const server = createServer(async (req, res) => {
     if (approvedDomainFindings.length) decision.findings.push(...approvedDomainFindings)
 
     // ── Intelligence Reconciliation Engine ─────────────────────────────
-    let verifiedFindings = []
-    if (process.env.ENABLE_VERIFIED_INTEL === 'true' && process.env.SUPABASE_SERVICE_ROLE_KEY !== 'test-service-key') {
-      verifiedFindings = await checkVerifiedIntelligence(entities, contentSha256).catch(() => [])
-      if (verifiedFindings.length) decision.findings.push(...verifiedFindings)
-    }
+    const verifiedFindings = await checkVerifiedIntelligence(entities, contentSha256).catch(() => [])
+    if (verifiedFindings.length) decision.findings.push(...verifiedFindings)
     const reconciled = reconcileDecision(decision, verifiedFindings)
     const intelligenceOverlay = reconciled.intelligenceOverlay
 

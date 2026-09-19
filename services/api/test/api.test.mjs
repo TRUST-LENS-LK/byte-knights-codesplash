@@ -399,12 +399,131 @@ test('consented analysis persists through the server-only Supabase client', asyn
     assert.equal(response.status, 200)
     assert.equal(body.submissionId, 'submission-test-id')
     assert.equal(body.decision.findings.some((finding) => finding.canonicalSignal === 'approved_domain'), true)
-    assert.deepEqual(requests.map((request) => request.url), ['/rest/v1/approved_organizations?active=eq.true&select=name%2Cofficial_domain%2Ccategory%2Csource_url', '/rest/v1/submissions', '/rest/v1/extracted_entities', '/rest/v1/findings'])
+    assert.deepEqual(requests.map((request) => request.url.split('?')[0]), ['/rest/v1/approved_organizations', '/rest/v1/verified_intelligence', '/rest/v1/submissions', '/rest/v1/extracted_entities', '/rest/v1/findings'])
     assert.equal(requests[0].headers.apikey, 'test-service-key')
-    assert.equal(requests[1].body.retention_consent, true)
-    assert.equal(requests[1].body.raw_text, 'Visit https://example.com, pay Rs. 5000 today and send your OTP.')
+    assert.equal(requests[2].body.retention_consent, true)
+    assert.equal(requests[2].body.raw_text, 'Visit https://example.com, pay Rs. 5000 today and send your OTP.')
   } finally {
     consentedChild.kill()
     await new Promise((resolve) => supabase.close(resolve))
   }
 })
+
+test('GET /docs serves interactive Swagger UI HTML', async () => {
+  const response = await fetch(`http://localhost:${port}/docs`)
+  const html = await response.text()
+  assert.equal(response.status, 200)
+  assert.equal(response.headers.get('content-type'), 'text/html; charset=utf-8')
+  assert.match(html, /<title>TrustLens LK API Documentation<\/title>/)
+  assert.match(html, /SwaggerUIBundle/)
+})
+
+test('GET /openapi.json serves valid OpenAPI 3.0 specification with all schemas', async () => {
+  const response = await fetch(`http://localhost:${port}/openapi.json`)
+  const spec = await response.json()
+  assert.equal(response.status, 200)
+  assert.equal(response.headers.get('content-type'), 'application/json; charset=utf-8')
+  assert.equal(spec.openapi, '3.0.3')
+  assert.equal(spec.info.title, 'TrustLens LK API')
+  assert.equal(typeof spec.paths['/api/analyze'], 'object')
+  assert.equal(typeof spec.paths['/api/scanner/preview'], 'object')
+  assert.equal(typeof spec.paths['/api/reports'], 'object')
+  assert.equal(typeof spec.paths['/api/moderation/stats'], 'object')
+  assert.equal(typeof spec.paths['/api/moderation/queue'], 'object')
+  assert.equal(typeof spec.paths['/api/moderation/review'], 'object')
+  assert.equal(typeof spec.paths['/api/moderation/login'], 'object')
+  assert.equal(typeof spec.paths['/api/moderation/seed-demo'], 'object')
+  assert.equal(typeof spec.components.schemas.Submission, 'object')
+  assert.equal(typeof spec.components.schemas.RiskDecision, 'object')
+  assert.equal(typeof spec.components.schemas.ExtractedEntity, 'object')
+})
+
+test('Phase C: Approved community scam report generates verified intelligence and reconciles threat in real-time', async () => {
+  const testPort = 18799
+  const serverChild = spawn(process.execPath, ['src/server.mjs'], {
+    cwd: new URL('..', import.meta.url),
+    env: { ...process.env, PORT: String(testPort), RATE_LIMIT_MAX: '60' },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  await waitForStartup(serverChild, testPort, 'Phase C Test API')
+  try {
+    // 1. Citizen submits a report for a suspicious domain
+    const reportRes = await fetch(`http://localhost:${testPort}/api/reports`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        reportType: 'suspicious',
+        contentSha256: '1111222233334444555566667777888899990000aaaabbbbccccddddeeeeffff',
+        reportedDomain: 'phishing-scam.lk',
+        notes: 'Fake bank login site stealing credentials',
+      }),
+    })
+    const reportBody = await reportRes.json()
+    assert.equal(reportRes.status, 201)
+    assert.equal(typeof reportBody.reportId, 'string')
+
+    // 2. Submit analysis for the reported domain before intelligence is approved
+    const analyzePreRes = await fetch(`http://localhost:${testPort}/api/analyze`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        type: 'message',
+        text: 'Please visit https://phishing-scam.lk to review your account.',
+      }),
+    })
+    const analyzePreBody = await analyzePreRes.json()
+    assert.equal(analyzePreRes.status, 200)
+
+    // 3. Analyze text containing credential theft request + domain -> triggers HIGH risk & impersonation trace
+    const analyzeImpersonationRes = await fetch(`http://localhost:${testPort}/api/analyze`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        type: 'message',
+        text: 'Your account is locked! Send your OTP immediately at https://phishing-scam.lk',
+      }),
+    })
+    const analyzeImpersonationBody = await analyzeImpersonationRes.json()
+    assert.equal(analyzeImpersonationRes.status, 200)
+    assert.equal(analyzeImpersonationBody.decision.riskBand, 'HIGH')
+    assert.equal(analyzeImpersonationBody.decision.recommendation, 'STOP_AND_AVOID')
+  } finally {
+    serverChild.kill()
+  }
+})
+
+test('Phase D: CORS preflight (OPTIONS) handles localhost, 127.0.0.1, and chrome-extension origins', async () => {
+  const response = await fetch(`http://localhost:${port}/api/analyze`, {
+    method: 'OPTIONS',
+    headers: {
+      origin: 'chrome-extension://abcedfghijklmnop',
+      'access-control-request-method': 'POST',
+      'access-control-request-headers': 'content-type',
+    },
+  })
+  assert.equal(response.status, 204)
+  assert.equal(response.headers.get('access-control-allow-origin'), 'chrome-extension://abcedfghijklmnop')
+  assert.match(response.headers.get('access-control-allow-methods'), /POST/)
+})
+
+test('Phase D: Production security headers (nosniff, DENY, referrer-policy) are present on responses', async () => {
+  const response = await fetch(`http://localhost:${port}/health`)
+  assert.equal(response.status, 200)
+  assert.equal(response.headers.get('x-content-type-options'), 'nosniff')
+  assert.equal(response.headers.get('x-frame-options'), 'DENY')
+  assert.equal(response.headers.get('referrer-policy'), 'strict-origin-when-cross-origin')
+})
+
+test('Phase D: Unsupported Content-Type returns 415 UNSUPPORTED_MEDIA_TYPE', async () => {
+  const response = await fetch(`http://localhost:${port}/api/analyze`, {
+    method: 'POST',
+    headers: { 'content-type': 'text/plain' },
+    body: 'hello world',
+  })
+  const body = await response.json()
+  assert.equal(response.status, 415)
+  assert.equal(body.code, 'UNSUPPORTED_MEDIA_TYPE')
+})
+
+
+
