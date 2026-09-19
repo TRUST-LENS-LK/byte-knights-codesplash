@@ -97,6 +97,7 @@ export const findingSchema = z.object({
   ]),
   strength: z.number().min(0).max(1),
   confidence: z.number().min(0).max(1).optional(),
+  reportCount: z.number().int().nonnegative().optional(),
   limitation: z.string().optional(),
   // Identifies which version of the rule or detector produced this finding,
   // so a stored decision trace stays auditable even after the detector logic
@@ -239,6 +240,7 @@ export const moderationActionSchema = z.object({
   notes: z.string().max(1000).optional().nullable(),
   indicatorType: z.enum(["domain", "content_hash", "phone", "url"]).optional(),
   category: z.string().max(100).optional().nullable(),
+  confidence: z.number().min(0.1).max(1.0).optional().nullable(),
 });
 
 export const verifiedIntelligenceSchema = z.object({

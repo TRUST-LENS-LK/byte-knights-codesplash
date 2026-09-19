@@ -26,6 +26,9 @@ import {
   Phone,
   Power,
   Search,
+  Pencil,
+  Copy,
+  Check,
 } from 'lucide-react'
 import {
   type ModerationQueueItem,
@@ -39,6 +42,7 @@ import {
   updateEngineSettings,
   fetchVerifiedIntelligence,
   toggleIntelligenceStatus,
+  updateIntelligenceItem,
   getStoredSession,
   loginModerator,
   reviewModerationItem,
@@ -656,11 +660,57 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
     }
   }
 
+  const [editingIntelId, setEditingIntelId] = useState<string | null>(null)
+  const [editingIntelNoteText, setEditingIntelNoteText] = useState('')
+  const [copiedHashId, setCopiedHashId] = useState<string | null>(null)
+
+  const handleStartEditNote = (item: VerifiedIntelligenceItem) => {
+    setEditingIntelId(item.id)
+    setEditingIntelNoteText(item.notes || '')
+  }
+
+  const handleCancelEditNote = () => {
+    setEditingIntelId(null)
+    setEditingIntelNoteText('')
+  }
+
+  const handleSaveNote = async (item: VerifiedIntelligenceItem) => {
+    if (!token) return
+    const newNotes = editingIntelNoteText.trim()
+    // Optimistic update
+    setIntelligenceList((prev) =>
+      prev.map((i) => (i.id === item.id ? { ...i, notes: newNotes } : i))
+    )
+    setEditingIntelId(null)
+
+    setIsUpdatingIntel(true)
+    const res = await updateIntelligenceItem(token, item.id, { notes: newNotes })
+    setIsUpdatingIntel(false)
+
+    if (res.success) {
+      showToast('Threat intelligence note updated successfully.')
+      void loadIntelligence()
+    } else {
+      // Revert
+      setIntelligenceList((prev) =>
+        prev.map((i) => (i.id === item.id ? { ...i, notes: item.notes } : i))
+      )
+      showToast(`Failed to update note: ${res.error}`)
+    }
+  }
+
+  const handleCopyHash = (id: string, hash: string) => {
+    navigator.clipboard.writeText(hash)
+    setCopiedHashId(id)
+    setTimeout(() => setCopiedHashId(null), 2000)
+  }
+
   const handleModalApprove = async (
     report: ModerationQueueItem,
     category: string,
     indicatorType: 'domain' | 'content_hash' | 'url',
-    notes: string
+    notes: string,
+    confidence: number = 1.0
   ) => {
     if (!token) return
     setIsProcessingReview(true)
@@ -670,6 +720,7 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
       category,
       indicatorType: report.reported_domain ? indicatorType : 'content_hash',
       notes: notes.trim() || 'Approved by moderator and sanitized for threat intelligence.',
+      confidence,
     })
     setIsProcessingReview(false)
 
@@ -2127,23 +2178,96 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                       ) : (
                         intelligenceList.map((item) => {
                           const isSafe = item.risk_level === 'VERIFIED_SAFE'
+                          const isHash = item.indicator_type === 'content_hash'
+                          const isEditing = editingIntelId === item.id
+
                           return (
                             <tr key={item.id} className={!item.active ? 'neo-row-retired' : ''}>
                               <td>
                                 <div className="neo-indicator-cell">
-                                  {item.indicator_type === 'domain' || item.indicator_type === 'url' ? (
-                                    <Globe size={13} color="#64748b" aria-hidden="true" />
-                                  ) : item.indicator_type === 'phone' ? (
-                                    <Phone size={13} color="#64748b" aria-hidden="true" />
+                                  <div className="neo-indicator-header">
+                                    {item.indicator_type === 'domain' || item.indicator_type === 'url' ? (
+                                      <Globe size={13} color="#64748b" aria-hidden="true" />
+                                    ) : item.indicator_type === 'phone' ? (
+                                      <Phone size={13} color="#64748b" aria-hidden="true" />
+                                    ) : (
+                                      <Hash size={13} color="#64748b" aria-hidden="true" />
+                                    )}
+
+                                    {isHash ? (
+                                      <div className="neo-hash-pill-wrapper">
+                                        <span className="neo-hash-pill" title={item.defanged_value}>
+                                          {item.defanged_value.slice(0, 10)}...{item.defanged_value.slice(-8)}
+                                        </span>
+                                        <button
+                                          type="button"
+                                          className="neo-btn-copy-hash"
+                                          onClick={() => handleCopyHash(item.id, item.defanged_value)}
+                                          title="Copy full SHA-256 fingerprint"
+                                        >
+                                          {copiedHashId === item.id ? <Check size={11} color="#16a34a" /> : <Copy size={11} />}
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <span
+                                        className={`neo-indicator-badge ${isSafe ? 'safe' : ''} ${!item.active ? 'retired' : ''}`}
+                                        title={`Defanged: ${item.defanged_value}`}
+                                      >
+                                        {item.defanged_value}
+                                      </span>
+                                    )}
+
+                                    {item.report_count && item.report_count > 1 ? (
+                                      <span className="neo-count-badge" title={`Reported and confirmed ${item.report_count} times`}>
+                                        {item.report_count}x reports
+                                      </span>
+                                    ) : null}
+                                  </div>
+
+                                  {/* Context / Notes Preview with Inline Edit */}
+                                  {isEditing ? (
+                                    <div className="neo-inline-note-editor">
+                                      <input
+                                        type="text"
+                                        value={editingIntelNoteText}
+                                        onChange={(e) => setEditingIntelNoteText(e.target.value)}
+                                        placeholder="Add moderator note or excerpt..."
+                                        className="neo-input-edit-note"
+                                        autoFocus
+                                      />
+                                      <div className="neo-edit-note-actions">
+                                        <button
+                                          type="button"
+                                          className="neo-btn-save-note"
+                                          onClick={() => void handleSaveNote(item)}
+                                          disabled={isUpdatingIntel}
+                                        >
+                                          Save
+                                        </button>
+                                        <button
+                                          type="button"
+                                          className="neo-btn-cancel-note"
+                                          onClick={handleCancelEditNote}
+                                        >
+                                          Cancel
+                                        </button>
+                                      </div>
+                                    </div>
                                   ) : (
-                                    <Hash size={13} color="#64748b" aria-hidden="true" />
+                                    <div className="neo-intel-note-row">
+                                      <span className="neo-intel-note-text" title={item.notes || 'No note attached'}>
+                                        {item.notes ? item.notes : <em style={{ color: '#94a3b8' }}>No moderator note attached</em>}
+                                      </span>
+                                      <button
+                                        type="button"
+                                        className="neo-btn-edit-note"
+                                        onClick={() => handleStartEditNote(item)}
+                                        title="Edit moderator note"
+                                      >
+                                        <Pencil size={11} aria-hidden="true" />
+                                      </button>
+                                    </div>
                                   )}
-                                  <span
-                                    className={`neo-indicator-badge ${isSafe ? 'safe' : ''} ${!item.active ? 'retired' : ''}`}
-                                    title={`Defanged: ${item.defanged_value}`}
-                                  >
-                                    {item.defanged_value}
-                                  </span>
                                 </div>
                               </td>
                               <td>

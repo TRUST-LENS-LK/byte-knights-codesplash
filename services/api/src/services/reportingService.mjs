@@ -20,6 +20,7 @@ const initialDemoIntel = [
     category: 'Utility Phishing',
     confidence: 0.98,
     notes: 'Impersonates Ceylon Electricity Board payment portal with fake bill settlement gateway.',
+    report_count: 3,
     active: true,
     created_at: new Date(Date.now() - 86400000 * 2).toISOString(),
     updated_at: new Date(Date.now() - 86400000 * 2).toISOString(),
@@ -34,6 +35,7 @@ const initialDemoIntel = [
     category: 'Telecom Impersonation',
     confidence: 0.95,
     notes: 'Fraudulent SMS campaign offering fake data packages requiring OTP entry.',
+    report_count: 5,
     active: true,
     created_at: new Date(Date.now() - 86400000 * 4).toISOString(),
     updated_at: new Date(Date.now() - 86400000 * 4).toISOString(),
@@ -48,6 +50,7 @@ const initialDemoIntel = [
     category: 'Government Portal',
     confidence: 1.0,
     notes: 'Official Sri Lanka Government Web Portal top-level domain.',
+    report_count: 1,
     active: true,
     created_at: new Date(Date.now() - 86400000 * 10).toISOString(),
     updated_at: new Date(Date.now() - 86400000 * 10).toISOString(),
@@ -149,6 +152,23 @@ export function validateCreateReport(body) {
   return null
 }
 
+/**
+ * Compute dynamically scaled confidence incorporating corroboration count.
+ * Formula: Doubt(n) = (1 - C_base) * (0.65)^(n - 1)
+ *          C_effective = 1 - Doubt(n)
+ * @param {number} baseConfidence - Initial moderator confidence (e.g. 0.70, 0.85, 1.0)
+ * @param {number} reportCount - Number of independent corroborating reports (>= 1)
+ * @returns {number} Effective confidence between 0.5 and 1.0 (rounded to 3 decimals)
+ */
+export function computeEffectiveConfidence(baseConfidence = 1.0, reportCount = 1) {
+  const base = Math.max(0.1, Math.min(1.0, Number(baseConfidence) || 1.0))
+  const n = Math.max(1, Number(reportCount) || 1)
+  if (base >= 0.999 || n === 1) return Number(base.toFixed(3))
+  const doubt = (1.0 - base) * Math.pow(0.65, n - 1)
+  const effective = Math.min(1.0, 1.0 - doubt)
+  return Number(effective.toFixed(3))
+}
+
 export function validateModerationAction(body) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
     return 'Request body must be a JSON object.'
@@ -168,6 +188,12 @@ export function validateModerationAction(body) {
   const validIndicators = ['domain', 'content_hash', 'phone', 'url']
   if (body.indicatorType !== undefined && body.indicatorType !== null && !validIndicators.includes(body.indicatorType)) {
     return `indicatorType must be one of: ${validIndicators.join(', ')}.`
+  }
+  if (body.confidence !== undefined && body.confidence !== null) {
+    const conf = Number(body.confidence)
+    if (isNaN(conf) || conf < 0.1 || conf > 1.0) {
+      return 'confidence must be a number between 0.1 and 1.0.'
+    }
   }
   return null
 }
@@ -430,7 +456,7 @@ export function extractDomainVariants(domain) {
 }
 
 export async function processModerationReview(reviewPayload, actorRole = 'moderator') {
-  const { reportId, action, notes, indicatorType, category } = reviewPayload
+  const { reportId, action, notes, indicatorType, category, confidence } = reviewPayload
 
   const report = await getReportById(reportId)
   if (!report) {
@@ -484,6 +510,9 @@ export async function processModerationReview(reviewPayload, actorRole = 'modera
     const rawDomain = rehydrate(storedDomain)
     const primaryVal = rawDomain || report.content_sha256
     const indType = indicatorType || (rawDomain ? 'domain' : 'content_hash')
+    const chosenConfidence = typeof confidence === 'number' && confidence >= 0.1 && confidence <= 1.0
+      ? Number(confidence.toFixed(3))
+      : 1.0
     const intelRecords = []
 
     // Primary indicator record
@@ -495,32 +524,69 @@ export async function processModerationReview(reviewPayload, actorRole = 'modera
       defanged_value: defang(primaryVal),
       risk_level: report.report_type === 'false_positive' ? 'VERIFIED_SAFE' : 'CONFIRMED_SCAM',
       category: category || (report.report_type === 'false_positive' ? 'False Alarm' : 'Reported Scam'),
-      confidence: 1.0,
-      notes: notes || 'Verified by moderator approval',
+      confidence: chosenConfidence,
+      notes: notes || report.notes || 'Verified by moderator approval',
+      report_count: 1,
       active: true,
       created_at: new Date().toISOString(),
     })
 
-    // Dual-index content SHA256 if distinct from primaryVal
-    if (rawDomain && report.content_sha256 && /^[a-f0-9]{64}$/i.test(report.content_sha256)) {
-      intelRecords.push({
-        id: randomUUID(),
-        source_report_id: reportId,
-        indicator_type: 'content_hash',
-        indicator_value: report.content_sha256.toLowerCase(),
-        defanged_value: report.content_sha256.toLowerCase(),
-        risk_level: report.report_type === 'false_positive' ? 'VERIFIED_SAFE' : 'CONFIRMED_SCAM',
-        category: category || (report.report_type === 'false_positive' ? 'False Alarm' : 'Reported Scam'),
-        confidence: 0.95,
-        notes: `Cryptographic fingerprint for verified report ${reportId.slice(0, 8)}`,
-        active: true,
-        created_at: new Date().toISOString(),
-      })
+    // Option A: Only create content_hash if NO rawDomain exists (pure text/phone scam)
+    if (!rawDomain && report.content_sha256 && /^[a-f0-9]{64}$/i.test(report.content_sha256)) {
+      if (primaryVal.toLowerCase() !== report.content_sha256.toLowerCase()) {
+        intelRecords.push({
+          id: randomUUID(),
+          source_report_id: reportId,
+          indicator_type: 'content_hash',
+          indicator_value: report.content_sha256.toLowerCase(),
+          defanged_value: report.content_sha256.toLowerCase(),
+          risk_level: report.report_type === 'false_positive' ? 'VERIFIED_SAFE' : 'CONFIRMED_SCAM',
+          category: category || (report.report_type === 'false_positive' ? 'False Alarm' : 'Reported Scam'),
+          confidence: chosenConfidence < 1.0 ? chosenConfidence : 0.95,
+          notes: notes || report.notes || `Cryptographic fingerprint for verified report ${reportId.slice(0, 8)}`,
+          report_count: 1,
+          active: true,
+          created_at: new Date().toISOString(),
+        })
+      }
     }
 
     for (const intelRecord of intelRecords) {
       if (isSupabaseConfigured()) {
         try {
+          // Check if an indicator with the exact same indicator_value already exists (Deduplication)
+          const checkQuery = `${SUPABASE_URL}/rest/v1/verified_intelligence?indicator_value=eq.${encodeURIComponent(intelRecord.indicator_value)}&limit=1`
+          const checkRes = await fetch(checkQuery, {
+            headers: getHeaders(),
+            signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+          })
+          if (checkRes.ok) {
+            const [existing] = await checkRes.json()
+            if (existing) {
+              const updatedCount = (existing.report_count || 1) + 1
+              const baseConf = Math.max(Number(existing.confidence) || 0.85, chosenConfidence)
+              const updatedConfidence = computeEffectiveConfidence(baseConf, updatedCount)
+              const updatedNotes = notes && !existing.notes?.includes(notes) ? `${existing.notes} | ${notes}` : existing.notes
+              const updatePayload = {
+                report_count: updatedCount,
+                confidence: updatedConfidence,
+                updated_at: new Date().toISOString(),
+                ...(updatedNotes ? { notes: updatedNotes } : {}),
+              }
+              const updateRes = await fetch(`${SUPABASE_URL}/rest/v1/verified_intelligence?id=eq.${existing.id}`, {
+                method: 'PATCH',
+                headers: getHeaders(),
+                body: JSON.stringify(updatePayload),
+                signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+              })
+              if (updateRes.ok) {
+                if (!verifiedIntelligenceId) verifiedIntelligenceId = existing.id
+                continue
+              }
+            }
+          }
+
+          // Not found, insert new indicator
           const intelRes = await fetch(`${SUPABASE_URL}/rest/v1/verified_intelligence`, {
             method: 'POST',
             headers: getHeaders(),
@@ -535,8 +601,31 @@ export async function processModerationReview(reviewPayload, actorRole = 'modera
           // Non-blocking if table migration pending
         }
       } else {
-        inMemoryIntel.set(intelRecord.id, intelRecord)
-        if (!verifiedIntelligenceId) verifiedIntelligenceId = intelRecord.id
+        // In-memory Deduplication & Frequency Counter
+        let existing = null
+        for (const item of inMemoryIntel.values()) {
+          if (item.indicator_value === intelRecord.indicator_value) {
+            existing = item
+            break
+          }
+        }
+
+        if (existing) {
+          existing.report_count = (existing.report_count || 1) + 1
+          const baseConf = Math.max(Number(existing.confidence) || 0.85, chosenConfidence)
+          existing.confidence = computeEffectiveConfidence(baseConf, existing.report_count)
+          existing.updated_at = new Date().toISOString()
+          if (notes && !existing.notes?.includes(notes)) {
+            existing.notes = `${existing.notes} | ${notes}`
+          }
+          inMemoryIntel.set(existing.id, existing)
+          if (!verifiedIntelligenceId) verifiedIntelligenceId = existing.id
+        } else {
+          intelRecord.report_count = 1
+          intelRecord.confidence = chosenConfidence
+          inMemoryIntel.set(intelRecord.id, intelRecord)
+          if (!verifiedIntelligenceId) verifiedIntelligenceId = intelRecord.id
+        }
       }
     }
   }
@@ -607,6 +696,7 @@ export async function checkVerifiedIntelligence(entities = [], contentSha256 = n
             source: 'APPROVED_REPORT',
             strength: match.risk_level === 'CONFIRMED_SCAM' ? 1.0 : 0.0,
             confidence: Number(match.confidence) || 1.0,
+            reportCount: Number(match.report_count) || 1,
             limitation: 'Verified via community intelligence reports.',
           })
         }
@@ -624,7 +714,8 @@ export async function checkVerifiedIntelligence(entities = [], contentSha256 = n
           evidence: `Indicator ${intel.defanged_value} confirmed by moderator review.`,
           source: 'APPROVED_REPORT',
           strength: intel.risk_level === 'CONFIRMED_SCAM' ? 1.0 : 0.0,
-          confidence: intel.confidence,
+          confidence: Number(intel.confidence) || 1.0,
+          reportCount: Number(intel.report_count) || 1,
           limitation: 'Verified via community intelligence reports.',
         })
       }
@@ -678,7 +769,11 @@ export async function getVerifiedIntelligenceList(options = {}) {
       })
 
       if (res.ok) {
-        const intelligence = await res.json()
+        const rawIntelligence = await res.json()
+        const intelligence = rawIntelligence.map((item) => ({
+          ...item,
+          report_count: item.report_count || 1,
+        }))
         const contentRange = res.headers.get('content-range')
         let total = intelligence.length
         if (contentRange) {
@@ -718,7 +813,10 @@ export async function getVerifiedIntelligenceList(options = {}) {
   items.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
 
   const total = items.length
-  const paginated = items.slice(offset, offset + parsedLimit)
+  const paginated = items.slice(offset, offset + parsedLimit).map((item) => ({
+    ...item,
+    report_count: item.report_count || 1,
+  }))
 
   return {
     intelligence: paginated,
@@ -729,17 +827,22 @@ export async function getVerifiedIntelligenceList(options = {}) {
   }
 }
 
-export async function updateIntelligenceStatus(id, { active, notes, actorRole = 'moderator' } = {}) {
+export async function updateIntelligenceStatus(id, { active, notes, category, actorRole = 'moderator' } = {}) {
   const updatedAt = new Date().toISOString()
 
   if (isSupabaseConfigured()) {
     try {
       const updatePayload = {
-        active: Boolean(active),
         updated_at: updatedAt,
       }
-      if (typeof notes === 'string' && notes.trim()) {
+      if (typeof active === 'boolean') {
+        updatePayload.active = active
+      }
+      if (typeof notes === 'string') {
         updatePayload.notes = notes.trim()
+      }
+      if (typeof category === 'string' && category.trim()) {
+        updatePayload.category = category.trim()
       }
 
       const res = await fetch(`${SUPABASE_URL}/rest/v1/verified_intelligence?id=eq.${id}`, {
@@ -752,15 +855,18 @@ export async function updateIntelligenceStatus(id, { active, notes, actorRole = 
       if (res.ok) {
         const [updated] = await res.json()
         if (updated) {
+          const actionType = typeof active === 'boolean'
+            ? (active ? 'REACTIVATE_INTEL' : 'RETIRE_INTEL')
+            : 'UPDATE_INTEL_NOTE'
           inMemoryAuditLogs.push({
             id: randomUUID(),
             report_id: updated.source_report_id || id,
             actor_role: actorRole,
-            action: active ? 'REACTIVATE_INTEL' : 'RETIRE_INTEL',
+            action: actionType,
             notes: notes || `Intelligence ${active ? 'reactivated' : 'retired'}`,
             created_at: updatedAt,
           })
-          return updated
+          return { ...updated, report_count: updated.report_count || 1 }
         }
       }
     } catch {
@@ -773,23 +879,32 @@ export async function updateIntelligenceStatus(id, { active, notes, actorRole = 
     throw new Error('Intelligence item not found.')
   }
 
-  existing.active = Boolean(active)
-  if (typeof notes === 'string' && notes.trim()) {
+  if (typeof active === 'boolean') {
+    existing.active = active
+  }
+  if (typeof notes === 'string') {
     existing.notes = notes.trim()
+  }
+  if (typeof category === 'string' && category.trim()) {
+    existing.category = category.trim()
   }
   existing.updated_at = updatedAt
   inMemoryIntel.set(id, existing)
+
+  const actionType = typeof active === 'boolean'
+    ? (active ? 'REACTIVATE_INTEL' : 'RETIRE_INTEL')
+    : 'UPDATE_INTEL_NOTE'
 
   inMemoryAuditLogs.push({
     id: randomUUID(),
     report_id: existing.source_report_id || id,
     actor_role: actorRole,
-    action: active ? 'REACTIVATE_INTEL' : 'RETIRE_INTEL',
+    action: actionType,
     notes: notes || `Intelligence ${active ? 'reactivated' : 'retired'}`,
     created_at: updatedAt,
   })
 
-  return existing
+  return { ...existing, report_count: existing.report_count || 1 }
 }
 
 export async function seedDemoQueue() {

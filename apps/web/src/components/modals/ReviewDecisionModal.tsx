@@ -24,7 +24,8 @@ export interface ReviewDecisionModalProps {
     report: ModerationQueueItem,
     category: string,
     indicatorType: 'domain' | 'content_hash' | 'url',
-    notes: string
+    notes: string,
+    confidence?: number
   ) => Promise<void>
   onReject: (report: ModerationQueueItem) => Promise<void>
   isProcessing: boolean
@@ -77,6 +78,7 @@ export const ReviewDecisionModal: React.FC<ReviewDecisionModalProps> = ({
 }) => {
   const [category, setCategory] = useState('Banking Phishing')
   const [indicatorType, setIndicatorType] = useState<'domain' | 'content_hash' | 'url'>('domain')
+  const [confidence, setConfidence] = useState<number>(1.0)
   const [notes, setNotes] = useState('')
   const [copiedExcerpt, setCopiedExcerpt] = useState(false)
   const [copiedHash, setCopiedHash] = useState(false)
@@ -86,6 +88,7 @@ export const ReviewDecisionModal: React.FC<ReviewDecisionModalProps> = ({
     if (report) {
       setCategory(classifyReportCategory(report))
       setIndicatorType(report.reported_domain ? 'domain' : 'content_hash')
+      setConfidence(1.0)
       setNotes('')
       setCopiedExcerpt(false)
       setCopiedHash(false)
@@ -289,8 +292,21 @@ export const ReviewDecisionModal: React.FC<ReviewDecisionModalProps> = ({
                   </select>
                 </div>
 
+                <div className="neo-form-field">
+                  <label style={{ fontSize: '12px', fontWeight: 600, color: '#334155' }}>Confidence Assessment</label>
+                  <select
+                    value={confidence}
+                    onChange={(e) => setConfidence(parseFloat(e.target.value))}
+                    style={{ padding: '8px 10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12.5px' }}
+                  >
+                    <option value={1.0}>Definite Threat (1.00 / 100%) — Confirmed IoC</option>
+                    <option value={0.85}>High Probability (0.85 / 85%) — Strong Markers</option>
+                    <option value={0.70}>Suspicious (0.70 / 70%) — Moderate Certainty</option>
+                  </select>
+                </div>
+
                 {report.reported_domain && (
-                  <div className="neo-form-field">
+                  <div className="neo-form-field" style={{ gridColumn: 'span 2' }}>
                     <label style={{ fontSize: '12px', fontWeight: 600, color: '#334155' }}>Publish Target As</label>
                     <select
                       value={indicatorType}
@@ -364,7 +380,7 @@ export const ReviewDecisionModal: React.FC<ReviewDecisionModalProps> = ({
                 <button
                   type="button"
                   className="neo-modal-btn-action-lime"
-                  onClick={() => onApprove(report, category, indicatorType, notes)}
+                  onClick={() => onApprove(report, category, indicatorType, notes, confidence)}
                   disabled={isProcessing}
                 >
                   {isProcessing ? (

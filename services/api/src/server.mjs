@@ -278,13 +278,14 @@ const server = createServer(async (req, res) => {
     if (!intelId) {
       return send(res, 400, { code: 'INVALID_ID', message: 'Intelligence ID is required.', requestId }, requestId)
     }
-    if (typeof body.active !== 'boolean') {
-      return send(res, 400, { code: 'INVALID_PAYLOAD', message: 'active must be a boolean.', requestId }, requestId)
+    if (typeof body.active !== 'boolean' && typeof body.notes !== 'string' && typeof body.category !== 'string') {
+      return send(res, 400, { code: 'INVALID_PAYLOAD', message: 'At least one of active, notes, or category must be provided.', requestId }, requestId)
     }
     try {
       const updated = await updateIntelligenceStatus(intelId, {
         active: body.active,
         notes: body.notes,
+        category: body.category,
         actorRole: auth.actorRole,
       })
       return send(res, 200, { success: true, updated, requestId }, requestId)

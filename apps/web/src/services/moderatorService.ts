@@ -25,6 +25,7 @@ export interface ModerationReviewPayload {
   notes?: string
   indicatorType?: 'domain' | 'url' | 'content_hash'
   category?: string
+  confidence?: number
 }
 
 export interface ModerationReviewResult {
@@ -368,6 +369,7 @@ export interface VerifiedIntelligenceItem {
   category: string | null
   confidence: number
   notes: string | null
+  report_count?: number
   active: boolean
   created_at: string
   updated_at?: string
@@ -426,11 +428,10 @@ export async function fetchVerifiedIntelligence(
   }
 }
 
-export async function toggleIntelligenceStatus(
+export async function updateIntelligenceItem(
   token: string,
   id: string,
-  active: boolean,
-  notes?: string
+  updates: { active?: boolean; notes?: string; category?: string }
 ): Promise<{ success: boolean; updated?: VerifiedIntelligenceItem; error?: string }> {
   try {
     const res = await fetch(`${API_BASE}/api/moderation/intelligence/${id}`, {
@@ -439,16 +440,26 @@ export async function toggleIntelligenceStatus(
         'content-type': 'application/json',
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({ active, notes }),
+      body: JSON.stringify(updates),
     })
     const data = await res.json()
     if (!res.ok) {
-      return { success: false, error: data.message || `Failed to update status (${res.status})` }
+      return { success: false, error: data.message || `Failed to update intelligence (${res.status})` }
     }
     return { success: true, updated: data.updated }
   } catch (err) {
     return { success: false, error: err instanceof Error ? err.message : 'Network error' }
   }
 }
+
+export async function toggleIntelligenceStatus(
+  token: string,
+  id: string,
+  active: boolean,
+  notes?: string
+): Promise<{ success: boolean; updated?: VerifiedIntelligenceItem; error?: string }> {
+  return updateIntelligenceItem(token, id, { active, notes })
+}
+
 
 
