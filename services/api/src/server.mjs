@@ -243,8 +243,21 @@ const server = createServer(async (req, res) => {
     const validationError = validateSubmission(body)
     if (validationError) return send(res, 400, { code: 'INVALID_SUBMISSION', message: validationError, requestId }, requestId)
 
-    const text = typeof body.text === 'string' ? body.text.trim() : ''
-    if (!text || text.length > MAX_TEXT) return send(res, 400, { code: 'INVALID_SUBMISSION', message: 'text is required and must be at most 10,000 characters.', requestId }, requestId)
+    // A dedicated URL submission (type: 'url') sends `url`, not `text`. Treat
+    // the URL itself as the analysis input so it flows through the same
+    // extraction, rules, and domain-verification pipeline as a message that
+    // happens to contain a link, rather than duplicating that pipeline behind
+    // a second endpoint. A bare URL naturally cannot trigger keyword-based
+    // scam rules or the organization-mismatch check, since there is no
+    // surrounding claim of identity to compare against, only message-mode
+    // submissions can do that, but directory and structural URL checks still
+    // apply.
+    const text = typeof body.text === 'string' && body.text.trim()
+      ? body.text.trim()
+      : typeof body.url === 'string'
+        ? body.url.trim()
+        : ''
+    if (!text || text.length > MAX_TEXT) return send(res, 400, { code: 'INVALID_SUBMISSION', message: 'text or url is required and must be at most 10,000 characters.', requestId }, requestId)
 
     const entities = extractEntities(text)
 

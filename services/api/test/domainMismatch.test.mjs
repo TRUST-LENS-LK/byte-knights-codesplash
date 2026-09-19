@@ -136,3 +136,30 @@ test('a stale directory entry is surfaced as a limitation, not treated as a mism
     assert.equal(body.decision.limitations.some((limitation) => limitation.includes('due for re-review')), true)
   })
 })
+
+test('a dedicated URL submission (type: url, no text) is accepted and checked against the directory', async () => {
+  await withServer([VIRTUSA_RECORD], async (apiPort) => {
+    const response = await fetch(`http://localhost:${apiPort}/api/analyze`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ type: 'url', url: 'https://virtusa.com/careers', retentionConsent: false }),
+    })
+    const body = await response.json()
+    assert.equal(response.status, 200)
+    assert.equal(body.inputType, 'url')
+    assert.equal(body.decision.findings.some((f) => f.canonicalSignal === 'approved_domain'), true)
+  })
+})
+
+test('a dedicated URL submission with neither text nor url is rejected', async () => {
+  await withServer([VIRTUSA_RECORD], async (apiPort) => {
+    const response = await fetch(`http://localhost:${apiPort}/api/analyze`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ type: 'url', retentionConsent: false }),
+    })
+    const body = await response.json()
+    assert.equal(response.status, 400)
+    assert.equal(body.code, 'INVALID_SUBMISSION')
+  })
+})
