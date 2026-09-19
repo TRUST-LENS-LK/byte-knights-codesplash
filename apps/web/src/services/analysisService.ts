@@ -7,7 +7,7 @@ const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8787'
 export type LocalAnalysis = {
   decision: RiskDecision
   entities: ExtractedEntity[]
-  inputType: 'message' | 'url'
+  inputType: 'message' | 'url' | 'screenshot'
   submissionId?: string
   requestId?: string
 }
@@ -26,11 +26,14 @@ export function analyzeSubmission(text: string): LocalAnalysis {
   return { decision, entities, inputType: entities.some((entity) => entity.type === 'url') ? 'url' : 'message' }
 }
 
-export async function analyzeWithApi(text: string): Promise<LocalAnalysis> {
+export async function analyzeWithApi(
+  text: string,
+  type: 'message' | 'url' | 'screenshot' = 'message'
+): Promise<LocalAnalysis> {
   const response = await fetch(`${API_URL}/api/analyze`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ type: 'message', text, retentionConsent: false }),
+    body: JSON.stringify({ type, text, retentionConsent: false }),
   })
   if (!response.ok) throw new Error('Analysis API request failed')
   return (await response.json()) as LocalAnalysis
@@ -53,4 +56,3 @@ export async function submitReport(
   if (!response.ok) throw new Error('Report submission failed')
   return (await response.json()) as ReportResult
 }
-
