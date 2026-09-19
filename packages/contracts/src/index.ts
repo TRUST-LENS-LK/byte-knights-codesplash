@@ -1,13 +1,68 @@
 import { z } from "zod";
 
-export const submissionSchema = z.object({
-  type: z.enum(["message", "url", "screenshot"]),
-  text: z.string().max(10000).optional(),
-  languageHint: z
-    .enum(["en", "si", "singlish", "mixed"])
-    .optional(),
-  retentionConsent: z.boolean().default(false),
-});
+// ============================================================================
+// Member 3: Contract versioning and canonical signal taxonomy
+// ============================================================================
+
+// Bump this whenever a shape in this file changes in a way that existing
+// consumers need to know about, such as a field being renamed, removed, or
+// made required. Attach it to persisted records so old data can be told apart
+// from new data if the shape ever changes.
+export const CONTRACT_VERSION = "1.0.0";
+
+// The canonical signal taxonomy is the fixed list of names a Finding is
+// allowed to use in canonicalSignal. Every reason shown to a user must trace
+// back to one of these, so the explanation on screen always matches something
+// the decision engine actually used. Add new signals here first, then
+// reference them from rule or detector code, rather than inventing a new
+// string inside a detector.
+//
+// This list is not enforced as a strict validation constraint yet, see the
+// open decision in docs/decisions.md. Other members are still adding
+// detectors, and a strict enum would block their work until every signal is
+// catalogued here. Treat this as the shared source of truth to add to, not a
+// hard runtime check, until the team agrees to tighten it.
+export const CANONICAL_SIGNALS = [
+  // Deterministic message rules (packages/rules)
+  "credential_request",
+  "advance_payment",
+  "urgency",
+  "job_offer",
+
+  // Domain verification (services/api/src/services/domainVerification.mjs)
+  "approved_domain",
+  "domain_mismatch",
+  "domain_unknown",
+  "domain_stale",
+
+  // Verified intelligence (Member 5, supabase verified_intelligence table)
+  "confirmed_scam_indicator",
+  "verified_safe_indicator",
+] as const;
+
+export type CanonicalSignal = (typeof CANONICAL_SIGNALS)[number];
+
+// A submission's required fields depend on its type: a "message" needs text, a
+// "url" needs a proper url string, and a "screenshot" needs an image reference.
+export const submissionSchema = z
+  .object({
+    type: z.enum(["message", "url", "screenshot"]),
+    text: z.string().max(10000).optional(),
+    url: z.string().url().max(2048).optional(),
+    imageRef: z.string().max(512).optional(),
+    languageHint: z
+      .enum(["en", "si", "singlish", "mixed"])
+      .optional(),
+    retentionConsent: z.boolean().default(false),
+  })
+  .refine((submission) => submission.type !== "url" || Boolean(submission.url), {
+    message: "url is required when type is 'url'.",
+    path: ["url"],
+  })
+  .refine((submission) => submission.type !== "message" || Boolean(submission.text), {
+    message: "text is required when type is 'message'.",
+    path: ["text"],
+  });
 
 export const extractedEntitySchema = z.object({
   type: z.enum([
@@ -43,8 +98,17 @@ export const findingSchema = z.object({
   strength: z.number().min(0).max(1),
   confidence: z.number().min(0).max(1).optional(),
   limitation: z.string().optional(),
+  // Identifies which version of the rule or detector produced this finding,
+  // so a stored decision trace stays auditable even after the detector logic
+  // changes later. Optional so existing findings without it stay valid.
+  detectorVersion: z.string().optional(),
 });
 
+// All additions below are optional, not defaulted, on purpose: several
+// detectors (packages/rules, services/api) already return a RiskDecision as a
+// plain object literal without calling riskDecisionSchema.parse(). A default()
+// would make these fields required in the inferred output type and break
+// that existing code at compile time. Optional keeps this change additive.
 export const riskDecisionSchema = z.object({
   riskBand: z.enum(["LOW", "MEDIUM", "HIGH", "UNKNOWN"]),
   recommendation: z.enum([
@@ -54,6 +118,22 @@ export const riskDecisionSchema = z.object({
     "UNABLE_TO_VERIFY",
   ]),
   findings: z.array(findingSchema),
+  // Evidence that argues against the findings above, such as an official
+  // domain match found alongside a critical credential request. Recorded so
+  // the explanation can show both sides, not just the signals that won.
+  counterEvidence: z.array(findingSchema).optional(),
+  // Names of any critical-signal overrides the decision engine applied, for
+  // example forcing STOP_AND_AVOID because an OTP request was present
+  // regardless of what the weighted score alone would have produced.
+  overridesApplied: z.array(z.string()).optional(),
+  // Evidence sources that were unavailable for this analysis (the LLM timed
+  // out, the scanner could not run, and so on), shown to the user as a
+  // limitation rather than silently ignored.
+  missingChecks: z
+    .array(
+      z.enum(["RULE", "LLM", "DOMAIN_DIRECTORY", "SCANNER", "APPROVED_REPORT"]),
+    )
+    .optional(),
   limitations: z.array(z.string()),
   safeActions: z.array(z.string()),
   policyVersion: z.string(),
@@ -70,6 +150,48 @@ export type ExtractedEntity = z.infer<typeof extractedEntitySchema>;
 export type Finding = z.infer<typeof findingSchema>;
 export type RiskDecision = z.infer<typeof riskDecisionSchema>;
 export type ApiError = z.infer<typeof apiErrorSchema>;
+
+// ============================================================================
+// Member 3: Official domain directory and verification contracts
+// ============================================================================
+
+export const domainDirectoryStatusSchema = z.enum(["ACTIVE", "STALE", "RETIRED"]);
+
+export const officialDomainRecordSchema = z.object({
+  id: z.number().int().optional(),
+  name: z.string().min(1).max(255),
+  officialDomain: z.string().min(1).max(255),
+  category: z.string().max(100).nullable().optional(),
+  sourceUrl: z.string().url().max(2048).nullable().optional(),
+  reviewer: z.string().max(255).nullable().optional(),
+  verifiedAt: z.string().nullable().optional(),
+  nextReviewDate: z.string().nullable().optional(),
+  status: domainDirectoryStatusSchema.default("ACTIVE"),
+  active: z.boolean().default(true),
+});
+
+export const domainVerificationOutcomeSchema = z.enum([
+  "MATCHED",
+  "MISMATCH",
+  "UNKNOWN",
+  "STALE",
+]);
+
+export const domainVerificationSchema = z.object({
+  submittedDomain: z.string().min(1),
+  claimedOrganization: z.string().nullable().optional(),
+  outcome: domainVerificationOutcomeSchema,
+  matchedRecord: officialDomainRecordSchema.nullable().optional(),
+  evidence: z.string(),
+  checkedAt: z.string(),
+});
+
+export type DomainDirectoryStatus = z.infer<typeof domainDirectoryStatusSchema>;
+export type OfficialDomainRecord = z.infer<typeof officialDomainRecordSchema>;
+export type DomainVerificationOutcome = z.infer<
+  typeof domainVerificationOutcomeSchema
+>;
+export type DomainVerification = z.infer<typeof domainVerificationSchema>;
 
 // ============================================================================
 // Member 5: User Reporting, Moderation & Verified Intelligence Contracts

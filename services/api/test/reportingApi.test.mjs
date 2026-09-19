@@ -80,8 +80,27 @@ test.before(async () => {
         res.writeHead(200, { 'content-type': 'application/json' })
         return res.end(JSON.stringify(item ? [item] : []))
       }
+      let allItems = Array.from(mockReports.values())
+      const statusMatch = req.url.match(/status=eq\.([A-Z_]+)/i)
+      if (statusMatch && statusMatch[1] !== 'ALL') {
+        allItems = allItems.filter((r) => r.status === statusMatch[1])
+      }
+
+      const total = allItems.length
+      const limitMatch = req.url.match(/limit=(\d+)/)
+      const offsetMatch = req.url.match(/offset=(\d+)/)
+      let sliced = allItems
+      if (limitMatch) {
+        const lim = parseInt(limitMatch[1], 10)
+        const off = offsetMatch ? parseInt(offsetMatch[1], 10) : 0
+        sliced = allItems.slice(off, off + lim)
+        res.setHeader('content-range', `${off}-${Math.max(off, off + sliced.length - 1)}/${total}`)
+      } else {
+        res.setHeader('content-range', `0-${Math.max(0, total - 1)}/${total}`)
+      }
+
       res.writeHead(200, { 'content-type': 'application/json' })
-      return res.end(JSON.stringify(Array.from(mockReports.values())))
+      return res.end(JSON.stringify(sliced))
     }
 
     if (req.method === 'PATCH' && req.url.startsWith('/rest/v1/user_reports')) {
@@ -207,6 +226,66 @@ test('GET /api/moderation/queue: allows verified Supabase moderator JWT', async 
   const body = await res.json()
   assert.ok(Array.isArray(body.reports))
   assert.ok(body.count >= 1)
+  assert.equal(body.page, 1)
+  assert.ok(body.limit > 0)
+  assert.ok(body.total >= 1)
+  assert.ok(body.totalPages >= 1)
+})
+
+test('GET /api/moderation/stats: blocks requests without token or non-moderators', async () => {
+  const unauth = await fetch(`http://localhost:${apiPort}/api/moderation/stats`)
+  assert.equal(unauth.status, 401)
+
+  const nonMod = await fetch(`http://localhost:${apiPort}/api/moderation/stats`, {
+    headers: { Authorization: `Bearer ${regularUserToken}` },
+  })
+  assert.equal(nonMod.status, 401)
+})
+
+test('GET /api/moderation/stats: returns aggregated metrics, velocity, and threat categories with moderator JWT', async () => {
+  const res = await fetch(`http://localhost:${apiPort}/api/moderation/stats`, {
+    headers: { Authorization: `Bearer ${validModeratorToken}` },
+  })
+  assert.equal(res.status, 200)
+  const body = await res.json()
+  assert.ok(body.metrics)
+  assert.ok(typeof body.metrics.totalReports === 'number')
+  assert.ok(typeof body.metrics.pendingCount === 'number')
+  assert.ok(typeof body.metrics.verificationVelocity === 'number')
+  assert.ok(Array.isArray(body.weeklyActivity))
+  assert.equal(body.weeklyActivity.length, 7)
+  assert.ok(Array.isArray(body.threatCategories))
+})
+
+test('GET /api/moderation/queue: supports pagination with custom page and limit', async () => {
+  // First seed or verify multiple reports exist
+  const resPage1 = await fetch(`http://localhost:${apiPort}/api/moderation/queue?status=ALL&page=1&limit=2`, {
+    headers: { Authorization: `Bearer ${validModeratorToken}` },
+  })
+  assert.equal(resPage1.status, 200)
+  const body1 = await resPage1.json()
+  assert.equal(body1.page, 1)
+  assert.equal(body1.limit, 2)
+  assert.ok(body1.reports.length <= 2)
+  assert.ok(body1.totalPages >= 1)
+
+  const resPage2 = await fetch(`http://localhost:${apiPort}/api/moderation/queue?status=ALL&page=2&limit=2`, {
+    headers: { Authorization: `Bearer ${validModeratorToken}` },
+  })
+  assert.equal(resPage2.status, 200)
+  const body2 = await resPage2.json()
+  assert.equal(body2.page, 2)
+  assert.equal(body2.limit, 2)
+
+  // Out of bounds page should return empty reports array with total intact
+  const resOob = await fetch(`http://localhost:${apiPort}/api/moderation/queue?status=ALL&page=99999&limit=10`, {
+    headers: { Authorization: `Bearer ${validModeratorToken}` },
+  })
+  assert.equal(resOob.status, 200)
+  const bodyOob = await resOob.json()
+  assert.equal(bodyOob.page, 99999)
+  assert.equal(bodyOob.reports.length, 0)
+  assert.ok(bodyOob.total >= 1)
 })
 
 test('POST /api/moderation/review: blocks unauthorized review actions', async () => {

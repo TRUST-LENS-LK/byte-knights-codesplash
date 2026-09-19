@@ -11,6 +11,8 @@ import { inspectScannerUrl, scannerFindings } from './services/urlSafety.mjs'
 import {
   checkVerifiedIntelligence,
   getModerationQueue,
+  getModerationStats,
+  isSupabaseConfigured,
   processModerationReview,
   submitReport,
   validateCreateReport,
@@ -36,7 +38,21 @@ const server = createServer(async (req, res) => {
     return res.end(JSON.stringify(getOpenApiSpec(), null, 2))
   }
 
-  // Moderation Queue (Protected GET)
+  // Moderation Stats & High-Level Aggregations (Protected GET)
+  if (req.method === 'GET' && pathname === '/api/moderation/stats') {
+    const auth = await authorizeModerator(req)
+    if (!auth.authorized) {
+      return send(res, 401, { code: 'UNAUTHORIZED', message: auth.error || 'Moderator access required.', requestId }, requestId)
+    }
+    try {
+      const stats = await getModerationStats()
+      return send(res, 200, { ...stats, requestId }, requestId)
+    } catch (error) {
+      return send(res, 502, { code: 'STATS_FETCH_ERROR', message: error.message, requestId }, requestId)
+    }
+  }
+
+  // Moderation Queue (Protected GET) with Pagination Support
   if (req.method === 'GET' && pathname === '/api/moderation/queue') {
     const auth = await authorizeModerator(req)
     if (!auth.authorized) {
@@ -44,8 +60,30 @@ const server = createServer(async (req, res) => {
     }
     try {
       const statusParam = parsedUrl.searchParams.get('status') || 'PENDING'
-      const reports = await getModerationQueue(statusParam)
-      return send(res, 200, { reports, count: reports.length, status: statusParam, requestId }, requestId)
+      const pageParam = parseInt(parsedUrl.searchParams.get('page') || '1', 10)
+      const limitParam = parseInt(parsedUrl.searchParams.get('limit') || '20', 10)
+      const page = Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1
+      const limit = Number.isFinite(limitParam) && limitParam > 0 && limitParam <= 100 ? limitParam : 20
+      const offset = (page - 1) * limit
+
+      const { reports, total } = await getModerationQueue({ status: statusParam, limit, offset })
+      const totalPages = Math.ceil(total / limit) || 1
+
+      return send(
+        res,
+        200,
+        {
+          reports,
+          count: reports.length,
+          total,
+          page,
+          limit,
+          totalPages,
+          status: statusParam,
+          requestId,
+        },
+        requestId
+      )
     } catch (error) {
       return send(res, 502, { code: 'QUEUE_FETCH_ERROR', message: error.message, requestId }, requestId)
     }
@@ -107,11 +145,20 @@ const server = createServer(async (req, res) => {
   if (pathname === '/api/reports') {
     const validationError = validateCreateReport(body)
     if (validationError) {
-      return send(res, 400, { code: 'INVALID_REPORT', message: validationError, requestId }, requestId)
+      const code = body?.reportType === 'unknown' ? 'INVALID_SUBMISSION' : 'INVALID_REPORT'
+      return send(res, 400, { code, message: validationError, requestId }, requestId)
+    }
+    if (!isSupabaseConfigured()) {
+      return send(res, 503, { code: 'REPORTING_UNAVAILABLE', message: 'Reporting storage is currently unavailable.', requestId }, requestId)
     }
     try {
       const created = await submitReport(body)
-      return send(res, 201, { report: created, requestId }, requestId)
+      return send(res, 201, {
+        report: created,
+        reportId: created.id,
+        status: created.status,
+        requestId,
+      }, requestId)
     } catch (error) {
       return send(res, 502, { code: 'REPORT_CREATION_FAILED', message: error.message, requestId }, requestId)
     }
@@ -211,7 +258,10 @@ const server = createServer(async (req, res) => {
     const normalizedText = text.replace(/\r\n/g, '\n').trim()
     const contentSha256 = createHash('sha256').update(normalizedText).digest('hex')
 
-    const approvedDomainFindings = await verifyApprovedDomains(entities).catch(() => [])
+    const approvedDomainFindings = await verifyApprovedDomains(entities).catch(() => {
+      decision.limitations.push('Approved-domain verification was unavailable for this request.')
+      return []
+    })
     if (approvedDomainFindings.length) decision.findings.push(...approvedDomainFindings)
 
     // ── Intelligence Reconciliation Engine ─────────────────────────────

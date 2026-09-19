@@ -47,7 +47,13 @@ export async function computeSha256(text: string): Promise<string> {
  */
 export function defangIndicator(indicator: string): string {
   if (!indicator) return ''
-  return indicator
+  const clean = indicator
+    .replace(/hxxps?:\/\//gi, 'https://')
+    .replace(/\[+\]+/g, '.')
+    .replace(/\[\.\]/g, '.')
+    .replace(/\[@\]/g, '@')
+
+  return clean
     .replace(/^https:\/\//i, 'hxxps://')
     .replace(/^http:\/\//i, 'hxxp://')
     .replace(/^ftp:\/\//i, 'fxp://')

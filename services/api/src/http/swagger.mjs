@@ -92,9 +92,19 @@ export function getOpenApiSpec() {
           },
         },
       },
+      '/api/moderation/stats': {
+        get: {
+          summary: 'Fetch aggregated moderation dashboard statistics, velocity, and category distribution',
+          security: [{ BearerAuth: [] }],
+          responses: {
+            200: { description: 'Aggregated moderation statistics and metrics overview' },
+            401: { description: 'Unauthorized - moderator credentials required' },
+          },
+        },
+      },
       '/api/moderation/queue': {
         get: {
-          summary: 'Fetch pending reports for moderation',
+          summary: 'Fetch paginated reports for moderation',
           security: [{ BearerAuth: [] }],
           parameters: [
             {
@@ -102,10 +112,25 @@ export function getOpenApiSpec() {
               in: 'query',
               required: false,
               schema: { type: 'string', enum: ['PENDING', 'APPROVED', 'REJECTED', 'ALL'], default: 'PENDING' },
+              description: 'Filter by report resolution status',
+            },
+            {
+              name: 'page',
+              in: 'query',
+              required: false,
+              schema: { type: 'integer', default: 1, minimum: 1 },
+              description: 'Page number for pagination',
+            },
+            {
+              name: 'limit',
+              in: 'query',
+              required: false,
+              schema: { type: 'integer', default: 20, minimum: 1, maximum: 100 },
+              description: 'Number of items per page',
             },
           ],
           responses: {
-            200: { description: 'List of reports matching the status filter' },
+            200: { description: 'Paginated list of reports matching the status filter' },
             401: { description: 'Unauthorized - moderator credentials required' },
           },
         },
