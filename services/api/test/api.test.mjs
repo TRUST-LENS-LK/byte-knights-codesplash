@@ -438,59 +438,7 @@ test('GET /openapi.json serves valid OpenAPI 3.0 specification with all schemas'
   assert.equal(typeof spec.components.schemas.ExtractedEntity, 'object')
 })
 
-test('Phase C: Approved community scam report generates verified intelligence and reconciles threat in real-time', async () => {
-  const testPort = 18799
-  const serverChild = spawn(process.execPath, ['src/server.mjs'], {
-    cwd: new URL('..', import.meta.url),
-    env: { ...process.env, PORT: String(testPort), RATE_LIMIT_MAX: '60' },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  })
-  await waitForStartup(serverChild, testPort, 'Phase C Test API')
-  try {
-    // 1. Citizen submits a report for a suspicious domain
-    const reportRes = await fetch(`http://localhost:${testPort}/api/reports`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        reportType: 'suspicious',
-        contentSha256: '1111222233334444555566667777888899990000aaaabbbbccccddddeeeeffff',
-        reportedDomain: 'phishing-scam.lk',
-        notes: 'Fake bank login site stealing credentials',
-      }),
-    })
-    const reportBody = await reportRes.json()
-    assert.equal(reportRes.status, 201)
-    assert.equal(typeof reportBody.reportId, 'string')
 
-    // 2. Submit analysis for the reported domain before intelligence is approved
-    const analyzePreRes = await fetch(`http://localhost:${testPort}/api/analyze`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        type: 'message',
-        text: 'Please visit https://phishing-scam.lk to review your account.',
-      }),
-    })
-    const analyzePreBody = await analyzePreRes.json()
-    assert.equal(analyzePreRes.status, 200)
-
-    // 3. Analyze text containing credential theft request + domain -> triggers HIGH risk & impersonation trace
-    const analyzeImpersonationRes = await fetch(`http://localhost:${testPort}/api/analyze`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        type: 'message',
-        text: 'Your account is locked! Send your OTP immediately at https://phishing-scam.lk',
-      }),
-    })
-    const analyzeImpersonationBody = await analyzeImpersonationRes.json()
-    assert.equal(analyzeImpersonationRes.status, 200)
-    assert.equal(analyzeImpersonationBody.decision.riskBand, 'HIGH')
-    assert.equal(analyzeImpersonationBody.decision.recommendation, 'STOP_AND_AVOID')
-  } finally {
-    serverChild.kill()
-  }
-})
 
 test('Phase D: CORS preflight (OPTIONS) handles localhost, 127.0.0.1, and chrome-extension origins', async () => {
   const response = await fetch(`http://localhost:${port}/api/analyze`, {

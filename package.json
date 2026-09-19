@@ -24,6 +24,10 @@
   },
   "devDependencies": {
     "concurrently": "^10.0.5"
+  },
+  "optionalDependencies": {
+    "@esbuild/linux-x64": "^0.28.2",
+    "@rollup/rollup-linux-x64-gnu": "^4.63.4",
+    "@typescript/typescript-linux-x64": "^7.0.2"
   }
 }
-

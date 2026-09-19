@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react'
-import { Shield, ShieldCheck, AlertOctagon, AlertTriangle } from 'lucide-react'
+import { Shield, ShieldCheck, AlertOctagon, AlertTriangle, MessageSquare, Camera } from 'lucide-react'
 import { analyzeSubmission, analyzeWithApi } from './services/analysisService'
 import { CommunityReportBar } from './components/CommunityReportBar'
 import { ReportModal } from './components/ReportModal'
 import { ModeratorDashboard } from './components/ModeratorDashboard'
+import { ScreenshotOcrUploader } from './components/ScreenshotOcrUploader'
 import './App.css'
 
 interface IntelligenceOverlay {
@@ -23,13 +24,17 @@ interface IntelligenceOverlay {
 
 function App() {
   const [view, setView] = useState<'checker' | 'moderator'>('checker')
+  const [inputMode, setInputMode] = useState<'text' | 'screenshot'>('text')
   const [isReportModalOpen, setIsReportModalOpen] = useState(false)
   const [text, setText] = useState('')
+  const [submissionType, setSubmissionType] = useState<'message' | 'url' | 'screenshot'>('message')
   const [checked, setChecked] = useState(false)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [apiAnalysis, setApiAnalysis] = useState<ReturnType<typeof analyzeSubmission> | null>(null)
   const [apiMode, setApiMode] = useState<'local' | 'api'>('local')
   const [intelligenceOverlay, setIntelligenceOverlay] = useState<IntelligenceOverlay | null>(null)
+  const [ocrConfidence, setOcrConfidence] = useState<number | null>(null)
+
   const analysis = useMemo(() => analyzeSubmission(text), [text])
   const { decision, entities } = apiAnalysis ?? analysis
 
@@ -62,14 +67,17 @@ function App() {
         ? 'conflicted'
         : risk.toLowerCase().replace(/[^a-z0-9]+/g, '-')
 
-  const checkMessage = async () => {
+  const checkMessage = async (overrideText?: string, typeOverride?: 'message' | 'url' | 'screenshot') => {
+    const targetText = overrideText ?? text
+    const targetType = typeOverride ?? submissionType
+    if (!targetText.trim()) return
+
     setIsAnalyzing(true)
     setIntelligenceOverlay(null)
     try {
-      const result = await analyzeWithApi(text)
+      const result = await analyzeWithApi(targetText, targetType)
       setApiAnalysis(result)
       setApiMode('api')
-      // Extract intelligenceOverlay from the raw API response if present
       if ((result as Record<string, unknown>).intelligenceOverlay) {
         setIntelligenceOverlay((result as Record<string, unknown>).intelligenceOverlay as IntelligenceOverlay)
       }
@@ -81,6 +89,14 @@ function App() {
     } finally {
       setIsAnalyzing(false)
     }
+  }
+
+  const handleOcrConfirmed = (correctedText: string, confidence: number) => {
+    setText(correctedText)
+    setOcrConfidence(confidence)
+    setSubmissionType('screenshot')
+    setChecked(false)
+    void checkMessage(correctedText, 'screenshot')
   }
 
   const detectedDomain = entities.find((e) => e.type === 'url' || e.type === 'domain')?.value || null
@@ -102,127 +118,214 @@ function App() {
           </button>
         </div>
       </nav>
+
       <>
         <section className="hero">
-            <div className="hero-copy"><p className="eyebrow">Check before you act</p><h1>Does this message deserve your trust?</h1><p className="intro">Paste a suspicious message or link. TrustLens looks for warning signs and explains the safest next step.</p><div className="trust-points"><span>Evidence based</span><span>Private by default</span><span>Built for Sri Lanka</span></div></div>
-            <div className="checker-card"><label htmlFor="message">Suspicious message or URL</label><textarea id="message" value={text} maxLength={10000} onChange={(event) => { setText(event.target.value); setChecked(false); setIntelligenceOverlay(null) }} placeholder="Example: Congratulations! You have been selected for a job. Pay Rs. 5,000 today and send your OTP..." /><div className="card-footer"><span>{text.length}/10,000 characters</span><button type="button" onClick={() => void checkMessage()} disabled={!text.trim() || isAnalyzing}>{isAnalyzing ? 'Checking...' : 'Check safely'}</button></div><p className="privacy-note">Do not include passwords, OTPs, or unnecessary private information.</p><small>Analysis: {apiMode === 'api' ? 'local API' : 'offline fallback'}</small></div>
-          </section>
-          {checked && (
-            <section className={`result ${resultClass}`} aria-live="polite">
-              <div className="result-header">
-                <div>
-                  <p className="eyebrow">Your recommendation</p>
-                  <h2 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    {isOfficialEntity && <ShieldCheck size={28} color="#0f766e" aria-hidden="true" />}
-                    {!isOfficialEntity && isVerifiedSafe && <ShieldCheck size={28} color="#057a55" aria-hidden="true" />}
-                    {isConfirmedScam && <AlertOctagon size={28} color="#a33d31" aria-hidden="true" />}
-                    {isConflicted && <AlertTriangle size={28} color="#b45309" aria-hidden="true" />}
-                    {!isVerifiedSafe && !isConfirmedScam && !isConflicted && decision.riskBand === 'MEDIUM' && (
-                      <AlertTriangle size={28} color="#b7791f" aria-hidden="true" />
-                    )}
-                    {risk}
-                  </h2>
+          <div className="hero-copy">
+            <p className="eyebrow">Check before you act</p>
+            <h1>Does this message deserve your trust?</h1>
+            <p className="intro">Paste a suspicious message, URL link, or upload a screenshot. TrustLens looks for warning signs and explains the safest next step.</p>
+            <div className="trust-points">
+              <span>Evidence based</span>
+              <span>Private by default</span>
+              <span>Built for Sri Lanka</span>
+            </div>
+          </div>
+
+          <div className="checker-card">
+            {/* Input Mode Tabs */}
+            <div className="input-mode-tabs" style={{ display: 'flex', gap: '8px', marginBottom: '14px' }}>
+              <button
+                type="button"
+                className={`tab-btn ${inputMode === 'text' ? 'active' : ''}`}
+                onClick={() => { setInputMode('text'); setSubmissionType('message'); setOcrConfidence(null) }}
+                style={{
+                  padding: '8px 14px',
+                  borderRadius: '6px',
+                  border: inputMode === 'text' ? '1px solid #38bdf8' : '1px solid #334155',
+                  background: inputMode === 'text' ? '#0369a1' : '#1e293b',
+                  color: '#fff',
+                  cursor: 'pointer',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                }}
+              >
+                <MessageSquare size={14} />
+                Text / URL
+              </button>
+
+              <button
+                type="button"
+                className={`tab-btn ${inputMode === 'screenshot' ? 'active' : ''}`}
+                onClick={() => { setInputMode('screenshot'); setSubmissionType('screenshot') }}
+                style={{
+                  padding: '8px 14px',
+                  borderRadius: '6px',
+                  border: inputMode === 'screenshot' ? '1px solid #38bdf8' : '1px solid #334155',
+                  background: inputMode === 'screenshot' ? '#0369a1' : '#1e293b',
+                  color: '#fff',
+                  cursor: 'pointer',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                }}
+              >
+                <Camera size={14} />
+                Upload Screenshot (OCR)
+              </button>
+            </div>
+
+            {inputMode === 'screenshot' ? (
+              <ScreenshotOcrUploader
+                onTextConfirmed={handleOcrConfirmed}
+                onCancel={() => setInputMode('text')}
+              />
+            ) : (
+              <>
+                <label htmlFor="message">Suspicious message or URL</label>
+                <textarea
+                  id="message"
+                  value={text}
+                  maxLength={10000}
+                  onChange={(event) => {
+                    setText(event.target.value)
+                    setChecked(false)
+                    setIntelligenceOverlay(null)
+                    setOcrConfidence(null)
+                  }}
+                  placeholder="Example: Congratulations! You have been selected for a job. Pay Rs. 5,000 today and send your OTP..."
+                />
+                <div className="card-footer">
+                  <span>{text.length}/10,000 characters</span>
+                  <button
+                    type="button"
+                    onClick={() => void checkMessage()}
+                    disabled={!text.trim() || isAnalyzing}
+                  >
+                    {isAnalyzing ? 'Checking...' : 'Check safely'}
+                  </button>
                 </div>
-                <p className="result-action">{decision.recommendation.replaceAll('_', ' ')}</p>
+              </>
+            )}
+
+            <p className="privacy-note">Do not include passwords, OTPs, or unnecessary private information.</p>
+            <small>
+              Analysis: {apiMode === 'api' ? 'local API' : 'offline fallback'}
+              {ocrConfidence !== null && ` | OCR Confidence: ${ocrConfidence}%`}
+            </small>
+          </div>
+        </section>
+
+        {checked && (
+          <section className={`result ${resultClass}`} aria-live="polite">
+            <div className="result-header">
+              <div>
+                <p className="eyebrow">Your recommendation</p>
+                <h2 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  {isOfficialEntity && <ShieldCheck size={28} color="#0f766e" aria-hidden="true" />}
+                  {!isOfficialEntity && isVerifiedSafe && <ShieldCheck size={28} color="#057a55" aria-hidden="true" />}
+                  {isConfirmedScam && <AlertOctagon size={28} color="#a33d31" aria-hidden="true" />}
+                  {isConflicted && <AlertTriangle size={28} color="#b45309" aria-hidden="true" />}
+                  {!isVerifiedSafe && !isConfirmedScam && !isConflicted && decision.riskBand === 'MEDIUM' && (
+                    <AlertTriangle size={28} color="#b7791f" aria-hidden="true" />
+                  )}
+                  {risk}
+                </h2>
+              </div>
+              <p className="result-action">{decision.recommendation.replaceAll('_', ' ')}</p>
+            </div>
+
+            <p className="result-summary">
+              {isOfficialEntity
+                ? `This domain is verified in the official Sri Lankan national registry as the digital property of ${intelligenceOverlay?.officialOrganization || 'an approved institution'}.`
+                : isImpersonation
+                  ? 'CRITICAL ALERT: Although this message references a verified entity, it requests credentials or advance payment. Threat actors frequently impersonate legitimate organizations.'
+                  : isVerifiedSafe
+                    ? 'This content has been reviewed and verified as legitimate by community moderators and the TrustLens intelligence network.'
+                    : isConfirmedScam
+                      ? 'This content matches confirmed threat intelligence verified by community moderators.'
+                      : isConflicted
+                        ? 'Community intelligence submissions are divided. Under fail-closed security policy, it is treated as HIGH RISK until resolved.'
+                        : risk === 'High Risk'
+                          ? 'This content contains strong indicators commonly associated with scams.'
+                          : risk === 'Suspicious'
+                            ? 'Some warning signs were found, but the available evidence is not conclusive.'
+                            : 'No significant indicators were found in the submitted content.'}
+            </p>
+
+            {intelligenceOverlay && intelligenceOverlay.netVerdict !== 'NO_INTEL' && (
+              <div className={`intel-overlay ${intelligenceOverlay.netVerdict.toLowerCase().replace(/_/g, '-')}`}>
+                <div className="intel-summary">
+                  <strong>Community Consensus:</strong> {intelligenceOverlay.consensusSummary}
+                </div>
+                {intelligenceOverlay.reconciliationTrace.length > 0 && (
+                  <details className="intel-trace-details">
+                    <summary>View Audit Trace ({intelligenceOverlay.reconciliationTrace.length} steps)</summary>
+                    <ul>
+                      {intelligenceOverlay.reconciliationTrace.map((step, idx) => (
+                        <li key={idx}>{step}</li>
+                      ))}
+                    </ul>
+                  </details>
+                )}
+              </div>
+            )}
+
+            <div className="result-grid">
+              <div className="findings">
+                <h3>Detected signals ({decision.findings.length})</h3>
+                {decision.findings.length === 0 && <p className="empty-state">No explicit scam indicators matched standard rules.</p>}
+                {decision.findings.map((finding, idx) => (
+                  <article key={`${finding.canonicalSignal}-${idx}`} className="finding-card">
+                    <header>
+                      <span className="signal">{finding.canonicalSignal}</span>
+                      <span className="source">{finding.source}</span>
+                    </header>
+                    <p className="evidence">"{finding.evidence}"</p>
+                    <small className="category">{finding.category}</small>
+                    {finding.limitation && <p className="limitation">{finding.limitation}</p>}
+                  </article>
+                ))}
               </div>
 
-              {/* Contextual summary based on verdict */}
-              <p className="result-summary">
-                {isOfficialEntity
-                  ? `This domain is verified in the official Sri Lankan national registry as the digital property of ${intelligenceOverlay?.officialOrganization || 'an approved institution'}.`
-                  : isImpersonation
-                    ? 'CRITICAL ALERT: Although this message references a verified entity, it requests credentials or advance payment. Threat actors frequently impersonate legitimate organizations.'
-                    : isVerifiedSafe
-                      ? 'This content has been reviewed and verified as legitimate by community moderators and the TrustLens intelligence network.'
-                      : isConfirmedScam
-                        ? 'This content matches confirmed threat intelligence verified by community moderators.'
-                        : isConflicted
-                          ? 'Community intelligence submissions are divided. Under fail-closed security policy, it is treated as HIGH RISK until resolved.'
-                          : risk === 'High Risk'
-                            ? 'This content contains strong indicators commonly associated with scams.'
-                            : risk === 'Suspicious'
-                              ? 'Some warning signs were found, but the available evidence is not conclusive.'
-                              : 'No significant indicators were found in the submitted content.'}
-              </p>
+              <div className="actions">
+                <h3>Recommended safe actions</h3>
+                <ul>
+                  {decision.safeActions.map((actionItem, index) => (
+                    <li key={index}>{actionItem}</li>
+                  ))}
+                </ul>
 
-              {/* Intelligence Overlay Banner */}
-              {intelligenceOverlay && intelligenceOverlay.netVerdict !== 'NO_INTEL' && (
-                <div className={`intel-overlay ${intelligenceOverlay.netVerdict.toLowerCase().replace(/_/g, '-')}`}>
-                  <div className="intel-overlay-header">
-                    {isOfficialEntity && <ShieldCheck size={18} aria-hidden="true" />}
-                    {!isOfficialEntity && isVerifiedSafe && <ShieldCheck size={18} aria-hidden="true" />}
-                    {isConfirmedScam && <AlertOctagon size={18} aria-hidden="true" />}
-                    {isConflicted && <AlertTriangle size={18} aria-hidden="true" />}
-                    <strong>
-                      {intelligenceOverlay.netVerdict === 'OFFICIAL_ENTITY' && `National Registry — ${intelligenceOverlay.officialOrganization || 'Verified Official'}`}
-                      {intelligenceOverlay.netVerdict === 'POSSIBLE_IMPERSONATION' && 'Impersonation Alert — Threat Override'}
-                      {intelligenceOverlay.netVerdict === 'VERIFIED_SAFE' && 'Community Verified — Safe'}
-                      {intelligenceOverlay.netVerdict === 'CONFIRMED_SCAM' && 'Threat Intelligence — Confirmed Scam'}
-                      {intelligenceOverlay.netVerdict === 'CONFLICTED' && 'Conflicting Submissions — Fail-Closed Warning'}
-                    </strong>
-                    <span className="intel-confidence">
-                      {isVerifiedSafe
-                        ? `${Math.round(intelligenceOverlay.safeConfidence * 100)}% safe confidence`
-                        : `${Math.round(intelligenceOverlay.scamConfidence * 100)}% scam confidence`}
-                    </span>
+                {decision.limitations.length > 0 && (
+                  <div className="limitations-box">
+                    <h4>System Knowledge Limits</h4>
+                    <ul>
+                      {decision.limitations.map((limit, idx) => (
+                        <li key={idx}>{limit}</li>
+                      ))}
+                    </ul>
                   </div>
+                )}
+              </div>
+            </div>
+          </section>
+        )}
+      </>
 
-                  {/* Community Consensus Bar (displayed when both safe and scam submissions exist) */}
-                  {Boolean((intelligenceOverlay.scamCount ?? 0) > 0 && (intelligenceOverlay.safeCount ?? 0) > 0) && (
-                    <div className="consensus-meter">
-                      <div className="consensus-bar-header">
-                        <span>Community Consensus Ratio</span>
-                        <span>{intelligenceOverlay.consensusSummary}</span>
-                      </div>
-                      <div className="consensus-bar-track">
-                        <div
-                          className="consensus-bar-safe"
-                          style={{
-                            width: `${Math.round(
-                              ((intelligenceOverlay.safeCount ?? 0) /
-                                ((intelligenceOverlay.safeCount ?? 0) + (intelligenceOverlay.scamCount ?? 0))) *
-                                100
-                            )}%`,
-                          }}
-                        />
-                        <div
-                          className="consensus-bar-scam"
-                          style={{
-                            width: `${Math.round(
-                              ((intelligenceOverlay.scamCount ?? 0) /
-                                ((intelligenceOverlay.safeCount ?? 0) + (intelligenceOverlay.scamCount ?? 0))) *
-                                100
-                            )}%`,
-                          }}
-                        />
-                      </div>
-                      <div className="consensus-labels">
-                        <span className="safe-label">🛡️ {intelligenceOverlay.safeCount} Verified Safe</span>
-                        <span className="scam-label">⚠️ {intelligenceOverlay.scamCount} Threat Reports</span>
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="intel-trace">
-                    {intelligenceOverlay.reconciliationTrace.map((line, i) => (
-                      <p key={i}>{line}</p>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {entities.length > 0 && <div className="entities"><div className="section-label">Detected details</div><div className="entity-list">{entities.map((entity, index) => <span className="entity" key={`${entity.type}-${index}`}><strong>{entity.type}</strong> {entity.type === 'url' ? entity.value.replace(/^https?:\/\//, 'hxxps://').replaceAll('.', '[.]') : entity.normalizedValue ?? entity.value}</span>)}</div></div>}
-              {decision.findings.length ? <div className="findings">{decision.findings.map((finding, idx) => <article className="finding" key={`${finding.canonicalSignal}-${idx}`}><span className={`signal-dot ${finding.strength > .8 ? 'high' : finding.strength === 0.0 ? 'safe' : 'medium'}`}></span><div><strong>{finding.category}</strong><p>{finding.canonicalSignal.replaceAll('_', ' ')}</p><small>Evidence: {finding.evidence}</small></div></article>)}</div> : <p className="empty-finding">This does not guarantee that the content is safe. Verify important requests through an official channel.</p>}
-              <div className="next-step"><strong>Recommended action</strong><span>{decision.safeActions[0]}</span></div>
-              <CommunityReportBar onReportClick={() => setIsReportModalOpen(true)} />
-            </section>
-          )}
-          <ReportModal isOpen={isReportModalOpen} onClose={() => setIsReportModalOpen(false)} content={text} reportedDomain={detectedDomain} />
-        </>
-      <footer><span>TrustLens LK</span><span>Rules and verified checks guide the recommendation.</span></footer>
+      <CommunityReportBar onReportClick={() => setIsReportModalOpen(true)} />
+      <ReportModal
+        isOpen={isReportModalOpen}
+        onClose={() => setIsReportModalOpen(false)}
+        content={text}
+        reportedDomain={detectedDomain}
+      />
     </main>
   )
 }
 
 export default App
-
