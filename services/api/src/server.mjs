@@ -4,7 +4,7 @@ import { MAX_BODY_BYTES, MAX_TEXT, PORT } from './config/env.mjs'
 import { send } from './http/response.mjs'
 import { authorizeModerator, loginModeratorWithPassword } from './http/auth.mjs'
 import { analyze, applyScannerRisk, extractEntities, validateSubmission } from './services/analysis.mjs'
-import { persistIfConsented } from './services/persistence.mjs'
+import { persistIfConsented, purgeExpiredSubmissions } from './services/persistence.mjs'
 import { consumeRateLimit } from './services/rateLimit.mjs'
 import { applyDomainMismatchRisk, checkClaimedOrganizationDomain, verifyApprovedDomains } from './services/domainVerification.mjs'
 import { listDomainDirectory, lookupDomainDirectory } from './services/domainDirectory.mjs'
@@ -348,8 +348,26 @@ server.on('error', (error) => {
   process.exitCode = 1
 })
 
+// Retention enforcement: this project has no separate cron infrastructure,
+// so the running API process itself purges submissions past their
+// expires_at once a day, plus once shortly after startup. A failure here is
+// logged, not thrown, since a missed purge should never take the API down.
+const PURGE_INTERVAL_MS = 24 * 60 * 60 * 1000
+async function runRetentionPurge() {
+  try {
+    const deleted = await purgeExpiredSubmissions()
+    if (deleted) console.log(`Retention purge removed ${deleted} expired submission(s).`)
+  } catch (error) {
+    console.error('Retention purge failed:', error.message)
+  }
+}
+const purgeTimer = setInterval(runRetentionPurge, PURGE_INTERVAL_MS)
+purgeTimer.unref?.()
+setTimeout(runRetentionPurge, 5_000).unref?.()
+
 function shutdown(signal) {
   console.log(`${signal} received; shutting down TrustLens API.`)
+  clearInterval(purgeTimer)
   server.close(() => process.exit(0))
 }
 
