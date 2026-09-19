@@ -135,11 +135,13 @@ export const ReviewDecisionModal: React.FC<ReviewDecisionModalProps> = ({
         {/* Modal Header */}
         <div className="neo-modal-header">
           <div className="neo-modal-header-left">
-            <div className={`neo-modal-header-icon ${isApproved ? 'blue' : isRejected ? 'amber' : 'amber'}`}>
+            <div className={`neo-modal-header-icon ${isApproved ? 'blue' : isRejected ? 'red' : 'blue'}`}>
               {isApproved ? (
-                <ShieldCheck size={18} color="#087f8c" aria-hidden="true" />
+                <ShieldCheck size={20} aria-hidden="true" />
+              ) : isRejected ? (
+                <ShieldAlert size={20} aria-hidden="true" />
               ) : (
-                <ShieldAlert size={18} aria-hidden="true" />
+                <ShieldCheck size={20} aria-hidden="true" />
               )}
             </div>
             <div>
@@ -152,7 +154,7 @@ export const ReviewDecisionModal: React.FC<ReviewDecisionModalProps> = ({
                 <Clock size={12} aria-hidden="true" />
                 <span>Submitted {formatRelativeTime(report.created_at)}</span>
                 <span>•</span>
-                <span className={`neo-status-pill ${report.status}`} style={{ fontSize: '10px', padding: '1px 6px' }}>
+                <span className={`neo-status-pill-modern ${report.status.toLowerCase()}`}>
                   {report.status}
                 </span>
               </p>
@@ -165,7 +167,7 @@ export const ReviewDecisionModal: React.FC<ReviewDecisionModalProps> = ({
             disabled={isProcessing}
             title="Close dialog (Esc)"
           >
-            <X size={18} aria-hidden="true" />
+            <X size={16} aria-hidden="true" />
           </button>
         </div>
 
@@ -176,7 +178,7 @@ export const ReviewDecisionModal: React.FC<ReviewDecisionModalProps> = ({
             <div className="neo-modal-meta-item">
               <span className="neo-modal-meta-label">Target Indicator</span>
               <div className="neo-modal-meta-val">
-                <Globe size={13} color="#64748b" aria-hidden="true" />
+                <Globe size={14} color="#0066FF" aria-hidden="true" />
                 <span className={`neo-indicator-badge ${!report.reported_domain ? 'text-only' : ''}`}>
                   {report.reported_domain ? defangIndicator(report.reported_domain) : 'Message-only text'}
                 </span>
@@ -197,10 +199,10 @@ export const ReviewDecisionModal: React.FC<ReviewDecisionModalProps> = ({
             </div>
 
             <div className="neo-modal-meta-item full-width">
-              <span className="neo-modal-meta-label">SHA-256 Fingerprint</span>
+              <span className="neo-modal-meta-label">Cryptographic Fingerprint</span>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span className="neo-fingerprint-badge" style={{ fontFamily: 'monospace', fontSize: '11px', padding: '3px 8px' }}>
-                  <Fingerprint size={12} style={{ display: 'inline', marginRight: '4px' }} />
+                <span className="neo-fingerprint-badge" style={{ fontFamily: 'monospace', fontSize: '11px', padding: '4px 10px' }}>
+                  <Fingerprint size={12} style={{ display: 'inline', marginRight: '5px' }} />
                   {report.content_sha256}
                 </span>
                 <button
@@ -208,9 +210,8 @@ export const ReviewDecisionModal: React.FC<ReviewDecisionModalProps> = ({
                   onClick={handleCopyHash}
                   className="neo-modal-btn-copy"
                   title="Copy SHA-256 Fingerprint"
-                  style={{ fontSize: '11px', padding: '2px 6px', border: '1px solid #cbd5e1', borderRadius: '5px', background: '#ffffff', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '3px' }}
                 >
-                  {copiedHash ? <Check size={11} color="#10b981" /> : <Copy size={11} />}
+                  {copiedHash ? <Check size={12} color="#10b981" /> : <Copy size={12} />}
                   <span>{copiedHash ? 'Copied' : 'Copy'}</span>
                 </button>
               </div>
@@ -221,7 +222,7 @@ export const ReviewDecisionModal: React.FC<ReviewDecisionModalProps> = ({
           <div className="neo-modal-text-section">
             <div className="neo-modal-text-header">
               <div className="neo-modal-text-header-left">
-                <FileText size={13} color="#475569" aria-hidden="true" />
+                <FileText size={14} color="#0066FF" aria-hidden="true" />
                 <span>Reported Evidence Payload</span>
                 {excerpt && (
                   <span className="neo-modal-text-badge">
@@ -235,7 +236,6 @@ export const ReviewDecisionModal: React.FC<ReviewDecisionModalProps> = ({
                   className="neo-modal-btn-copy"
                   onClick={handleCopyExcerpt}
                   title="Copy full evidence payload"
-                  style={{ fontSize: '11px', padding: '2px 7px', border: '1px solid #cbd5e1', borderRadius: '5px', background: '#ffffff', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
                 >
                   {copiedExcerpt ? (
                     <>
@@ -252,17 +252,20 @@ export const ReviewDecisionModal: React.FC<ReviewDecisionModalProps> = ({
               )}
             </div>
             {excerpt ? (
-              <pre className="neo-modal-code-block" style={{ maxHeight: '220px', overflowY: 'auto' }}>
+              <pre className="neo-modal-code-block">
                 {excerpt}
               </pre>
             ) : (
-              <div style={{ fontSize: '12.5px', color: '#94a3b8', fontStyle: 'italic', padding: '12px 14px', background: '#f8fafc', borderRadius: '10px' }}>
+              <div style={{ fontSize: '12.5px', color: '#94a3b8', fontStyle: 'italic', padding: '14px 16px', background: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
                 No raw message excerpt attached to this report.
               </div>
             )}
             {parsed.userNotes && (
-              <div className="neo-modal-notes-callout" style={{ marginTop: '6px' }}>
-                <span className="neo-modal-notes-label">Submitter Context</span>
+              <div className="neo-modal-notes-callout">
+                <span className="neo-modal-notes-label">
+                  <CheckCircle2 size={13} aria-hidden="true" />
+                  <span>Submitter Context</span>
+                </span>
                 <p className="neo-modal-notes-text">{parsed.userNotes}</p>
               </div>
             )}
@@ -271,18 +274,18 @@ export const ReviewDecisionModal: React.FC<ReviewDecisionModalProps> = ({
           {/* Decision Form Controls (Interactive if PENDING, Read-only summary if resolved) */}
           {isPending ? (
             <div className="neo-modal-decision-card">
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: 700, color: '#0f172a' }}>
-                <CheckCircle2 size={15} color="#15803d" aria-hidden="true" />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13.5px', fontWeight: 700, color: '#0f172a' }}>
+                <CheckCircle2 size={16} color="#0066FF" aria-hidden="true" />
                 <span>Consensus & Intelligence Publication Parameters</span>
               </div>
 
               <div className="neo-modal-decision-grid">
                 <div className="neo-form-field">
-                  <label style={{ fontSize: '12px', fontWeight: 600, color: '#334155' }}>Threat Category</label>
+                  <label className="neo-form-label">Threat Category</label>
                   <select
                     value={category}
                     onChange={(e) => setCategory(e.target.value)}
-                    style={{ padding: '8px 10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12.5px' }}
+                    className="neo-modal-select"
                   >
                     {CATEGORIES.map((c) => (
                       <option key={c} value={c}>
@@ -293,11 +296,11 @@ export const ReviewDecisionModal: React.FC<ReviewDecisionModalProps> = ({
                 </div>
 
                 <div className="neo-form-field">
-                  <label style={{ fontSize: '12px', fontWeight: 600, color: '#334155' }}>Confidence Assessment</label>
+                  <label className="neo-form-label">Confidence Assessment</label>
                   <select
                     value={confidence}
                     onChange={(e) => setConfidence(parseFloat(e.target.value))}
-                    style={{ padding: '8px 10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12.5px' }}
+                    className="neo-modal-select"
                   >
                     <option value={1.0}>Definite Threat (1.00 / 100%) — Confirmed IoC</option>
                     <option value={0.85}>High Probability (0.85 / 85%) — Strong Markers</option>
@@ -307,11 +310,11 @@ export const ReviewDecisionModal: React.FC<ReviewDecisionModalProps> = ({
 
                 {report.reported_domain && (
                   <div className="neo-form-field" style={{ gridColumn: 'span 2' }}>
-                    <label style={{ fontSize: '12px', fontWeight: 600, color: '#334155' }}>Publish Target As</label>
+                    <label className="neo-form-label">Publish Target As</label>
                     <select
                       value={indicatorType}
                       onChange={(e) => setIndicatorType(e.target.value as 'domain' | 'content_hash' | 'url')}
-                      style={{ padding: '8px 10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12.5px' }}
+                      className="neo-modal-select"
                     >
                       <option value="domain">Defanged Domain Name ({defangIndicator(report.reported_domain)})</option>
                       <option value="content_hash">Content Fingerprint (SHA-256)</option>
@@ -322,7 +325,7 @@ export const ReviewDecisionModal: React.FC<ReviewDecisionModalProps> = ({
               </div>
 
               <div className="neo-form-field">
-                <label style={{ fontSize: '12px', fontWeight: 600, color: '#334155' }}>
+                <label className="neo-form-label">
                   Moderator Sanitization & Audit Notes
                 </label>
                 <input
@@ -330,23 +333,23 @@ export const ReviewDecisionModal: React.FC<ReviewDecisionModalProps> = ({
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                   placeholder="e.g. Confirmed phishing domain impersonating Commercial Bank of Ceylon OTP screen."
-                  style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12.5px' }}
+                  className="neo-modal-input"
                 />
               </div>
 
               {/* PII Stripping Guarantee */}
               <div className="neo-modal-pii-badge">
-                <ShieldCheck size={14} color="#047857" aria-hidden="true" />
+                <ShieldCheck size={16} color="#059669" aria-hidden="true" />
                 <span>PII Protection Enforced: Submitter email and identifying markers are automatically stripped prior to publishing.</span>
               </div>
             </div>
           ) : (
-            <div className="neo-modal-decision-card" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: 700, color: '#0f172a' }}>
-                <ShieldCheck size={15} color={isApproved ? '#087f8c' : '#dc2626'} aria-hidden="true" />
+            <div className="neo-modal-decision-card" style={{ background: '#F8FAFC', border: '1px solid #E2E8F0' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13.5px', fontWeight: 700, color: '#0F172A' }}>
+                <ShieldCheck size={16} color={isApproved ? '#10B981' : '#EF4444'} aria-hidden="true" />
                 <span>Moderation Status: {report.status}</span>
               </div>
-              <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#64748b' }}>
+              <p style={{ margin: '4px 0 0', fontSize: '12.5px', color: '#64748B' }}>
                 {isApproved
                   ? 'This report was approved by a verified moderator and published to the Sri Lankan threat intelligence registry.'
                   : 'This report was reviewed and dismissed by a moderator.'}
@@ -385,12 +388,12 @@ export const ReviewDecisionModal: React.FC<ReviewDecisionModalProps> = ({
                 >
                   {isProcessing ? (
                     <>
-                      <span className="spinner" style={{ width: '13px', height: '13px', border: '2px solid #000', borderTopColor: 'transparent', borderRadius: '50%', display: 'inline-block', animation: 'spin 1s linear infinite' }} />
+                      <span className="spinner" style={{ width: '13px', height: '13px', border: '2px solid #fff', borderTopColor: 'transparent', borderRadius: '50%', display: 'inline-block', animation: 'spin 1s linear infinite' }} />
                       <span>Processing...</span>
                     </>
                   ) : (
                     <>
-                      <ShieldCheck size={14} aria-hidden="true" />
+                      <ShieldCheck size={15} aria-hidden="true" />
                       <span>Confirm & Publish Intelligence</span>
                     </>
                   )}

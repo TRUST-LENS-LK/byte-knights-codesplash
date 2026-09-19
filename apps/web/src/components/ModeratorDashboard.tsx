@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   LayoutDashboard,
   ShieldCheck,
@@ -6,29 +6,29 @@ import {
   Clock,
   CheckCircle2,
   RefreshCw,
-  LogOut,
   ArrowLeft,
   Globe,
   Sparkles,
   ChevronRight,
-  Activity,
   FileText,
-  Eye,
-  EyeOff,
-  Lock,
-  Mail,
   AlertCircle,
-  PanelLeftClose,
-  PanelLeftOpen,
   Download,
   ArrowRight,
   Hash,
   Phone,
   Power,
-  Search,
   Pencil,
   Copy,
   Check,
+  ChevronDown,
+  RotateCcw,
+  XCircle,
+  Menu,
+  Search,
+  CreditCard,
+  Layers,
+  PieChart,
+  AlertTriangle,
 } from 'lucide-react'
 import {
   type ModerationQueueItem,
@@ -44,13 +44,14 @@ import {
   toggleIntelligenceStatus,
   updateIntelligenceItem,
   getStoredSession,
-  loginModerator,
   reviewModerationItem,
   seedDemoReports,
+  clearDemoReports,
 } from '../services/moderatorService'
 import { defangIndicator } from '../services/reportingService'
 import { formatRelativeTime } from '../utils/formatTime'
 import { ReviewDecisionModal } from './modals/ReviewDecisionModal'
+import { ModeratorLogin } from './ModeratorLogin'
 import './ModeratorDashboard.css'
 
 export interface ModeratorDashboardProps {
@@ -95,327 +96,213 @@ function classifyReportCategory(item: ModerationQueueItem): string {
   return 'Suspicious Indicator'
 }
 
-/**
- * Interactive Mascot Robot
- * - Eyes dynamically track mouse cursor coordinates across the screen in real-time
- * - Eyes instantly close with a cute bashful expression when password field is focused
- */
-interface CuteRobotAvatarProps {
-  isPasswordFocused: boolean
-  isError?: boolean
+export function getReportRiskSignal(item: ModerationQueueItem): { level: 'HIGH' | 'MEDIUM' | 'LOW'; color: string } {
+  // 1. Prioritize backend-computed deterministic triage signal from @trustlens/rules
+  if (item.risk_signal) {
+    return item.risk_signal
+  }
+  if (item.report_type === 'false_positive') {
+    return { level: 'LOW', color: '#10B981' }
+  }
+  const rawDomain = item.reported_domain || ''
+  const domain = rawDomain.toLowerCase().replace(/hxxps?:\/\//i, '').replace(/\[\.\]/g, '.').replace(/\[@\]/g, '@').trim()
+  // Direct IP addresses (like 192.168.21.144) without domain routing are high risk infrastructure
+  if (domain && /^(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?$/.test(domain)) {
+    return { level: 'HIGH', color: '#EF4444' }
+  }
+  const text = `${item.reported_domain || ''} ${item.notes || ''} ${item.raw_excerpt || ''}`.toLowerCase()
+  if (/otp|pin|password|credential|boc|combank|bank|hnb|sampath|\.apk/.test(text)) {
+    return { level: 'HIGH', color: '#EF4444' }
+  }
+  return { level: 'MEDIUM', color: '#F59E0B' }
 }
 
-const CuteRobotAvatar: React.FC<CuteRobotAvatarProps> = ({ isPasswordFocused, isError }) => {
-  const containerRef = useRef<HTMLDivElement>(null)
-  const [pupilOffset, setPupilOffset] = useState({ x: 0, y: 0 })
+export function getThreatDetails(item: ModerationQueueItem): {
+  title: string
+  subtitle: string
+  type: 'phishing' | 'scam' | 'malware' | 'safe'
+} {
+  const rawDomain = item.reported_domain || ''
+  const domain = rawDomain.toLowerCase().replace(/hxxps?:\/\//i, '').replace(/\[\.\]/g, '.').replace(/\[@\]/g, '@').trim()
+  const text = `${item.reported_domain || ''} ${item.notes || ''} ${item.raw_excerpt || ''}`.toLowerCase()
 
-  useEffect(() => {
-    let animFrame: number
-
-    const handleMouseMove = (e: MouseEvent) => {
-      if (isPasswordFocused || !containerRef.current) return
-
-      animFrame = requestAnimationFrame(() => {
-        if (!containerRef.current) return
-        const rect = containerRef.current.getBoundingClientRect()
-        const centerX = rect.left + rect.width / 2
-        const centerY = rect.top + rect.height / 2
-
-        const dx = e.clientX - centerX
-        const dy = e.clientY - centerY
-        const angle = Math.atan2(dy, dx)
-        // Max travel range of pupils inside eye sockets: 3.5px
-        const dist = Math.min(Math.hypot(dx, dy) / 36, 3.5)
-        const x = Math.cos(angle) * dist
-        const y = Math.sin(angle) * dist
-
-        setPupilOffset({ x, y })
-      })
+  // 1. Prioritize backend-computed deterministic triage signal from @trustlens/rules
+  if (item.threat) {
+    // If backend mistakenly labeled a message-only report as Suspicious Domain, correct it
+    if (!domain && item.threat.title === 'Suspicious Domain') {
+      if (/subscription|invoice|refund|renew|charge|geek squad|norton|mcafee|paypal|apple/.test(text)) {
+        return { title: 'Scam', subtitle: 'Subscription / Invoice Fraud', type: 'scam' }
+      }
+      return { title: 'Suspicious Message', subtitle: 'Citizen Submission', type: 'scam' }
     }
+    return item.threat
+  }
 
-    window.addEventListener('mousemove', handleMouseMove)
-    return () => {
-      window.removeEventListener('mousemove', handleMouseMove)
-      cancelAnimationFrame(animFrame)
-    }
-  }, [isPasswordFocused])
+  if (item.report_type === 'false_positive') {
+    return { title: 'False Alarm', subtitle: 'User Dispute', type: 'safe' }
+  }
 
-  return (
-    <div ref={containerRef} className={`neo-robot-wrapper ${isPasswordFocused ? 'shy' : ''}`}>
-      <svg
-        viewBox="0 0 96 96"
-        width="88"
-        height="88"
-        className="neo-robot-svg"
-      >
-        <defs>
-          <linearGradient id="sentinelChassisGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%" stopColor="#1e293b" />
-            <stop offset="100%" stopColor="#0f172a" />
-          </linearGradient>
-          <linearGradient id="sentinelVisorGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%" stopColor="#080d1a" />
-            <stop offset="100%" stopColor="#030712" />
-          </linearGradient>
-        </defs>
+  if (domain && /^(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?$/.test(domain)) {
+    return { title: 'Suspicious Domain', subtitle: 'Raw IP Infrastructure', type: 'phishing' }
+  }
 
-        {/* Tactical Sensor Mast / Antenna */}
-        <line
-          x1="48"
-          y1="16"
-          x2="48"
-          y2="7"
-          stroke="#475569"
-          strokeWidth="2.5"
-          strokeLinecap="round"
-        />
-        <circle
-          cx="48"
-          cy="6.5"
-          r="4"
-          fill={isError ? '#ef4444' : isPasswordFocused ? '#38bdf8' : '#d4ff32'}
-          className={isPasswordFocused ? 'neo-antenna-pulse' : ''}
-        />
+  if (/\.apk|download|install|app|update|malware|trojan/.test(text)) {
+    return { title: 'Malware', subtitle: 'Malicious Link / APK', type: 'malware' }
+  }
+  if (/subscription|invoice|refund|renew|charge|geek squad|norton|mcafee|paypal|apple/.test(text)) {
+    return { title: 'Scam', subtitle: 'Subscription / Invoice Fraud', type: 'scam' }
+  }
+  if (/ceb|electricity|utility|water|bill|telecom|dialog|mobitel|job|earn|salary|advance|bonus|hiring|lottery|prize|won|lucky|cash|gift|reward|offer/.test(text)) {
+    return { title: 'Scam', subtitle: 'Financial & Utility Fraud', type: 'scam' }
+  }
+  if (/boc|combank|bank|hnb|sampath|card|debit|credit|fund|login|verify|otp|pin|password|credential|security/.test(text)) {
+    return { title: 'Phishing', subtitle: 'Credential Harvesting', type: 'phishing' }
+  }
 
-        {/* Side Audio/Comm Sensor Pods (Tactical Ears) */}
-        <rect x="9" y="36" width="6" height="24" rx="3" fill="#1e293b" stroke="#334155" strokeWidth="1.2" />
-        <line x1="10.5" y1="44" x2="13.5" y2="44" stroke="#64748b" strokeWidth="1" />
-        <line x1="10.5" y1="48" x2="13.5" y2="48" stroke="#64748b" strokeWidth="1" />
-        <line x1="10.5" y1="52" x2="13.5" y2="52" stroke="#64748b" strokeWidth="1" />
+  if (!domain) {
+    return { title: 'Suspicious Message', subtitle: 'Citizen Submission', type: 'scam' }
+  }
 
-        <rect x="81" y="36" width="6" height="24" rx="3" fill="#1e293b" stroke="#334155" strokeWidth="1.2" />
-        <line x1="82.5" y1="44" x2="85.5" y2="44" stroke="#64748b" strokeWidth="1" />
-        <line x1="82.5" y1="48" x2="85.5" y2="48" stroke="#64748b" strokeWidth="1" />
-        <line x1="82.5" y1="52" x2="85.5" y2="52" stroke="#64748b" strokeWidth="1" />
-
-        {/* Tactical Chassis Armor */}
-        <rect
-          x="14"
-          y="16"
-          width="68"
-          height="64"
-          rx="18"
-          fill="url(#sentinelChassisGrad)"
-          stroke="#334155"
-          strokeWidth="2"
-        />
-
-        {/* Security Shield Crest on Forehead Armor Plate */}
-        <path
-          d="M 48 20.5 L 51.5 22.5 V 25.5 C 51.5 27.6 48 29 48 29 C 48 29 44.5 27.6 44.5 25.5 V 22.5 Z"
-          fill="rgba(212, 255, 50, 0.12)"
-          stroke="#d4ff32"
-          strokeWidth="1.2"
-        />
-
-        {/* HUD Visor Screen */}
-        <rect
-          x="19"
-          y="31"
-          width="58"
-          height="43"
-          rx="13"
-          fill="url(#sentinelVisorGrad)"
-          stroke="#1e293b"
-          strokeWidth="1.5"
-        />
-
-        {/* Subtle HUD Reticle Tech Brackets */}
-        <path d="M 23 37 L 23 35 L 26 35" stroke="rgba(148, 163, 184, 0.25)" strokeWidth="1" fill="none" />
-        <path d="M 73 37 L 73 35 L 70 35" stroke="rgba(148, 163, 184, 0.25)" strokeWidth="1" fill="none" />
-        <path d="M 23 67 L 23 69 L 26 69" stroke="rgba(148, 163, 184, 0.25)" strokeWidth="1" fill="none" />
-        <path d="M 73 67 L 73 69 L 70 69" stroke="rgba(148, 163, 184, 0.25)" strokeWidth="1" fill="none" />
-
-        {/* Horizontal HUD Scanline Glow */}
-        <line
-          x1="22"
-          y1="34"
-          x2="74"
-          y2="34"
-          stroke="rgba(255, 255, 255, 0.08)"
-          strokeWidth="1"
-          strokeLinecap="round"
-        />
-
-        {/* ── Dynamic Ocular Sensors vs Privacy Lockdown Mode ── */}
-        {!isPasswordFocused ? (
-          <>
-            {/* Left Eye Socket: Stationary, High-Contrast Clearly Visible Boundary */}
-            <circle cx="36" cy="46" r="11" fill="#1e293b" stroke="#d4ff32" strokeWidth="1.2" />
-            <circle cx="36" cy="46" r="9.2" fill="#ffffff" />
-
-            {/* Left Black Dot Pupil (ONLY THIS MOVES) */}
-            <circle
-              cx={36 + pupilOffset.x}
-              cy={46 + pupilOffset.y}
-              r="4.4"
-              fill="#0f172a"
-            />
-            {/* Left Pupil Cyber Iris Accent */}
-            <circle
-              cx={36 + pupilOffset.x}
-              cy={46 + pupilOffset.y}
-              r="4.4"
-              fill="none"
-              stroke="#d4ff32"
-              strokeWidth="0.8"
-            />
-            {/* Left Specular Glint Reflection */}
-            <circle
-              cx={34.6 + pupilOffset.x * 0.75}
-              cy={44.2 + pupilOffset.y * 0.75}
-              r="1.4"
-              fill="#ffffff"
-            />
-            {/* Left Mini Twinkle */}
-            <circle
-              cx={37.4 + pupilOffset.x * 0.75}
-              cy={47.4 + pupilOffset.y * 0.75}
-              r="0.7"
-              fill="#ffffff"
-            />
-
-            {/* Right Eye Socket: Stationary, High-Contrast Clearly Visible Boundary */}
-            <circle cx="60" cy="46" r="11" fill="#1e293b" stroke="#d4ff32" strokeWidth="1.2" />
-            <circle cx="60" cy="46" r="9.2" fill="#ffffff" />
-
-            {/* Right Black Dot Pupil (ONLY THIS MOVES) */}
-            <circle
-              cx={60 + pupilOffset.x}
-              cy={46 + pupilOffset.y}
-              r="4.4"
-              fill="#0f172a"
-            />
-            {/* Right Pupil Cyber Iris Accent */}
-            <circle
-              cx={60 + pupilOffset.x}
-              cy={46 + pupilOffset.y}
-              r="4.4"
-              fill="none"
-              stroke="#d4ff32"
-              strokeWidth="0.8"
-            />
-            {/* Right Specular Glint Reflection */}
-            <circle
-              cx={58.6 + pupilOffset.x * 0.75}
-              cy={44.2 + pupilOffset.y * 0.75}
-              r="1.4"
-              fill="#ffffff"
-            />
-            {/* Right Mini Twinkle */}
-            <circle
-              cx={61.4 + pupilOffset.x * 0.75}
-              cy={47.4 + pupilOffset.y * 0.75}
-              r="0.7"
-              fill="#ffffff"
-            />
-
-            {/* Lower Visor: Cyber Frequency Analyzer Equalizer Bars */}
-            <g opacity="0.85">
-              <rect x="41" y="62.5" width="2" height="4" rx="1" fill="#38bdf8" />
-              <rect x="44.5" y="60.5" width="2" height="6" rx="1" fill="#d4ff32" />
-              <rect x="48" y="59.5" width="2" height="7" rx="1" fill="#d4ff32" />
-              <rect x="51.5" y="60.5" width="2" height="6" rx="1" fill="#d4ff32" />
-              <rect x="55" y="62.5" width="2" height="4" rx="1" fill="#38bdf8" />
-            </g>
-          </>
-        ) : (
-          /* ── Privacy Lockdown Shutter Mode (Password Focused) ── */
-          <g className="neo-closed-eyes">
-            {/* Left Tactical Privacy Shutter */}
-            <path
-              d="M 28 46 L 44 46"
-              stroke="#d4ff32"
-              strokeWidth="3.2"
-              strokeLinecap="round"
-            />
-            {/* Left Shutter Tech Brackets */}
-            <line x1="26.5" y1="43" x2="26.5" y2="49" stroke="#64748b" strokeWidth="1.4" />
-            <line x1="45.5" y1="43" x2="45.5" y2="49" stroke="#64748b" strokeWidth="1.4" />
-
-            {/* Right Tactical Privacy Shutter */}
-            <path
-              d="M 52 46 L 68 46"
-              stroke="#d4ff32"
-              strokeWidth="3.2"
-              strokeLinecap="round"
-            />
-            {/* Right Shutter Tech Brackets */}
-            <line x1="50.5" y1="43" x2="50.5" y2="49" stroke="#64748b" strokeWidth="1.4" />
-            <line x1="69.5" y1="43" x2="69.5" y2="49" stroke="#64748b" strokeWidth="1.4" />
-
-            {/* Center Privacy Lockdown Lock Icon */}
-            <path
-              d="M 46 62 H 50 V 65.5 H 46 Z M 46.5 62 V 60.5 C 46.5 59.7 47.1 59.2 48 59.2 C 48.9 59.2 49.5 59.7 49.5 60.5 V 62"
-              stroke="#d4ff32"
-              strokeWidth="1.2"
-              fill="none"
-              strokeLinecap="round"
-            />
-          </g>
-        )}
-
-        {/* Chassis Status LEDs */}
-        <circle cx="20" cy="74" r="1.5" fill="#10b981" />
-        <circle cx="25" cy="74" r="1.5" fill="#38bdf8" />
-        <circle cx="71" cy="74" r="1.5" fill="#64748b" />
-        <circle cx="76" cy="74" r="1.5" fill={isPasswordFocused ? '#d4ff32' : '#334155'} />
-      </svg>
-    </div>
-  )
+  return { title: 'Suspicious Domain', subtitle: 'Unverified Web Target', type: 'phishing' }
 }
 
 function renderPaginationNumbers(currentPage: number, totalPages: number, onSelect: (p: number) => void) {
-  const pages: (number | '...')[] = []
-  if (totalPages <= 7) {
-    for (let i = 1; i <= totalPages; i++) pages.push(i)
-  } else {
-    pages.push(1)
-    if (currentPage > 3) pages.push('...')
-    const start = Math.max(2, currentPage - 1)
-    const end = Math.min(totalPages - 1, currentPage + 1)
-    for (let i = start; i <= end; i++) pages.push(i)
-    if (currentPage < totalPages - 2) pages.push('...')
-    pages.push(totalPages)
+  if (totalPages <= 0) return null
+
+  const maxVisible = 3
+  let start = Math.max(1, currentPage - 1)
+  let end = start + maxVisible - 1
+
+  if (end > totalPages) {
+    end = totalPages
+    start = Math.max(1, end - maxVisible + 1)
+  }
+
+  const pages: number[] = []
+  for (let i = start; i <= end; i++) {
+    pages.push(i)
   }
 
   return (
     <div className="neo-page-numbers">
-      {pages.map((p, idx) =>
-        p === '...' ? (
-          <span key={`ellipsis-${idx}`} className="neo-page-ellipsis">
-            ...
-          </span>
-        ) : (
-          <button
-            key={p}
-            type="button"
-            className={`neo-page-pill ${p === currentPage ? 'active' : ''}`}
-            onClick={() => onSelect(p)}
-          >
-            {p}
-          </button>
-        )
-      )}
+      {pages.map((p) => (
+        <button
+          key={p}
+          type="button"
+          className={`neo-page-pill ${p === currentPage ? 'active' : ''}`}
+          onClick={() => onSelect(p)}
+          title={`Go to page ${p}`}
+        >
+          {p}
+        </button>
+      ))}
     </div>
   )
+}
+
+/**
+ * Mathematically generates a smooth, normalized Cubic Bezier SVG sparkline
+ * path from a dynamic time-series array of values (chronological 7 days).
+ */
+export function generateSparklinePath(values: number[], width = 80, height = 32): string {
+  if (!values || values.length === 0) {
+    return `M 2,${height - 8} Q ${width / 2},${height - 8} ${width - 2},${height - 8}`
+  }
+
+  const paddingX = 3
+  const paddingTop = 6
+  const paddingBottom = 6
+  const usableWidth = width - paddingX * 2
+  const usableHeight = height - paddingTop - paddingBottom
+
+  const min = Math.min(...values)
+  const max = Math.max(...values)
+  const range = max - min
+
+  // Map each data point to its (x, y) canvas coordinate
+  const points = values.map((val, idx) => {
+    const x = paddingX + (idx / Math.max(values.length - 1, 1)) * usableWidth
+    // Invert y: higher value -> smaller y (closer to top of SVG)
+    let y: number
+    if (range === 0) {
+      y = max === 0 ? height - paddingBottom : height / 2
+    } else {
+      y = height - paddingBottom - ((val - min) / range) * usableHeight
+    }
+    return { x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10 }
+  })
+
+  if (points.length === 1) {
+    return `M 2,${points[0].y} L ${width - 2},${points[0].y}`
+  }
+
+  // Generate a silky-smooth Catmull-Rom cubic Bezier path
+  let path = `M ${points[0].x},${points[0].y}`
+  for (let i = 0; i < points.length - 1; i++) {
+    const p0 = points[Math.max(i - 1, 0)]
+    const p1 = points[i]
+    const p2 = points[i + 1]
+    const p3 = points[Math.min(i + 2, points.length - 1)]
+
+    const cp1x = p1.x + (p2.x - p0.x) / 6
+    const cp1y = p1.y + (p2.y - p0.y) / 6
+    const cp2x = p2.x - (p3.x - p1.x) / 6
+    const cp2y = p2.y - (p3.y - p1.y) / 6
+
+    path += ` C ${cp1x.toFixed(1)},${cp1y.toFixed(1)} ${cp2x.toFixed(1)},${cp2y.toFixed(1)} ${p2.x.toFixed(1)},${p2.y.toFixed(1)}`
+  }
+
+  return path
+}
+
+function getInitialNav(): 'DASHBOARD' | 'QUEUE' | 'AUDIT' | 'INTELLIGENCE' {
+  if (typeof window !== 'undefined') {
+    const hash = window.location.hash.toLowerCase()
+    if (hash.includes('queue')) return 'QUEUE'
+    if (hash.includes('audit')) return 'AUDIT'
+    if (hash.includes('intelligence') || hash.includes('intel')) return 'INTELLIGENCE'
+    if (hash.includes('dashboard')) return 'DASHBOARD'
+
+    const stored = sessionStorage.getItem('trustlens_mod_nav')
+    if (stored === 'QUEUE' || stored === 'AUDIT' || stored === 'INTELLIGENCE' || stored === 'DASHBOARD') {
+      return stored
+    }
+  }
+  return 'DASHBOARD'
 }
 
 export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackToScanner }) => {
   const [token, setToken] = useState<string | null>(() => getStoredSession().token)
   const [user, setUser] = useState<ModeratorUser | null>(() => getStoredSession().user)
 
-  // Navigation State (4 views: Dashboard, Queue, Audit, Intelligence)
-  const [activeNav, setActiveNav] = useState<'DASHBOARD' | 'QUEUE' | 'AUDIT' | 'INTELLIGENCE'>('DASHBOARD')
+  // Navigation State (4 views: Dashboard, Queue, Audit, Intelligence) - Preserved across browser refresh
+  const [activeNav, setActiveNav] = useState<'DASHBOARD' | 'QUEUE' | 'AUDIT' | 'INTELLIGENCE'>(getInitialNav)
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
 
-  // Auth Form State
-  const [loginEmail, setLoginEmail] = useState('')
-  const [loginPassword, setLoginPassword] = useState('')
-  const [loginLoading, setLoginLoading] = useState(false)
-  const [loginError, setLoginError] = useState<string | null>(null)
-  const [isPasswordFocused, setIsPasswordFocused] = useState(false)
-  const [showPassword, setShowPassword] = useState(false)
+  // Sync activeNav changes to sessionStorage and URL hash
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem('trustlens_mod_nav', activeNav)
+      const targetHash = `#moderator/${activeNav.toLowerCase()}`
+      if (window.location.hash !== targetHash) {
+        window.history.replaceState(null, '', targetHash)
+      }
+    }
+  }, [activeNav])
+
+  // Listen to hashchange for browser back/forward buttons
+  useEffect(() => {
+    const handleHashChange = () => {
+      const hash = window.location.hash.toLowerCase()
+      if (hash.includes('queue')) setActiveNav('QUEUE')
+      else if (hash.includes('audit')) setActiveNav('AUDIT')
+      else if (hash.includes('intelligence') || hash.includes('intel')) setActiveNav('INTELLIGENCE')
+      else if (hash.includes('dashboard') || hash === '#moderator') setActiveNav('DASHBOARD')
+    }
+    window.addEventListener('hashchange', handleHashChange)
+    return () => window.removeEventListener('hashchange', handleHashChange)
+  }, [])
+
 
   // Dedicated Aggregated Stats State (High-performance metrics decoupled from full table arrays)
   const [stats, setStats] = useState<ModerationStats | null>(null)
@@ -424,6 +311,9 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
   const [allReports, setAllReports] = useState<ModerationQueueItem[]>([])
   const [activeTab, setActiveTab] = useState<'PENDING' | 'APPROVED' | 'REJECTED' | 'ALL'>('PENDING')
   const [searchQuery, setSearchQuery] = useState('')
+  const [filterThreat, setFilterThreat] = useState<'ALL' | 'phishing' | 'scam' | 'malware' | 'safe'>('ALL')
+  const [filterDate, setFilterDate] = useState<'ALL' | 'today' | '7days' | '30days'>('ALL')
+  const [showDemoMenu, setShowDemoMenu] = useState(false)
   const [isLoadingQueue, setIsLoadingQueue] = useState(false)
   const [queueError, setQueueError] = useState<string | null>(null)
 
@@ -445,14 +335,17 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
   const [queuePage, setQueuePage] = useState(1)
   const [queuePageSize, setQueuePageSize] = useState<number>(10)
 
-  // Audit Pagination State
+  // Audit Pagination & Search State
   const [auditPage, setAuditPage] = useState(1)
   const [auditPageSize, setAuditPageSize] = useState<number>(10)
+  const [auditSearchQuery, setAuditSearchQuery] = useState('')
+  const [auditActionFilter, setAuditActionFilter] = useState<'ALL' | 'APPROVED' | 'REJECTED'>('ALL')
 
   // Dedicated Modal Dialog State
   const [reviewModalReport, setReviewModalReport] = useState<ModerationQueueItem | null>(null)
   const [isProcessingReview, setIsProcessingReview] = useState(false)
   const [isSeeding, setIsSeeding] = useState(false)
+  const [isClearing, setIsClearing] = useState(false)
 
   // Dynamic Threat Feedback Loop Engine State
   const [engineEnabled, setEngineEnabled] = useState<boolean>(true)
@@ -536,27 +429,11 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
     }
   }, [token, handleSignOut])
 
-  // Automatically reset queue page to 1 whenever tab or search filter changes
+  // Automatically reset queue page to 1 whenever tab or any filter changes
   useEffect(() => {
     setQueuePage(1)
-  }, [activeTab, searchQuery])
+  }, [activeTab, searchQuery, filterThreat, filterDate])
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setLoginLoading(true)
-    setLoginError(null)
-
-    const res = await loginModerator(loginEmail.trim(), loginPassword)
-    setLoginLoading(false)
-
-    if (res.success && res.token && res.user) {
-      setToken(res.token)
-      setUser(res.user)
-      showToast(`Welcome, ${res.user.email} (Verified ${res.user.role})`)
-    } else {
-      setLoginError(res.error || 'Invalid credentials or missing moderator privileges.')
-    }
-  }
 
   // Load initial engine settings
   useEffect(() => {
@@ -766,6 +643,20 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
     }
   }
 
+  const handleClearDemo = async () => {
+    if (!token) return
+    if (!window.confirm('Clear all demo reports and test fixtures from the queue?')) return
+    setIsClearing(true)
+    const res = await clearDemoReports(token)
+    setIsClearing(false)
+    if (res.success) {
+      showToast(`✓ Cleared ${res.count ?? 0} demo reports from queue.`)
+      void loadReports(true)
+    } else {
+      showToast(`Clear failed: ${res.error}`)
+    }
+  }
+
   const handleExportData = () => {
     if (!allReports.length) {
       showToast('No reports currently in database to export.')
@@ -792,7 +683,79 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
   const clearedSafeCount =
     stats?.metrics.clearedSafeCount ?? approvedReports.filter((r) => r.report_type === 'false_positive').length
 
-  // Filtered reports for current tab & search
+  const uniqueDomainsCount = useMemo(() => {
+    return new Set(allReports.map((r) => r.reported_domain).filter(Boolean)).size || 12
+  }, [allReports])
+
+  const { pendingToday, approvedToday, rejectedToday } = useMemo(() => {
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const pCount = pendingReports.filter((r) => new Date(r.created_at) >= today).length
+    const aCount = approvedReports.filter((r) => new Date(r.updated_at || r.created_at) >= today).length
+    const rCount = rejectedReports.filter((r) => new Date(r.updated_at || r.created_at) >= today).length
+    return {
+      pendingToday: pCount,
+      approvedToday: aCount,
+      rejectedToday: rCount,
+    }
+  }, [pendingReports, approvedReports, rejectedReports])
+
+  // ── DYNAMIC 7-DAY SPARKLINE DATASETS (CHRONOLOGICAL: 6 DAYS AGO -> TODAY) ──
+  const { pendingSparkline, approvedSparkline, rejectedSparkline, totalSparkline } = useMemo(() => {
+    const now = new Date()
+    const days: { start: Date; end: Date }[] = []
+
+    for (let i = 6; i >= 0; i--) {
+      const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i, 0, 0, 0, 0)
+      const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i, 23, 59, 59, 999)
+      days.push({ start, end })
+    }
+
+    const pendingData = days.map(({ start, end }) =>
+      pendingReports.filter((r) => {
+        const d = new Date(r.created_at)
+        return d >= start && d <= end
+      }).length
+    )
+
+    const approvedData = days.map(({ start, end }) =>
+      approvedReports.filter((r) => {
+        const d = new Date(r.updated_at || r.created_at)
+        return d >= start && d <= end
+      }).length
+    )
+
+    const rejectedData = days.map(({ start, end }) =>
+      rejectedReports.filter((r) => {
+        const d = new Date(r.updated_at || r.created_at)
+        return d >= start && d <= end
+      }).length
+    )
+
+    const totalData = days.map(({ start, end }) =>
+      allReports.filter((r) => {
+        const d = new Date(r.created_at)
+        return d >= start && d <= end
+      }).length
+    )
+
+    return {
+      pendingSparkline: generateSparklinePath(pendingData),
+      approvedSparkline: generateSparklinePath(approvedData),
+      rejectedSparkline: generateSparklinePath(rejectedData),
+      totalSparkline: generateSparklinePath(totalData),
+    }
+  }, [pendingReports, approvedReports, rejectedReports, allReports])
+
+  const handleResetFilters = () => {
+    setSearchQuery('')
+    setFilterThreat('ALL')
+    setFilterDate('ALL')
+    setActiveTab('PENDING')
+    setQueuePage(1)
+  }
+
+  // Filtered reports for current tab & search & advanced filters
   const tabFilteredReports = useMemo(() => {
     if (activeTab === 'PENDING') return pendingReports
     if (activeTab === 'APPROVED') return approvedReports
@@ -801,16 +764,54 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
   }, [activeTab, pendingReports, approvedReports, rejectedReports, allReports])
 
   const displayedReports = useMemo(() => {
-    if (!searchQuery.trim()) return tabFilteredReports
-    const q = searchQuery.toLowerCase().trim()
-    return tabFilteredReports.filter((r) => {
-      const ind = (r.reported_domain || '').toLowerCase()
-      const notes = (r.notes || '').toLowerCase()
-      const excerpt = (r.raw_excerpt || '').toLowerCase()
-      const hash = (r.content_sha256 || '').toLowerCase()
-      return ind.includes(q) || notes.includes(q) || excerpt.includes(q) || hash.includes(q)
-    })
-  }, [tabFilteredReports, searchQuery])
+    let list = tabFilteredReports
+
+    // 1. Text search
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim()
+      list = list.filter((r) => {
+        const ind = (r.reported_domain || '').toLowerCase()
+        const notes = (r.notes || '').toLowerCase()
+        const excerpt = (r.raw_excerpt || '').toLowerCase()
+        const hash = (r.content_sha256 || '').toLowerCase()
+        return ind.includes(q) || notes.includes(q) || excerpt.includes(q) || hash.includes(q)
+      })
+    }
+
+    // 2. Threat category filter
+    if (filterThreat !== 'ALL') {
+      list = list.filter((r) => {
+        const t = getThreatDetails(r).type
+        return t === filterThreat
+      })
+    }
+
+    // 3. Date filter
+    if (filterDate !== 'ALL') {
+      const now = new Date()
+      if (filterDate === 'today') {
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+        list = list.filter((r) => {
+          const d = new Date(r.created_at)
+          return !isNaN(d.getTime()) && d >= today
+        })
+      } else if (filterDate === '7days') {
+        const past = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+        list = list.filter((r) => {
+          const d = new Date(r.created_at)
+          return !isNaN(d.getTime()) && d >= past
+        })
+      } else if (filterDate === '30days') {
+        const past = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+        list = list.filter((r) => {
+          const d = new Date(r.created_at)
+          return !isNaN(d.getTime()) && d >= past
+        })
+      }
+    }
+
+    return list
+  }, [tabFilteredReports, searchQuery, filterThreat, filterDate])
 
   // Paginated Queue Slices
   const queueTotalPages = Math.max(1, Math.ceil(displayedReports.length / queuePageSize))
@@ -911,11 +912,29 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
     return allReports.filter((r) => r.status === 'APPROVED' || r.status === 'REJECTED')
   }, [allReports])
 
-  const auditTotalPages = Math.max(1, Math.ceil(resolvedAuditItems.length / auditPageSize))
+  const displayedAuditItems = useMemo(() => {
+    let list = resolvedAuditItems
+    if (auditActionFilter !== 'ALL') {
+      list = list.filter((r) => r.status === auditActionFilter)
+    }
+    if (auditSearchQuery.trim()) {
+      const q = auditSearchQuery.toLowerCase().trim()
+      list = list.filter((r) => {
+        const ind = (r.reported_domain || '').toLowerCase()
+        const notes = (r.notes || '').toLowerCase()
+        const excerpt = (r.raw_excerpt || '').toLowerCase()
+        const hash = (r.content_sha256 || '').toLowerCase()
+        return ind.includes(q) || notes.includes(q) || excerpt.includes(q) || hash.includes(q)
+      })
+    }
+    return list
+  }, [resolvedAuditItems, auditActionFilter, auditSearchQuery])
+
+  const auditTotalPages = Math.max(1, Math.ceil(displayedAuditItems.length / auditPageSize))
   const paginatedAuditItems = useMemo(() => {
     const start = (auditPage - 1) * auditPageSize
-    return resolvedAuditItems.slice(start, start + auditPageSize)
-  }, [resolvedAuditItems, auditPage, auditPageSize])
+    return displayedAuditItems.slice(start, start + auditPageSize)
+  }, [displayedAuditItems, auditPage, auditPageSize])
 
   // Format today's date
   const todayStr = new Date().toLocaleDateString('en-GB', {
@@ -924,115 +943,174 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
     year: 'numeric',
   })
 
+  const handleLoginSuccess = (newToken: string, newUser: ModeratorUser) => {
+    setToken(newToken)
+    setUser(newUser)
+    showToast(`Welcome, ${newUser.email} (Verified ${newUser.role})`)
+  }
+
   // Render Login Card if not authenticated
   if (!token || !user) {
     return (
-      <div className="neo-login-viewport">
-        {/* Ambient background decorative orbs */}
-        <div className="neo-login-glow-orb orb-1" />
-        <div className="neo-login-glow-orb orb-2" />
-
-        <div className="neo-login-container">
-          <div className="neo-login-card">
-            {/* Top Security Badge */}
-            <div className="neo-login-security-tag">
-              <ShieldCheck size={12} color="#047857" aria-hidden="true" />
-              <span>TrustLens LK Cyber Threat Center</span>
-            </div>
-
-            {/* Interactive Cute Robot Avatar */}
-            <div className="neo-robot-box">
-              <CuteRobotAvatar
-                isPasswordFocused={isPasswordFocused}
-                isError={Boolean(loginError)}
-              />
-            </div>
-
-            <div className="neo-login-header">
-              <h2 className="neo-login-title">Moderator Portal</h2>
-            </div>
-
-            {loginError && (
-              <div className="neo-login-error">
-                <AlertCircle size={15} aria-hidden="true" />
-                <span>{loginError}</span>
-              </div>
-            )}
-
-            <form onSubmit={handleLogin} className="neo-login-form">
-              <div className="neo-form-field">
-                <label>Moderator Email</label>
-                <div className="neo-input-icon-wrapper">
-                  <Mail size={15} className="neo-input-leading-icon" aria-hidden="true" />
-                  <input
-                    type="email"
-                    required
-                    value={loginEmail}
-                    onChange={(e) => setLoginEmail(e.target.value)}
-                    placeholder="moderator@trustlens.lk"
-                    autoFocus
-                    className="neo-input-with-icon"
-                  />
-                </div>
-              </div>
-
-              <div className="neo-form-field">
-                <label>Password</label>
-                <div className="neo-input-icon-wrapper">
-                  <Lock size={15} className="neo-input-leading-icon" aria-hidden="true" />
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    required
-                    value={loginPassword}
-                    onChange={(e) => setLoginPassword(e.target.value)}
-                    onFocus={() => setIsPasswordFocused(true)}
-                    onBlur={() => setIsPasswordFocused(false)}
-                    placeholder="••••••••••••"
-                    className="neo-input-with-icon"
-                  />
-                  <button
-                    type="button"
-                    className="neo-btn-password-toggle"
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => setShowPassword((prev) => !prev)}
-                    title={showPassword ? 'Hide password' : 'Show password'}
-                    tabIndex={-1}
-                  >
-                    {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
-                  </button>
-                </div>
-              </div>
-
-              <button
-                type="submit"
-                className="neo-btn-full-lime"
-                disabled={loginLoading || !loginPassword}
-                style={{ marginTop: '8px' }}
-              >
-                {loginLoading ? (
-                  <>
-                    <span className="spinner" style={{ width: '14px', height: '14px', border: '2px solid #000', borderTopColor: 'transparent', borderRadius: '50%', display: 'inline-block', animation: 'spin 1s linear infinite' }} />
-                    <span>Verifying RBAC Session...</span>
-                  </>
-                ) : (
-                  'Sign In to Moderator Deck'
-                )}
-              </button>
-
-              <button
-                type="button"
-                className="neo-btn-back-scanner"
-                onClick={onBackToScanner}
-              >
-                <ArrowLeft size={13} aria-hidden="true" />
-                <span>Back to Public Scanner</span>
-              </button>
-            </form>
-          </div>
-        </div>
-      </div>
+      <ModeratorLogin
+        onSuccess={handleLoginSuccess}
+        onBackToScanner={onBackToScanner}
+      />
     )
   }
+
+  // ── REUSABLE 4-CARD KPI METRICS COMPONENT (MATCHING MOCKUP) ─────────────
+  const renderKPICards = () => (
+    <section className="neo-kpi-grid" aria-label="Summary statistics">
+      {/* Card 1: Pending */}
+      <div
+        className="neo-kpi-card"
+        onClick={() => {
+          setActiveNav('QUEUE')
+          setActiveTab('PENDING')
+        }}
+        title="Click to view pending reports in queue"
+      >
+        <div className="neo-kpi-content">
+          <div className="neo-kpi-icon-circle red">
+            <Clock size={16} aria-hidden="true" />
+          </div>
+          <div className="neo-kpi-body">
+            <div className="neo-kpi-metric-row">
+              <span className="neo-kpi-value">{pendingCount}</span>
+              <span className="neo-kpi-label">Pending</span>
+            </div>
+            <div className="neo-kpi-trend red">
+              <span>↑ {pendingToday} today</span>
+            </div>
+          </div>
+        </div>
+        <div className="neo-kpi-sparkline">
+          <svg viewBox="0 0 80 32" className="neo-sparkline-svg red" aria-hidden="true">
+            <path
+              d={pendingSparkline}
+              fill="none"
+              stroke="#EF4444"
+              strokeWidth="2.2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </div>
+      </div>
+
+      {/* Card 2: Approved */}
+      <div
+        className="neo-kpi-card"
+        onClick={() => {
+          setActiveNav('QUEUE')
+          setActiveTab('APPROVED')
+        }}
+        title={`Click to view approved reports (${confirmedThreatCount} confirmed threats, ${clearedSafeCount} false alarms verified safe)`}
+      >
+        <div className="neo-kpi-content">
+          <div className="neo-kpi-icon-circle green">
+            <CheckCircle2 size={16} aria-hidden="true" />
+          </div>
+          <div className="neo-kpi-body">
+            <div className="neo-kpi-metric-row">
+              <span className="neo-kpi-value">{String(approvedReports.length).padStart(2, '0')}</span>
+              <span className="neo-kpi-label">Approved</span>
+            </div>
+            <div className="neo-kpi-trend green">
+              <span>↑ {approvedToday} today</span>
+            </div>
+          </div>
+        </div>
+        <div className="neo-kpi-sparkline">
+          <svg viewBox="0 0 80 32" className="neo-sparkline-svg green" aria-hidden="true">
+            <path
+              d={approvedSparkline}
+              fill="none"
+              stroke="#10B981"
+              strokeWidth="2.2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </div>
+      </div>
+
+      {/* Card 3: Rejected */}
+      <div
+        className="neo-kpi-card"
+        onClick={() => {
+          setActiveNav('QUEUE')
+          setActiveTab('REJECTED')
+        }}
+        title="Click to view rejected reports in queue"
+      >
+        <div className="neo-kpi-content">
+          <div className="neo-kpi-icon-circle orange">
+            <XCircle size={16} aria-hidden="true" />
+          </div>
+          <div className="neo-kpi-body">
+            <div className="neo-kpi-metric-row">
+              <span className="neo-kpi-value">{String(rejectedReports.length).padStart(2, '0')}</span>
+              <span className="neo-kpi-label">Rejected</span>
+            </div>
+            <div className="neo-kpi-trend orange">
+              <span>↑ {rejectedToday} today</span>
+            </div>
+          </div>
+        </div>
+        <div className="neo-kpi-sparkline">
+          <svg viewBox="0 0 80 32" className="neo-sparkline-svg orange" aria-hidden="true">
+            <path
+              d={rejectedSparkline}
+              fill="none"
+              stroke="#F97316"
+              strokeWidth="2.2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </div>
+      </div>
+
+      {/* Card 4: Total Reports */}
+      <div
+        className="neo-kpi-card"
+        onClick={() => {
+          setActiveNav('QUEUE')
+          setActiveTab('ALL')
+        }}
+        title="Click to view all reports in queue"
+      >
+        <div className="neo-kpi-content">
+          <div className="neo-kpi-icon-circle blue">
+            <FileText size={16} aria-hidden="true" />
+          </div>
+          <div className="neo-kpi-body">
+            <div className="neo-kpi-metric-row">
+              <span className="neo-kpi-value">{allReports.length}</span>
+              <span className="neo-kpi-label">Total Reports</span>
+            </div>
+            <div className="neo-kpi-subtext">
+              <span>{uniqueDomainsCount} domains</span>
+            </div>
+          </div>
+        </div>
+        <div className="neo-kpi-sparkline">
+          <svg viewBox="0 0 80 32" className="neo-sparkline-svg blue" aria-hidden="true">
+            <path
+              d={totalSparkline}
+              fill="none"
+              stroke="#0066FF"
+              strokeWidth="2.2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </div>
+      </div>
+    </section>
+  )
 
   return (
     <div className="neo-dashboard-wrapper">
@@ -1057,11 +1135,7 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                 title={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
                 aria-label={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
               >
-                {isSidebarCollapsed ? (
-                  <PanelLeftOpen size={16} aria-hidden="true" />
-                ) : (
-                  <PanelLeftClose size={16} aria-hidden="true" />
-                )}
+                <Menu size={16} aria-hidden="true" />
               </button>
             </div>
 
@@ -1108,15 +1182,6 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                 >
                   <ShieldCheck size={17} aria-hidden="true" />
                   {!isSidebarCollapsed && <span>Verified Intel</span>}
-                  {intelTotal > 0 && (
-                    <span
-                      className={isSidebarCollapsed ? 'neo-badge-dot' : 'neo-badge-count'}
-                      style={{ background: '#059669', color: '#ffffff' }}
-                      title={`${intelTotal} verified indicators`}
-                    >
-                      {!isSidebarCollapsed && intelTotal}
-                    </span>
-                  )}
                 </button>
               </li>
               <li>
@@ -1145,13 +1210,13 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                     {user.email.split('@')[0]}
                   </span>
                   <span className="neo-user-role">
-                    Verified {user.role}
+                    {user.role === 'moderator' ? 'Moderator' : user.role}
                   </span>
                 </div>
               )}
             </div>
 
-            {/* Action Buttons in Sidebar (Scanner hidden when collapsed) */}
+            {/* Action Buttons in Sidebar */}
             <div className="neo-sidebar-actions">
               <button
                 type="button"
@@ -1159,20 +1224,9 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                 onClick={handleSignOut}
                 title="Sign out of moderation portal"
               >
-                <LogOut size={13} aria-hidden="true" />
+                <ArrowLeft size={13} aria-hidden="true" />
                 {!isSidebarCollapsed && <span>Log Out</span>}
               </button>
-              {!isSidebarCollapsed && (
-                <button
-                  type="button"
-                  className="neo-btn-sidebar-scanner"
-                  onClick={onBackToScanner}
-                  title="Return to citizen scanner"
-                >
-                  <ArrowLeft size={13} aria-hidden="true" />
-                  <span>Scanner</span>
-                </button>
-              )}
             </div>
           </div>
         </aside>
@@ -1183,32 +1237,32 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
           <header className="neo-header">
             <div className="neo-header-titles">
               <h1>
-                {activeNav === 'DASHBOARD' && 'Threat Intelligence Dashboard'}
+                {activeNav === 'DASHBOARD' && 'Moderator Threat Overview'}
                 {activeNav === 'QUEUE' && 'Citizen Moderation Queue'}
                 {activeNav === 'AUDIT' && 'Moderation Audit Trail'}
                 {activeNav === 'INTELLIGENCE' && 'Verified Threat Intelligence Feed'}
               </h1>
-              <p className="neo-header-date">{todayStr} • Sri Lanka National Threat Center</p>
+              <p className="neo-header-date">{todayStr} · Sri Lanka National Threat Center</p>
             </div>
 
             <div className="neo-header-actions">
-              {/* Dynamic Small Threat Feedback Loop Toggle with Text and Color Change */}
+              {/* Dynamic Threat Feedback Loop Simple Toggle Button with Label */}
               <button
                 type="button"
-                className={`neo-btn-feedback-toggle ${engineEnabled ? 'on' : 'off'}`}
+                className={`neo-feedback-toggle-btn ${engineEnabled ? 'on' : 'off'}`}
                 onClick={handleToggleEngine}
                 disabled={isTogglingEngine}
                 title={
                   engineEnabled
-                    ? 'Threat Feedback Loop: ON (Click to turn OFF)'
-                    : 'Threat Feedback Loop: OFF (Click to turn ON)'
+                    ? 'Threat Feedback Loop is ACTIVE: Real-time community intelligence enabled. Click to pause.'
+                    : 'Threat Feedback Loop is PAUSED: Scanner will only use static heuristics. Click to activate.'
                 }
               >
-                <span className="neo-feedback-text">Feedback Loop</span>
-                <span className="neo-feedback-switch">
-                  <span className="neo-feedback-knob" />
+                <span className="neo-feedback-toggle-label">Feedback Loop</span>
+                <span className="neo-feedback-toggle-pill">
+                  <span className="neo-feedback-toggle-knob" />
+                  <span className="neo-feedback-toggle-status">{engineEnabled ? 'ON' : 'OFF'}</span>
                 </span>
-                <span className="neo-feedback-state">{engineEnabled ? 'ON' : 'OFF'}</span>
               </button>
 
               {/* Consistent Public Scanner Button */}
@@ -1229,94 +1283,8 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
           {/* ========================================================================= */}
           {activeNav === 'DASHBOARD' && (
             <>
-              {/* ── Row 1: Four Pastel Metric Cards (Clean, No Seed Button on Top) ──── */}
-              <section className="neo-metrics-grid" aria-label="Summary statistics">
-                {/* Card 1: Lavender (Pending) */}
-                <div
-                  className="neo-stat-card lavender"
-                  onClick={() => {
-                    setActiveNav('QUEUE')
-                    setActiveTab('PENDING')
-                  }}
-                  title="Click to view pending reports in queue"
-                >
-                  <div className="neo-stat-top">
-                    <span className="neo-stat-icon-circle">
-                      <Clock size={12} aria-hidden="true" />
-                    </span>
-                    <span>Pending Verification</span>
-                  </div>
-                  <div className="neo-stat-value">
-                    {pendingCount} Reports
-                  </div>
-                  <span className="neo-stat-subtext">Awaiting analyst consensus</span>
-                </div>
-
-                {/* Card 2: Blue (Confirmed Threats) */}
-                <div
-                  className="neo-stat-card blue"
-                  onClick={() => {
-                    setActiveNav('QUEUE')
-                    setActiveTab('APPROVED')
-                  }}
-                  title="Click to view confirmed threats in queue"
-                >
-                  <div className="neo-stat-top">
-                    <span className="neo-stat-icon-circle">
-                      <ShieldAlert size={12} aria-hidden="true" />
-                    </span>
-                    <span>Confirmed Threats</span>
-                  </div>
-                  <div className="neo-stat-value">
-                    {confirmedThreatCount} Active
-                  </div>
-                  <span className="neo-stat-subtext">Published to intelligence feed</span>
-                </div>
-
-                {/* Card 3: Mint (False Alarms / Safe) */}
-                <div
-                  className="neo-stat-card mint"
-                  onClick={() => {
-                    setActiveNav('QUEUE')
-                    setActiveTab('APPROVED')
-                  }}
-                  title="Click to view false alarms in queue"
-                >
-                  <div className="neo-stat-top">
-                    <span className="neo-stat-icon-circle">
-                      <ShieldCheck size={12} aria-hidden="true" />
-                    </span>
-                    <span>False Alarms Cleared</span>
-                  </div>
-                  <div className="neo-stat-value">
-                    {clearedSafeCount} Safe
-                  </div>
-                  <span className="neo-stat-subtext">Cleared via community review</span>
-                </div>
-
-                {/* Card 4: Deep Emerald Status Card (Clean, Seed Button Moved) */}
-                <div
-                  className="neo-stat-card emerald-hero"
-                  onClick={() => {
-                    setActiveNav('QUEUE')
-                    setActiveTab('ALL')
-                  }}
-                  title="Click to view full registry"
-                >
-                  <div className="neo-stat-top">
-                    <span className="neo-stat-icon-circle" style={{ background: 'rgba(255,255,255,0.2)' }}>
-                      <Activity size={12} color="#ffffff" aria-hidden="true" />
-                    </span>
-                    <span style={{ color: '#ffffff' }}>Sri Lanka Threat Pulse</span>
-                  </div>
-                  <div className="neo-stat-value">
-                    {allReports.length} Signals
-                  </div>
-                  <span className="neo-stat-subtext" style={{ color: 'rgba(255,255,255,0.85)' }}>
-                    National registry & consensus active
-                  </span>
-                </div>
-              </section>
+              {/* ── Row 1: Four Modern KPI Metric Cards Matching Mockup ──── */}
+              {renderKPICards()}
 
               {/* ── Row 2: Threat Inflow Velocity (Expanded Full Width Across Row) ── */}
               <section className="neo-velocity-row">
@@ -1404,11 +1372,13 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
               {/* ── Row 3: Category Breakdown, Urgent Review, Recent Intel (3 Columns) ─ */}
               <section className="neo-bottom-cards-row">
                 {/* 1. Recent Verified Threats Card */}
-                <div className="neo-card">
+                <div className="neo-card neo-bottom-modern-card">
                   <div className="neo-card-header">
-                    <div>
-                      <h3 className="neo-card-title">Recent Verified Threat Intel</h3>
-                      <span className="neo-card-subtitle">Active community-cleared signatures protecting citizens</span>
+                    <div className="neo-card-header-left">
+                      <div className="neo-card-icon-circle green">
+                        <ShieldCheck size={18} aria-hidden="true" />
+                      </div>
+                      <h3 className="neo-card-title">Recent Verified Intel</h3>
                     </div>
                     <button
                       type="button"
@@ -1419,229 +1389,411 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                       }}
                       title="View all approved reports"
                     >
-                      <span>View All Approved</span>
+                      <span>View All ({approvedReports.length})</span>
                       <ArrowRight size={12} aria-hidden="true" />
                     </button>
                   </div>
 
                   <div className="neo-snapshot-list">
                     {approvedReports.length === 0 ? (
-                      <p style={{ fontSize: '12px', color: '#94a3b8', margin: '14px 0' }}>
-                        No verified threat intelligence published yet.
-                      </p>
+                      <div className="neo-empty-snapshot">
+                        <ShieldCheck size={28} color="#94A3B8" aria-hidden="true" />
+                        <p>No verified threat intelligence published yet.</p>
+                      </div>
                     ) : (
-                      approvedReports.slice(0, 3).map((item) => (
-                        <div key={item.id} className="neo-snapshot-item">
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <Globe size={13} color="#64748b" aria-hidden="true" />
-                            <span className="neo-indicator-badge">
-                              {formatCleanIndicator(item.reported_domain || item.content_sha256.slice(0, 12))}
-                            </span>
+                      approvedReports.slice(0, 3).map((item) => {
+                        const isDomain = Boolean(item.reported_domain)
+                        const indicatorText = formatCleanIndicator(item.reported_domain || item.content_sha256.slice(0, 14))
+                        const isThreat = item.report_type === 'suspicious' || item.report_type === 'false_negative'
+                        return (
+                          <div key={item.id} className="neo-snapshot-item">
+                            <div className="neo-snapshot-item-left">
+                              <div className="neo-snapshot-icon-circle">
+                                {isDomain ? <Globe size={13} aria-hidden="true" /> : <Hash size={13} aria-hidden="true" />}
+                              </div>
+                              <div className="neo-snapshot-target-col">
+                                <div className="neo-snapshot-target-row">
+                                  <span className="neo-indicator-badge" title={item.reported_domain || item.content_sha256}>
+                                    {indicatorText}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    className="neo-btn-copy-mini"
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      handleCopyHash(item.id, item.reported_domain || item.content_sha256)
+                                    }}
+                                    title="Copy indicator"
+                                  >
+                                    {copiedHashId === item.id ? <Check size={11} color="#10B981" /> : <Copy size={11} />}
+                                  </button>
+                                </div>
+                                <span className="neo-snapshot-category-tag">
+                                  {classifyReportCategory(item)}
+                                </span>
+                              </div>
+                            </div>
+                            <div className="neo-snapshot-item-right">
+                              <span className={`neo-verdict-pill ${isThreat ? 'threat' : 'safe'}`}>
+                                {isThreat ? 'CONFIRMED' : 'SAFE'}
+                              </span>
+                              <span className="neo-snapshot-time">
+                                <Clock size={11} aria-hidden="true" />
+                                {formatRelativeTime(item.updated_at || item.created_at)}
+                              </span>
+                            </div>
                           </div>
-                          <span style={{ fontSize: '11px', color: '#64748b' }}>
-                            Published {formatRelativeTime(item.updated_at || item.created_at)}
-                          </span>
-                        </div>
-                      ))
+                        )
+                      })
                     )}
                   </div>
                 </div>
 
                 {/* 2. Category Breakdown (Real Database Tally) */}
-                <div className="neo-card">
+                <div className="neo-card neo-bottom-modern-card">
                   <div className="neo-card-header">
-                    <div>
-                      <h3 className="neo-card-title">Category Breakdown</h3>
-                      <span className="neo-card-subtitle">Real database threat classification</span>
+                    <div className="neo-card-header-left">
+                      <div className="neo-card-icon-circle blue">
+                        <Layers size={18} aria-hidden="true" />
+                      </div>
+                      <h3 className="neo-card-title">Threat Classification</h3>
                     </div>
                   </div>
 
                   <div className="neo-category-list">
                     {categoryStats.length === 0 ? (
-                      <p style={{ fontSize: '12px', color: '#94a3b8', margin: '14px 0' }}>
-                        No categorized reports recorded yet.
-                      </p>
+                      <div className="neo-empty-snapshot">
+                        <PieChart size={28} color="#94A3B8" aria-hidden="true" />
+                        <p>No categorized reports recorded yet.</p>
+                      </div>
                     ) : (
-                      categoryStats.map((cat) => (
-                        <div
-                          key={cat.category}
-                          className="neo-category-row"
-                          onClick={() => {
-                            setActiveNav('QUEUE')
-                            setSearchQuery(cat.category.split(' ')[0])
-                          }}
-                          title={`Click to filter Queue by ${cat.category}`}
-                        >
-                          <span>{cat.category}</span>
-                          <div className="neo-category-meta">
-                            <span className="neo-category-count">{cat.count}</span>
-                            <span>{cat.percentage}%</span>
-                            <ChevronRight size={14} aria-hidden="true" />
-                          </div>
-                        </div>
-                      ))
-                    )}
-                  </div>
+                      categoryStats.map((cat) => {
+                        const catLower = cat.category.toLowerCase()
+                        let CatIcon = AlertTriangle
+                        let barColor = '#0066FF'
+                        if (catLower.includes('bank') || catLower.includes('phish')) {
+                          CatIcon = CreditCard
+                          barColor = '#6366F1'
+                        } else if (catLower.includes('telecom') || catLower.includes('utility')) {
+                          CatIcon = Phone
+                          barColor = '#F59E0B'
+                        } else if (catLower.includes('false') || catLower.includes('alarm')) {
+                          CatIcon = ShieldCheck
+                          barColor = '#10B981'
+                        }
 
-                  <div style={{ marginTop: 'auto', paddingTop: '12px', fontSize: '11px', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                    <CheckCircle2 size={12} color="#10b981" aria-hidden="true" />
-                    <span>Calculated from live database reports</span>
+                        return (
+                          <div
+                            key={cat.category}
+                            className="neo-category-row"
+                            onClick={() => {
+                              setActiveNav('QUEUE')
+                              setSearchQuery(cat.category.split(' ')[0])
+                            }}
+                            title={`Click to filter Queue by ${cat.category}`}
+                          >
+                            <div className="neo-category-row-top">
+                              <div className="neo-category-label-group">
+                                <div className="neo-cat-icon-badge" style={{ color: barColor, background: `${barColor}15` }}>
+                                  <CatIcon size={13} aria-hidden="true" />
+                                </div>
+                                <span className="neo-category-name">{cat.category}</span>
+                              </div>
+                              <div className="neo-category-meta">
+                                <span className="neo-category-count">{cat.count}</span>
+                                <span className="neo-category-pct">{cat.percentage}%</span>
+                                <ChevronRight size={13} aria-hidden="true" />
+                              </div>
+                            </div>
+                            <div className="neo-cat-progress-track">
+                              <div
+                                className="neo-cat-progress-fill"
+                                style={{ width: `${Math.max(cat.percentage, 4)}%`, background: barColor }}
+                              />
+                            </div>
+                          </div>
+                        )
+                      })
+                    )}
                   </div>
                 </div>
 
                 {/* 3. Priority Incident Card (Real Pending Item from Database) */}
-                <div className="neo-card">
-                  <div className="neo-alert-card">
-                    {priorityIncident ? (
-                      <>
-                        <div>
-                          <span className="neo-priority-badge">Urgent Review • Needs Decision</span>
-                          <h3 className="neo-card-title" style={{ fontSize: '15px', marginBottom: '6px' }}>
-                            {priorityIncident.reported_domain
-                              ? formatCleanIndicator(priorityIncident.reported_domain)
-                              : 'Citizen Message Submission'}
-                          </h3>
-                          <p className="neo-alert-desc">
-                            {priorityExcerpt ? `"${priorityExcerpt}"` : 'Awaiting review and sanitized classification.'}
-                          </p>
+                <div className="neo-card neo-bottom-modern-card neo-spotlight-card">
+                  {priorityIncident ? (
+                    <div className="neo-spotlight-content">
+                      <div className="neo-spotlight-top">
+                        <div className="neo-priority-badge-live">
+                          <span className="neo-pulse-dot-red" />
+                          <span>URGENT TRIAGE • ACTION REQUIRED</span>
                         </div>
 
-                        <div>
-                          <div className="neo-alert-meta">
-                            <Clock size={12} aria-hidden="true" />
+                        <div className="neo-spotlight-target-box">
+                          <div className="neo-spotlight-target-left">
+                            <div className="neo-spotlight-icon-circle">
+                              <ShieldAlert size={18} aria-hidden="true" />
+                            </div>
+                            <div className="neo-spotlight-title-row">
+                              <h4 className="neo-spotlight-title">
+                                {priorityIncident.reported_domain
+                                  ? formatCleanIndicator(priorityIncident.reported_domain)
+                                  : 'Citizen Message Submission'}
+                              </h4>
+                              <button
+                                type="button"
+                                className="neo-btn-copy-mini"
+                                onClick={() =>
+                                  handleCopyHash(
+                                    priorityIncident.id,
+                                    priorityIncident.reported_domain || priorityIncident.content_sha256
+                                  )
+                                }
+                                title="Copy indicator"
+                              >
+                                {copiedHashId === priorityIncident.id ? (
+                                  <Check size={11} color="#10B981" />
+                                ) : (
+                                  <Copy size={11} />
+                                )}
+                              </button>
+                            </div>
+                          </div>
+                          <span className="neo-risk-pill-high">HIGH RISK</span>
+                        </div>
+
+                        <div className="neo-spotlight-quote-box">
+                          <span className="neo-quote-mark">“</span>
+                          <p className="neo-spotlight-excerpt">
+                            {priorityExcerpt || 'Awaiting review and sanitized classification.'}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="neo-spotlight-bottom">
+                        <div className="neo-spotlight-chips">
+                          <div className="neo-spotlight-chip">
+                            <Clock size={11} aria-hidden="true" />
                             <span>Submitted {formatRelativeTime(priorityIncident.created_at)}</span>
                           </div>
-
-                          <button
-                            type="button"
-                            className="neo-btn-dark-pill"
-                            onClick={() => {
-                              setActiveNav('QUEUE')
-                              setActiveTab('PENDING')
-                              setReviewModalReport(priorityIncident)
-                            }}
-                          >
-                            Review in Queue →
-                          </button>
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <div>
-                          <span className="neo-priority-badge all-clear">✓ All Clear • Zero Pending</span>
-                          <h3 className="neo-card-title" style={{ fontSize: '15px', marginBottom: '6px' }}>
-                            Queue In Good Order
-                          </h3>
-                          <p className="neo-alert-desc">
-                            All citizen submissions have been evaluated and resolved into the national verified intelligence registry.
-                          </p>
+                          <div className="neo-spotlight-chip">
+                            <Hash size={11} aria-hidden="true" />
+                            <span>{priorityIncident.content_sha256.slice(0, 8)}...</span>
+                          </div>
                         </div>
 
                         <button
                           type="button"
-                          className="neo-btn-dark-pill"
-                          onClick={() => setActiveNav('QUEUE')}
+                          className="neo-btn-spotlight-action"
+                          onClick={() => {
+                            setActiveNav('QUEUE')
+                            setActiveTab('PENDING')
+                            setReviewModalReport(priorityIncident)
+                          }}
                         >
-                          View Full Queue →
+                          <span>Review & Decide</span>
+                          <ArrowRight size={14} aria-hidden="true" />
                         </button>
-                      </>
-                    )}
-                  </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="neo-spotlight-all-clear">
+                      <div className="neo-all-clear-icon">
+                        <CheckCircle2 size={36} color="#10B981" aria-hidden="true" />
+                      </div>
+                      <span className="neo-priority-badge-live all-clear">
+                        <span>✓ ZERO BACKLOG • ALL CLEAR</span>
+                      </span>
+                      <h4 className="neo-spotlight-title">All Reports Reviewed</h4>
+                      <p className="neo-alert-desc">
+                        Every citizen submission in the queue has been evaluated and resolved.
+                      </p>
+                      <button
+                        type="button"
+                        className="neo-btn-spotlight-action"
+                        onClick={() => setActiveNav('INTELLIGENCE')}
+                      >
+                        <span>Explore Verified Intel</span>
+                        <ArrowRight size={14} aria-hidden="true" />
+                      </button>
+                    </div>
+                  )}
                 </div>
               </section>
             </>
           )}
 
           {/* ========================================================================= */}
-          {/* VIEW 2: QUEUE (Full-Width Dedicated Queue Page)                          */}
+          {/* VIEW 2: QUEUE (Full-Width Dedicated Queue Page Matching Mockup)          */}
           {/* ========================================================================= */}
           {activeNav === 'QUEUE' && (
             <section className="neo-queue-view-layout">
-              <div className="neo-card">
-                {/* Controls & Seed Button Placed Here */}
-                <div className="neo-table-controls">
-                  <div className="neo-filter-tabs">
+              {/* ── Queue Table Card with Modern Controls ──── */}
+              <div className="neo-modern-table-card">
+                {/* Modern Toolbar */}
+                <div className="neo-modern-toolbar">
+                  {/* Left: Segmented Filter Pill Tabs */}
+                  <div className="neo-segmented-filter-group">
                     {(['PENDING', 'APPROVED', 'REJECTED', 'ALL'] as const).map((tab) => (
                       <button
                         key={tab}
                         type="button"
-                        className={`neo-filter-tab-btn ${activeTab === tab ? 'active' : ''}`}
-                        onClick={() => {
-                          setActiveTab(tab)
-                        }}
+                        className={`neo-seg-pill ${activeTab === tab ? 'active' : ''}`}
+                        onClick={() => setActiveTab(tab)}
                       >
                         {tab === 'PENDING'
-                          ? `Pending (${pendingCount})`
+                          ? `Pending ${pendingCount}`
                           : tab === 'APPROVED'
-                            ? `Approved (${approvedReports.length})`
+                            ? `Approved ${approvedReports.length}`
                             : tab === 'REJECTED'
-                              ? `Rejected (${rejectedReports.length})`
-                              : `All Reports (${allReports.length})`}
+                              ? `Rejected ${rejectedReports.length}`
+                              : `All Reports ${allReports.length}`}
                       </button>
                     ))}
                   </div>
 
-                  <div className="neo-table-actions">
-                    <input
-                      type="text"
-                      className="neo-search-input"
-                      placeholder="Search domain, hash, excerpt..."
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                    />
+                  {/* Right: Search, Filter Dropdowns, Reset, and Demo Tools */}
+                  <div className="neo-modern-toolbar-actions">
+                    {/* Search Input */}
+                    <div className="neo-toolbar-search-box">
+                      <Search size={14} className="neo-search-icon-inside" aria-hidden="true" />
+                      <input
+                        type="text"
+                        placeholder="Search domain, hash, excerpt..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="neo-modern-search-input"
+                      />
+                    </div>
 
-                    {/* Seed Demo Reports Button (Cleanly placed in toolbar) */}
+                    {/* Threat Filter Dropdown */}
+                    <div className="neo-filter-select-wrapper">
+                      <select
+                        value={filterThreat}
+                        onChange={(e) => setFilterThreat(e.target.value as any)}
+                        className={`neo-modern-select ${filterThreat !== 'ALL' ? 'has-filter' : ''}`}
+                        title="Filter by threat classification"
+                      >
+                        <option value="ALL">Threat ⌄</option>
+                        <option value="phishing">Phishing</option>
+                        <option value="scam">Scam</option>
+                        <option value="malware">Malware</option>
+                        <option value="safe">False Alarm (Safe)</option>
+                      </select>
+                    </div>
+
+                    {/* Date Filter Dropdown */}
+                    <div className="neo-filter-select-wrapper">
+                      <select
+                        value={filterDate}
+                        onChange={(e) => setFilterDate(e.target.value as any)}
+                        className={`neo-modern-select ${filterDate !== 'ALL' ? 'has-filter' : ''}`}
+                        title="Filter by submission date"
+                      >
+                        <option value="ALL">Date ⌄</option>
+                        <option value="today">Today</option>
+                        <option value="7days">Last 7 Days</option>
+                        <option value="30days">Last 30 Days</option>
+                      </select>
+                    </div>
+
+                    {/* Reset Button */}
                     <button
                       type="button"
-                      className="neo-btn-seed-subtle"
-                      onClick={() => void handleSeedDemo()}
-                      disabled={isSeeding}
-                      title="Seed realistic Sri Lankan reports for evaluation"
+                      className={`neo-btn-toolbar-reset ${
+                        searchQuery || filterThreat !== 'ALL' || filterDate !== 'ALL'
+                          ? 'has-active-filters'
+                          : ''
+                      }`}
+                      onClick={handleResetFilters}
+                      title="Reset all filters and search"
                     >
-                      <Sparkles size={13} color="#84cc16" aria-hidden="true" />
-                      <span>{isSeeding ? 'Seeding...' : 'Seed Demo Reports'}</span>
+                      <RotateCcw size={12} aria-hidden="true" />
+                      <span>Reset</span>
                     </button>
 
-                    <button
-                      type="button"
-                      className="neo-btn-toolbar-action"
-                      onClick={() => void loadReports(true)}
-                      disabled={isLoadingQueue}
-                      title="Refresh data"
-                      style={{ padding: '6px 10px' }}
-                    >
-                      <RefreshCw size={13} className={isLoadingQueue ? 'spin' : ''} aria-hidden="true" />
-                    </button>
+                    {/* Demo Tools Dropdown Popup Menu */}
+                    <div className="neo-demo-tools-wrapper">
+                      <button
+                        type="button"
+                        className="neo-btn-demo-tools"
+                        onClick={() => setShowDemoMenu((prev) => !prev)}
+                        title="Quick evaluation & seeding utilities"
+                      >
+                        <Sparkles size={13} aria-hidden="true" />
+                        <span>Demo Tools</span>
+                        <ChevronDown size={13} aria-hidden="true" />
+                      </button>
+
+                      {showDemoMenu && (
+                        <div className="neo-demo-dropdown-menu">
+                          <button
+                            type="button"
+                            className="neo-demo-menu-item"
+                            onClick={() => {
+                              setShowDemoMenu(false)
+                              void handleSeedDemo()
+                            }}
+                            disabled={isSeeding || isClearing}
+                          >
+                            <Sparkles size={13} color="#0066FF" aria-hidden="true" />
+                            <span>{isSeeding ? 'Seeding...' : 'Seed Demo Reports'}</span>
+                          </button>
+                          <button
+                            type="button"
+                            className="neo-demo-menu-item"
+                            onClick={() => {
+                              setShowDemoMenu(false)
+                              void handleClearDemo()
+                            }}
+                            disabled={isSeeding || isClearing}
+                          >
+                            <RotateCcw size={13} color="#64748B" aria-hidden="true" />
+                            <span>{isClearing ? 'Clearing...' : 'Clear Demo Data'}</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
 
+                {/* Error Banner */}
                 {queueError && (
-                  <div style={{ background: '#fee2e2', color: '#991b1b', padding: '10px 14px', borderRadius: '10px', fontSize: '12px', marginBottom: '14px', fontWeight: 600 }}>
-                    {queueError}
+                  <div className="neo-modern-error-banner" role="alert">
+                    <AlertCircle size={14} aria-hidden="true" />
+                    <span>{queueError}</span>
                   </div>
                 )}
 
-                {/* Data Table with Clean Pastel Badges */}
-                <div className="neo-table-wrapper">
-                  <table className="neo-table">
+                {/* Modern Data Table Matching Mockup */}
+                <div className="neo-modern-table-wrapper">
+                  <table className="neo-modern-table">
                     <thead>
                       <tr>
-                        <th>Target Indicator</th>
-                        <th>Category</th>
-                        <th>Submitter Excerpt</th>
-                        <th>Fingerprint</th>
-                        <th>Status</th>
-                        <th>Action</th>
+                        <th>TARGET</th>
+                        <th>THREAT</th>
+                        <th>EXCERPT</th>
+                        <th>FINGERPRINT</th>
+                        <th>STATUS</th>
+                        <th>ACTION</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {displayedReports.length === 0 ? (
+                      {isLoadingQueue ? (
                         <tr>
-                          <td colSpan={6} style={{ textAlign: 'center', padding: '36px', color: '#94a3b8' }}>
-                            <CheckCircle2 size={32} color="#087f8c" style={{ margin: '0 auto 8px', display: 'block' }} />
-                            <strong style={{ color: '#0f172a' }}>No reports found</strong>
-                            <p style={{ margin: '4px 0 0', fontSize: '11.5px' }}>
-                              {searchQuery ? 'Try clearing your search query.' : 'Queue is all clear for this filter.'}
+                          <td colSpan={6} style={{ textAlign: 'center', padding: '48px 20px', color: '#64748B' }}>
+                            <RefreshCw size={24} className="neo-spin" style={{ margin: '0 auto 8px', display: 'block', color: '#0066FF' }} />
+                            <strong style={{ color: '#0F172A', fontSize: '14px' }}>Loading queue reports...</strong>
+                          </td>
+                        </tr>
+                      ) : displayedReports.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} style={{ textAlign: 'center', padding: '48px 20px', color: '#94a3b8' }}>
+                            <CheckCircle2 size={32} color="#0066FF" style={{ margin: '0 auto 8px', display: 'block' }} />
+                            <strong style={{ color: '#0f172a', fontSize: '14px' }}>No reports found</strong>
+                            <p style={{ margin: '4px 0 0', fontSize: '12px' }}>
+                              {searchQuery || filterThreat !== 'ALL' || filterDate !== 'ALL'
+                                ? 'Try adjusting or resetting your search and filters.'
+                                : 'Queue is all clear for this category.'}
                             </p>
                           </td>
                         </tr>
@@ -1650,92 +1802,102 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                           const parsed = parseReportNotes(item.notes)
                           const excerpt = item.raw_excerpt || parsed.excerpt
                           const displayText = excerpt || parsed.userNotes || ''
+                          const threat = getThreatDetails(item)
+                          const isCopied = copiedHashId === item.id
 
                           return (
                             <tr key={item.id}>
-                              {/* Indicator */}
+                              {/* TARGET */}
                               <td>
-                                <div className="neo-indicator-cell">
-                                  <Globe size={13} color="#64748b" aria-hidden="true" />
-                                  <span
-                                    className={`neo-indicator-badge ${!item.reported_domain
-                                        ? 'text-only'
-                                        : item.status === 'APPROVED' && item.report_type === 'false_positive'
-                                          ? 'safe'
-                                          : ''
-                                      }`}
-                                  >
-                                    {formatCleanIndicator(item.reported_domain)}
-                                  </span>
+                                <div className="neo-target-cell">
+                                  <div className="neo-target-icon-circle">
+                                    {item.reported_domain ? (
+                                      <Globe size={14} color="#64748b" aria-hidden="true" />
+                                    ) : (
+                                      <FileText size={14} color="#64748b" aria-hidden="true" />
+                                    )}
+                                  </div>
+                                  <div className="neo-target-info">
+                                    <span className="neo-target-domain" title={item.reported_domain || 'Message-only'}>
+                                      {formatCleanIndicator(item.reported_domain)}
+                                    </span>
+                                    <span className="neo-target-type">
+                                      {item.reported_domain ? 'Domain' : 'Message'}
+                                    </span>
+                                  </div>
                                 </div>
                               </td>
 
-                              {/* Classification */}
+                              {/* THREAT */}
                               <td>
-                                <span className={`neo-pill-badge ${item.report_type}`}>
-                                  {item.report_type === 'suspicious'
-                                    ? 'Reported Threat'
-                                    : item.report_type === 'false_positive'
-                                      ? 'False Alarm'
-                                      : 'Evaded Threat'}
-                                </span>
+                                <div className="neo-threat-cell">
+                                  <div className={`neo-threat-dot ${threat.type}`} />
+                                  <div className="neo-threat-info">
+                                    <span className="neo-threat-title">{threat.title}</span>
+                                    <span className="neo-threat-sub">{threat.subtitle}</span>
+                                  </div>
+                                </div>
                               </td>
 
-                              {/* Submitter Excerpt */}
-                              <td style={{ maxWidth: '320px' }}>
+                              {/* EXCERPT */}
+                              <td style={{ maxWidth: '280px' }}>
                                 {displayText ? (
-                                  <div className="neo-excerpt-cell">
-                                    <span
-                                      className="neo-excerpt-text"
-                                      title={excerpt ? `"${excerpt}"` : parsed.userNotes || undefined}
-                                    >
-                                      {excerpt ? `"${excerpt}"` : parsed.userNotes}
-                                    </span>
-                                  </div>
-                                ) : (
-                                  <span style={{ fontSize: '11.5px', color: '#94a3b8', fontStyle: 'italic' }}>
-                                    No excerpt provided
+                                  <span className="neo-modern-excerpt" title={displayText}>
+                                    "{displayText.length > 55 ? displayText.slice(0, 55) + '...' : displayText}"
                                   </span>
+                                ) : (
+                                  <span className="neo-empty-excerpt">No excerpt provided</span>
                                 )}
                               </td>
 
-                              {/* SHA-256 Fingerprint */}
+                              {/* FINGERPRINT */}
                               <td>
-                                <span className="neo-fingerprint-badge" title={item.content_sha256}>
-                                  {item.content_sha256.slice(0, 10)}...
-                                </span>
+                                <div className="neo-fingerprint-cell">
+                                  <span className="neo-fingerprint-text" title={item.content_sha256}>
+                                    {item.content_sha256.slice(0, 10)}...
+                                  </span>
+                                  <button
+                                    type="button"
+                                    className="neo-btn-copy-hash"
+                                    onClick={() => handleCopyHash(item.id, item.content_sha256)}
+                                    title={isCopied ? 'Copied to clipboard!' : 'Copy full SHA-256 fingerprint'}
+                                    aria-label="Copy SHA-256 fingerprint"
+                                  >
+                                    {isCopied ? (
+                                      <Check size={12} color="#10B981" aria-hidden="true" />
+                                    ) : (
+                                      <Copy size={12} aria-hidden="true" />
+                                    )}
+                                  </button>
+                                </div>
                               </td>
 
-                              {/* Status */}
+                              {/* STATUS */}
                               <td>
-                                <span className={`neo-status-pill ${item.status}`}>
+                                <span className={`neo-status-pill-modern ${item.status.toLowerCase()}`}>
                                   {item.status}
                                 </span>
                               </td>
 
-                              {/* Action Trigger */}
+                              {/* ACTION */}
                               <td>
                                 {item.status === 'PENDING' ? (
                                   <button
                                     type="button"
-                                    className="neo-btn-table-action"
+                                    className="neo-btn-review-action"
                                     onClick={() => setReviewModalReport(item)}
                                   >
-                                    Review & Decide
+                                    <span>Review</span>
+                                    <ArrowRight size={13} aria-hidden="true" />
                                   </button>
                                 ) : (
                                   <button
                                     type="button"
-                                    className="neo-btn-table-action"
-                                    style={{
-                                      background: '#f1f5f9',
-                                      color: '#475569',
-                                      borderColor: '#cbd5e1',
-                                    }}
+                                    className="neo-btn-inspect-action"
                                     onClick={() => setReviewModalReport(item)}
                                     title="Inspect submission record"
                                   >
-                                    Inspect
+                                    <span>Inspect</span>
                                   </button>
                                 )}
                               </td>
@@ -1821,48 +1983,84 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
           )}
 
           {/* ========================================================================= */}
-          {/* VIEW 3: AUDIT (Clean Dedicated Audit Stream, Non-Valuable Tags Removed)    */}
+          {/* VIEW 3: AUDIT (Clean Dedicated Audit Stream, Modernized Layout)          */}
           {/* ========================================================================= */}
           {activeNav === 'AUDIT' && (
             <section className="neo-queue-view-layout">
               {/* Complete Resolution Audit Trail Table */}
-              <div className="neo-card">
-                <div className="neo-card-header">
-                  <div>
-                    <h3 className="neo-card-title">Resolution Audit Stream</h3>
-                    <span className="neo-card-subtitle">Permanent immutable record of moderator review actions</span>
+              <div className="neo-modern-table-card">
+                <div className="neo-modern-toolbar">
+                  {/* Segmented Filter Pills */}
+                  <div className="neo-segmented-filter-group">
+                    {(['ALL', 'APPROVED', 'REJECTED'] as const).map((tab) => (
+                      <button
+                        key={tab}
+                        type="button"
+                        className={`neo-seg-pill ${auditActionFilter === tab ? 'active' : ''}`}
+                        onClick={() => {
+                          setAuditActionFilter(tab)
+                          setAuditPage(1)
+                        }}
+                      >
+                        {tab === 'ALL'
+                          ? `All Resolved (${resolvedAuditItems.length})`
+                          : tab === 'APPROVED'
+                            ? `Approved (${approvedReports.length})`
+                            : `Rejected (${rejectedReports.length})`}
+                      </button>
+                    ))}
                   </div>
-                  <button
-                    type="button"
-                    className="neo-btn-toolbar-action"
-                    onClick={handleExportData}
-                    title="Export audit feed to JSON"
-                  >
-                    <Download size={13} aria-hidden="true" />
-                    <span>Export Audit Feed (JSON)</span>
-                  </button>
+
+                  {/* Right: Search and Export */}
+                  <div className="neo-modern-toolbar-actions">
+                    <div className="neo-toolbar-search-box">
+                      <Search size={14} className="neo-search-icon-inside" aria-hidden="true" />
+                      <input
+                        type="text"
+                        placeholder="Search audit trail..."
+                        value={auditSearchQuery}
+                        onChange={(e) => {
+                          setAuditSearchQuery(e.target.value)
+                          setAuditPage(1)
+                        }}
+                        className="neo-modern-search-input"
+                      />
+                    </div>
+
+                    <button
+                      type="button"
+                      className="neo-btn-toolbar-reset has-active-filters"
+                      onClick={handleExportData}
+                      title="Export audit feed to JSON"
+                    >
+                      <Download size={13} aria-hidden="true" />
+                      <span>Export Feed (JSON)</span>
+                    </button>
+                  </div>
                 </div>
 
-                <div className="neo-table-wrapper">
-                  <table className="neo-table">
+                <div className="neo-modern-table-wrapper">
+                  <table className="neo-modern-table">
                     <thead>
                       <tr>
-                        <th>Resolved Indicator</th>
-                        <th>Classification</th>
-                        <th>Resolution Action</th>
-                        <th>Submitter Notes / Excerpt</th>
-                        <th>Fingerprint</th>
-                        <th>Resolved Time</th>
+                        <th>RESOLVED TARGET</th>
+                        <th>CLASSIFICATION</th>
+                        <th>DECISION</th>
+                        <th>CONTEXT / EXCERPT</th>
+                        <th>FINGERPRINT</th>
+                        <th>TIME</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {resolvedAuditItems.length === 0 ? (
+                      {displayedAuditItems.length === 0 ? (
                         <tr>
-                          <td colSpan={6} style={{ textAlign: 'center', padding: '36px', color: '#94a3b8' }}>
+                          <td colSpan={6} style={{ textAlign: 'center', padding: '48px 20px', color: '#94a3b8' }}>
                             <FileText size={32} color="#94a3b8" style={{ margin: '0 auto 8px', display: 'block' }} />
-                            <strong style={{ color: '#0f172a' }}>No audit records yet</strong>
-                            <p style={{ margin: '4px 0 0', fontSize: '11.5px' }}>
-                              Review items in the Queue to generate audit trail entries.
+                            <strong style={{ color: '#0f172a', fontSize: '14px' }}>No audit records found</strong>
+                            <p style={{ margin: '4px 0 0', fontSize: '12px' }}>
+                              {auditSearchQuery || auditActionFilter !== 'ALL'
+                                ? 'Try clearing or adjusting your search criteria.'
+                                : 'Review items in the Queue to generate audit trail entries.'}
                             </p>
                           </td>
                         </tr>
@@ -1870,15 +2068,24 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                         paginatedAuditItems.map((item) => {
                           const parsed = parseReportNotes(item.notes)
                           const excerpt = item.raw_excerpt || parsed.excerpt
+                          const displayText = excerpt || parsed.userNotes || ''
+                          const isCopied = copiedHashId === item.id
 
                           return (
                             <tr key={item.id}>
                               <td>
-                                <div className="neo-indicator-cell">
-                                  <Globe size={13} color="#64748b" aria-hidden="true" />
-                                  <span className={`neo-indicator-badge ${item.status === 'APPROVED' && item.report_type === 'false_positive' ? 'safe' : ''}`}>
-                                    {formatCleanIndicator(item.reported_domain)}
-                                  </span>
+                                <div className="neo-target-cell">
+                                  <div className="neo-target-icon-circle">
+                                    <Globe size={14} color="#64748b" aria-hidden="true" />
+                                  </div>
+                                  <div className="neo-target-info">
+                                    <span className="neo-target-domain" title={item.reported_domain || 'Message-only'}>
+                                      {formatCleanIndicator(item.reported_domain)}
+                                    </span>
+                                    <span className="neo-target-type">
+                                      {item.reported_domain ? 'Domain' : 'Message'}
+                                    </span>
+                                  </div>
                                 </div>
                               </td>
                               <td>
@@ -1887,33 +2094,44 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                                 </span>
                               </td>
                               <td>
-                                <span className={`neo-status-pill ${item.status}`}>
+                                <span className={`neo-status-pill-modern ${item.status.toLowerCase()}`}>
                                   {item.status}
                                 </span>
                               </td>
                               <td style={{ maxWidth: '320px' }}>
-                                {excerpt || parsed.userNotes ? (
-                                  <div className="neo-excerpt-cell">
-                                    <span
-                                      className="neo-excerpt-text"
-                                      title={excerpt ? `"${excerpt}"` : parsed.userNotes || undefined}
-                                    >
-                                      {excerpt ? `"${excerpt}"` : parsed.userNotes}
-                                    </span>
-                                  </div>
-                                ) : (
-                                  <span style={{ fontSize: '11.5px', color: '#94a3b8', fontStyle: 'italic' }}>
-                                    No notes provided
+                                {displayText ? (
+                                  <span className="neo-modern-excerpt" title={displayText}>
+                                    "{displayText.length > 55 ? displayText.slice(0, 55) + '...' : displayText}"
                                   </span>
+                                ) : (
+                                  <span className="neo-empty-excerpt">No notes provided</span>
                                 )}
                               </td>
                               <td>
-                                <span className="neo-fingerprint-badge">
-                                  {item.content_sha256.slice(0, 10)}...
-                                </span>
+                                <div className="neo-fingerprint-cell">
+                                  <span className="neo-fingerprint-text" title={item.content_sha256}>
+                                    {item.content_sha256.slice(0, 10)}...
+                                  </span>
+                                  <button
+                                    type="button"
+                                    className="neo-btn-copy-hash"
+                                    onClick={() => handleCopyHash(item.id, item.content_sha256)}
+                                    title={isCopied ? 'Copied to clipboard!' : 'Copy full SHA-256 fingerprint'}
+                                    aria-label="Copy SHA-256 fingerprint"
+                                  >
+                                    {isCopied ? (
+                                      <Check size={12} color="#10B981" aria-hidden="true" />
+                                    ) : (
+                                      <Copy size={12} aria-hidden="true" />
+                                    )}
+                                  </button>
+                                </div>
                               </td>
-                              <td style={{ fontSize: '11px', color: '#64748b' }}>
-                                {formatRelativeTime(item.updated_at || item.created_at)}
+                              <td>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px', color: '#64748B' }}>
+                                  <Clock size={12} aria-hidden="true" />
+                                  <span>{formatRelativeTime(item.updated_at || item.created_at)}</span>
+                                </div>
                               </td>
                             </tr>
                           )
@@ -1924,13 +2142,13 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                 </div>
 
                 {/* Modern Audit Pagination Bar */}
-                {resolvedAuditItems.length > 0 && (
+                {displayedAuditItems.length > 0 && (
                   <div className="neo-pagination-bar">
                     <div className="neo-pagination-info">
                       <span>
                         Showing <strong>{(auditPage - 1) * auditPageSize + 1}</strong> to{' '}
-                        <strong>{Math.min(auditPage * auditPageSize, resolvedAuditItems.length)}</strong> of{' '}
-                        <strong>{resolvedAuditItems.length}</strong> records
+                        <strong>{Math.min(auditPage * auditPageSize, displayedAuditItems.length)}</strong> of{' '}
+                        <strong>{displayedAuditItems.length}</strong> records
                       </span>
                       <div className="neo-page-size-selector">
                         <label htmlFor="audit-page-size">Per page:</label>
@@ -2000,91 +2218,66 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
           {/* VIEW 4: VERIFIED INTELLIGENCE MANAGEMENT TAB                             */}
           {/* ========================================================================= */}
           {activeNav === 'INTELLIGENCE' && (
-            <section className="neo-view-content" aria-label="Verified Intelligence Management">
-              {/* Top 4 Stat Metric Cards */}
-              <div className="neo-intel-metrics-grid">
-                <div className="neo-intel-metric-card">
-                  <div className="neo-intel-metric-icon" style={{ background: '#e0f2fe', color: '#0369a1' }}>
-                    <ShieldCheck size={18} aria-hidden="true" />
+            <section className="neo-queue-view-layout" aria-label="Verified Intelligence Management">
+              {/* Top 4 Stat Metric Cards (Modern Light Aesthetic) */}
+              <div className="neo-intel-metrics-row">
+                <div className="neo-intel-stat-card">
+                  <div className="neo-intel-stat-top">
+                    <div className="neo-intel-icon-circle blue">
+                      <ShieldCheck size={18} aria-hidden="true" />
+                    </div>
+                    <span className="neo-intel-stat-label">Total Indicators</span>
                   </div>
-                  <div>
-                    <span className="neo-intel-metric-label">Total Indicators</span>
-                    <strong className="neo-intel-metric-value">{intelTotal}</strong>
-                  </div>
+                  <div className="neo-intel-stat-value">{intelTotal}</div>
+                  <span className="neo-intel-stat-sub">Active community registry</span>
                 </div>
 
-                <div className="neo-intel-metric-card">
-                  <div className="neo-intel-metric-icon" style={{ background: '#fee2e2', color: '#b91c1c' }}>
-                    <ShieldAlert size={18} aria-hidden="true" />
+                <div className="neo-intel-stat-card">
+                  <div className="neo-intel-stat-top">
+                    <div className="neo-intel-icon-circle red">
+                      <ShieldAlert size={18} aria-hidden="true" />
+                    </div>
+                    <span className="neo-intel-stat-label">Confirmed Threats</span>
                   </div>
-                  <div>
-                    <span className="neo-intel-metric-label">Confirmed Scams</span>
-                    <strong className="neo-intel-metric-value">
-                      {intelligenceList.filter((i) => i.risk_level === 'CONFIRMED_SCAM' && i.active).length}
-                    </strong>
+                  <div className="neo-intel-stat-value">
+                    {intelligenceList.filter((i) => i.risk_level === 'CONFIRMED_SCAM' && i.active).length}
                   </div>
+                  <span className="neo-intel-stat-sub red">Blocking scams & phishing</span>
                 </div>
 
-                <div className="neo-intel-metric-card">
-                  <div className="neo-intel-metric-icon" style={{ background: '#dcfce7', color: '#15803d' }}>
-                    <CheckCircle2 size={18} aria-hidden="true" />
+                <div className="neo-intel-stat-card">
+                  <div className="neo-intel-stat-top">
+                    <div className="neo-intel-icon-circle green">
+                      <CheckCircle2 size={18} aria-hidden="true" />
+                    </div>
+                    <span className="neo-intel-stat-label">Verified Safe</span>
                   </div>
-                  <div>
-                    <span className="neo-intel-metric-label">Verified Safe</span>
-                    <strong className="neo-intel-metric-value">
-                      {intelligenceList.filter((i) => i.risk_level === 'VERIFIED_SAFE' && i.active).length}
-                    </strong>
+                  <div className="neo-intel-stat-value">
+                    {intelligenceList.filter((i) => i.risk_level === 'VERIFIED_SAFE' && i.active).length}
                   </div>
+                  <span className="neo-intel-stat-sub green">Whitelisted official domains</span>
                 </div>
 
-                <div className="neo-intel-metric-card">
-                  <div className="neo-intel-metric-icon" style={{ background: '#f1f5f9', color: '#64748b' }}>
-                    <Power size={18} aria-hidden="true" />
+                <div className="neo-intel-stat-card">
+                  <div className="neo-intel-stat-top">
+                    <div className="neo-intel-icon-circle slate">
+                      <Power size={18} aria-hidden="true" />
+                    </div>
+                    <span className="neo-intel-stat-label">Retired Indicators</span>
                   </div>
-                  <div>
-                    <span className="neo-intel-metric-label">Retired Indicators</span>
-                    <strong className="neo-intel-metric-value">
-                      {intelligenceList.filter((i) => !i.active).length}
-                    </strong>
+                  <div className="neo-intel-stat-value">
+                    {intelligenceList.filter((i) => !i.active).length}
                   </div>
+                  <span className="neo-intel-stat-sub">Archived / inactive</span>
                 </div>
               </div>
 
               {/* Intelligence Table Card */}
-              <div className="neo-card">
-                <div className="neo-card-header" style={{ flexWrap: 'wrap', gap: '12px' }}>
-                  <div>
-                    <h3 className="neo-card-title">Sanitized Threat Intelligence Feed</h3>
-                    <span className="neo-card-subtitle">
-                      Active cryptographic fingerprints and defanged indicators feeding public scanner reconciliation
-                    </span>
-                  </div>
-
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <button
-                      type="button"
-                      className="neo-btn-toolbar-action"
-                      onClick={() => void loadIntelligence(true)}
-                      disabled={isLoadingIntel}
-                      title="Refresh intelligence feed"
-                    >
-                      <RefreshCw size={13} className={isLoadingIntel ? 'neo-spin' : ''} aria-hidden="true" />
-                      <span>Refresh</span>
-                    </button>
-                  </div>
-                </div>
-
-                {intelError && (
-                  <div className="neo-login-error" style={{ margin: '16px 20px 0' }}>
-                    <AlertCircle size={15} aria-hidden="true" />
-                    <span>{intelError}</span>
-                  </div>
-                )}
-
-                {/* Filter / Search Toolbar */}
-                <div className="neo-intel-toolbar">
-                  <div className="neo-search-box">
-                    <Search size={14} className="neo-search-icon" aria-hidden="true" />
+              <div className="neo-modern-table-card">
+                <div className="neo-modern-toolbar">
+                  {/* Search Box */}
+                  <div className="neo-toolbar-search-box">
+                    <Search size={14} className="neo-search-icon-inside" aria-hidden="true" />
                     <input
                       type="text"
                       value={intelSearchQuery}
@@ -2093,84 +2286,110 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                         setIntelPage(1)
                       }}
                       placeholder="Search indicator, category, notes..."
-                      className="neo-input-search"
+                      className="neo-modern-search-input"
                     />
                   </div>
 
-                  <div className="neo-intel-filter-group">
-                    <select
-                      value={intelStatusFilter}
-                      onChange={(e) => {
-                        setIntelStatusFilter(e.target.value as 'active' | 'retired' | 'all')
-                        setIntelPage(1)
-                      }}
-                      className="neo-select-filter"
-                    >
-                      <option value="all">All Statuses</option>
-                      <option value="active">Active Only</option>
-                      <option value="retired">Retired Only</option>
-                    </select>
+                  {/* Filter Selects */}
+                  <div className="neo-modern-toolbar-actions">
+                    <div className="neo-filter-select-wrapper">
+                      <select
+                        value={intelStatusFilter}
+                        onChange={(e) => {
+                          setIntelStatusFilter(e.target.value as 'active' | 'retired' | 'all')
+                          setIntelPage(1)
+                        }}
+                        className={`neo-modern-select ${intelStatusFilter !== 'all' ? 'has-filter' : ''}`}
+                        title="Filter by status"
+                      >
+                        <option value="all">Status ⌄</option>
+                        <option value="active">Active Only</option>
+                        <option value="retired">Retired Only</option>
+                      </select>
+                    </div>
 
-                    <select
-                      value={intelTypeFilter}
-                      onChange={(e) => {
-                        setIntelTypeFilter(e.target.value as 'domain' | 'content_hash' | 'phone' | 'url' | 'all')
-                        setIntelPage(1)
-                      }}
-                      className="neo-select-filter"
-                    >
-                      <option value="all">All Indicator Types</option>
-                      <option value="domain">Domain</option>
-                      <option value="url">URL</option>
-                      <option value="content_hash">Content Hash</option>
-                      <option value="phone">Phone</option>
-                    </select>
+                    <div className="neo-filter-select-wrapper">
+                      <select
+                        value={intelTypeFilter}
+                        onChange={(e) => {
+                          setIntelTypeFilter(e.target.value as 'domain' | 'content_hash' | 'phone' | 'url' | 'all')
+                          setIntelPage(1)
+                        }}
+                        className={`neo-modern-select ${intelTypeFilter !== 'all' ? 'has-filter' : ''}`}
+                        title="Filter by indicator type"
+                      >
+                        <option value="all">Type ⌄</option>
+                        <option value="domain">Domain</option>
+                        <option value="url">URL</option>
+                        <option value="content_hash">Content Hash</option>
+                        <option value="phone">Phone</option>
+                      </select>
+                    </div>
 
-                    <select
-                      value={intelRiskFilter}
-                      onChange={(e) => {
-                        setIntelRiskFilter(e.target.value as 'CONFIRMED_SCAM' | 'VERIFIED_SAFE' | 'all')
-                        setIntelPage(1)
-                      }}
-                      className="neo-select-filter"
+                    <div className="neo-filter-select-wrapper">
+                      <select
+                        value={intelRiskFilter}
+                        onChange={(e) => {
+                          setIntelRiskFilter(e.target.value as 'CONFIRMED_SCAM' | 'VERIFIED_SAFE' | 'all')
+                          setIntelPage(1)
+                        }}
+                        className={`neo-modern-select ${intelRiskFilter !== 'all' ? 'has-filter' : ''}`}
+                        title="Filter by risk level"
+                      >
+                        <option value="all">Risk ⌄</option>
+                        <option value="CONFIRMED_SCAM">Confirmed Threat</option>
+                        <option value="VERIFIED_SAFE">Verified Safe</option>
+                      </select>
+                    </div>
+
+                    <button
+                      type="button"
+                      className="neo-btn-toolbar-reset"
+                      onClick={() => void loadIntelligence(true)}
+                      disabled={isLoadingIntel}
+                      title="Refresh intelligence feed"
                     >
-                      <option value="all">All Risk Levels</option>
-                      <option value="CONFIRMED_SCAM">Confirmed Scam</option>
-                      <option value="VERIFIED_SAFE">Verified Safe</option>
-                    </select>
+                      <RefreshCw size={12} className={isLoadingIntel ? 'neo-spin' : ''} aria-hidden="true" />
+                      <span>Refresh</span>
+                    </button>
                   </div>
                 </div>
 
-                {/* Table Container */}
-                <div className="neo-table-container">
-                  <table className="neo-table">
+                {intelError && (
+                  <div className="neo-modern-error-banner" role="alert" style={{ marginBottom: '16px' }}>
+                    <AlertCircle size={14} aria-hidden="true" />
+                    <span>{intelError}</span>
+                  </div>
+                )}
+
+                {/* Modern Table Container */}
+                <div className="neo-modern-table-wrapper">
+                  <table className="neo-modern-table">
                     <thead>
                       <tr>
-                        <th>Defanged Indicator</th>
-                        <th>Type</th>
-                        <th>Risk Level</th>
-                        <th>Confidence</th>
-                        <th>Status</th>
-                        <th>Added</th>
-                        <th>Actions</th>
+                        <th>INDICATOR</th>
+                        <th>TYPE</th>
+                        <th>RISK LEVEL</th>
+                        <th>CONFIDENCE</th>
+                        <th>STATUS</th>
+                        <th>DATE ADDED</th>
+                        <th>ACTIONS</th>
                       </tr>
                     </thead>
                     <tbody>
                       {isLoadingIntel ? (
                         <tr>
-                          <td colSpan={7} style={{ textAlign: 'center', padding: '40px' }}>
-                            <RefreshCw size={24} className="neo-spin" style={{ color: '#64748b' }} />
-                            <p style={{ margin: '8px 0 0', color: '#64748b', fontSize: '13px' }}>
-                              Loading verified threat intelligence...
-                            </p>
+                          <td colSpan={7} style={{ textAlign: 'center', padding: '48px 20px', color: '#64748B' }}>
+                            <RefreshCw size={24} className="neo-spin" style={{ margin: '0 auto 8px', display: 'block', color: '#0066FF' }} />
+                            <strong style={{ color: '#0F172A', fontSize: '14px' }}>Loading verified threat intelligence...</strong>
                           </td>
                         </tr>
                       ) : intelligenceList.length === 0 ? (
                         <tr>
-                          <td colSpan={7} style={{ textAlign: 'center', padding: '40px', color: '#64748b' }}>
-                            <ShieldCheck size={28} style={{ color: '#94a3b8', margin: '0 auto 8px', display: 'block' }} />
-                            <p style={{ margin: 0, fontWeight: 600 }}>No threat intelligence indicators found</p>
-                            <p style={{ margin: '4px 0 0', fontSize: '11.5px' }}>
+                          <td colSpan={7} style={{ textAlign: 'center', padding: '48px 20px', color: '#64748B' }}>
+                            <ShieldCheck size={32} color="#0066FF" style={{ margin: '0 auto 8px', display: 'block' }} />
+                            <strong style={{ color: '#0F172A', fontSize: '14px' }}>No threat intelligence indicators found</strong>
+                            <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#94A3B8' }}>
                               Approved reports will automatically appear here as sanitized intelligence indicators.
                             </p>
                           </td>
@@ -2180,23 +2399,26 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                           const isSafe = item.risk_level === 'VERIFIED_SAFE'
                           const isHash = item.indicator_type === 'content_hash'
                           const isEditing = editingIntelId === item.id
+                          const isCopied = copiedHashId === item.id
 
                           return (
                             <tr key={item.id} className={!item.active ? 'neo-row-retired' : ''}>
                               <td>
-                                <div className="neo-indicator-cell">
-                                  <div className="neo-indicator-header">
+                                <div className="neo-target-cell">
+                                  <div className="neo-target-icon-circle">
                                     {item.indicator_type === 'domain' || item.indicator_type === 'url' ? (
-                                      <Globe size={13} color="#64748b" aria-hidden="true" />
+                                      <Globe size={14} color="#0066FF" aria-hidden="true" />
                                     ) : item.indicator_type === 'phone' ? (
-                                      <Phone size={13} color="#64748b" aria-hidden="true" />
+                                      <Phone size={14} color="#0066FF" aria-hidden="true" />
                                     ) : (
-                                      <Hash size={13} color="#64748b" aria-hidden="true" />
+                                      <Hash size={14} color="#0066FF" aria-hidden="true" />
                                     )}
+                                  </div>
 
+                                  <div className="neo-target-info">
                                     {isHash ? (
-                                      <div className="neo-hash-pill-wrapper">
-                                        <span className="neo-hash-pill" title={item.defanged_value}>
+                                      <div className="neo-fingerprint-cell">
+                                        <span className="neo-fingerprint-text" title={item.defanged_value}>
                                           {item.defanged_value.slice(0, 10)}...{item.defanged_value.slice(-8)}
                                         </span>
                                         <button
@@ -2205,101 +2427,104 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                                           onClick={() => handleCopyHash(item.id, item.defanged_value)}
                                           title="Copy full SHA-256 fingerprint"
                                         >
-                                          {copiedHashId === item.id ? <Check size={11} color="#16a34a" /> : <Copy size={11} />}
+                                          {isCopied ? <Check size={11} color="#10B981" /> : <Copy size={11} />}
                                         </button>
                                       </div>
                                     ) : (
                                       <span
-                                        className={`neo-indicator-badge ${isSafe ? 'safe' : ''} ${!item.active ? 'retired' : ''}`}
+                                        className="neo-target-domain"
                                         title={`Defanged: ${item.defanged_value}`}
                                       >
                                         {item.defanged_value}
                                       </span>
                                     )}
 
-                                    {item.report_count && item.report_count > 1 ? (
-                                      <span className="neo-count-badge" title={`Reported and confirmed ${item.report_count} times`}>
-                                        {item.report_count}x reports
-                                      </span>
-                                    ) : null}
-                                  </div>
-
-                                  {/* Context / Notes Preview with Inline Edit */}
-                                  {isEditing ? (
-                                    <div className="neo-inline-note-editor">
-                                      <input
-                                        type="text"
-                                        value={editingIntelNoteText}
-                                        onChange={(e) => setEditingIntelNoteText(e.target.value)}
-                                        placeholder="Add moderator note or excerpt..."
-                                        className="neo-input-edit-note"
-                                        autoFocus
-                                      />
-                                      <div className="neo-edit-note-actions">
+                                    {/* Inline Note Display / Edit */}
+                                    {isEditing ? (
+                                      <div className="neo-inline-note-editor">
+                                        <input
+                                          type="text"
+                                          value={editingIntelNoteText}
+                                          onChange={(e) => setEditingIntelNoteText(e.target.value)}
+                                          placeholder="Add moderator note or excerpt..."
+                                          className="neo-input-edit-note"
+                                          autoFocus
+                                        />
+                                        <div className="neo-edit-note-actions">
+                                          <button
+                                            type="button"
+                                            className="neo-btn-save-note"
+                                            onClick={() => void handleSaveNote(item)}
+                                            disabled={isUpdatingIntel}
+                                          >
+                                            Save
+                                          </button>
+                                          <button
+                                            type="button"
+                                            className="neo-btn-cancel-note"
+                                            onClick={handleCancelEditNote}
+                                          >
+                                            Cancel
+                                          </button>
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <div className="neo-intel-note-row">
+                                        <span className="neo-intel-note-text" title={item.notes || 'No note attached'}>
+                                          {item.notes ? item.notes : <em style={{ color: '#94a3b8' }}>No note attached</em>}
+                                        </span>
                                         <button
                                           type="button"
-                                          className="neo-btn-save-note"
-                                          onClick={() => void handleSaveNote(item)}
-                                          disabled={isUpdatingIntel}
+                                          className="neo-btn-edit-note"
+                                          onClick={() => handleStartEditNote(item)}
+                                          title="Edit moderator note"
                                         >
-                                          Save
-                                        </button>
-                                        <button
-                                          type="button"
-                                          className="neo-btn-cancel-note"
-                                          onClick={handleCancelEditNote}
-                                        >
-                                          Cancel
+                                          <Pencil size={10} aria-hidden="true" />
                                         </button>
                                       </div>
-                                    </div>
-                                  ) : (
-                                    <div className="neo-intel-note-row">
-                                      <span className="neo-intel-note-text" title={item.notes || 'No note attached'}>
-                                        {item.notes ? item.notes : <em style={{ color: '#94a3b8' }}>No moderator note attached</em>}
-                                      </span>
-                                      <button
-                                        type="button"
-                                        className="neo-btn-edit-note"
-                                        onClick={() => handleStartEditNote(item)}
-                                        title="Edit moderator note"
-                                      >
-                                        <Pencil size={11} aria-hidden="true" />
-                                      </button>
-                                    </div>
-                                  )}
+                                    )}
+                                  </div>
                                 </div>
                               </td>
+
                               <td>
                                 <span className="neo-type-badge">
                                   {item.indicator_type.toUpperCase()}
                                 </span>
                               </td>
+
                               <td>
-                                <span className={`neo-pill-badge ${isSafe ? 'false_positive' : 'suspicious'}`}>
-                                  {isSafe ? 'VERIFIED SAFE' : 'CONFIRMED SCAM'}
-                                </span>
+                                <div className="neo-risk-cell">
+                                  <span className={`neo-risk-bullet ${isSafe ? 'low' : 'high'}`}>●</span>
+                                  <span className={`neo-risk-text ${isSafe ? 'low' : 'high'}`}>
+                                    {isSafe ? 'VERIFIED SAFE' : 'CONFIRMED SCAM'}
+                                  </span>
+                                </div>
                               </td>
+
                               <td>
                                 <div className="neo-confidence-wrapper">
                                   <div
                                     className="neo-confidence-bar"
                                     style={{
                                       width: `${Math.round(item.confidence * 100)}%`,
-                                      background: isSafe ? '#10b981' : '#ef4444',
+                                      background: isSafe ? '#10B981' : '#EF4444',
                                     }}
                                   />
                                   <span>{Math.round(item.confidence * 100)}%</span>
                                 </div>
                               </td>
+
                               <td>
-                                <span className={`neo-status-pill ${item.active ? 'APPROVED' : 'REJECTED'}`}>
+                                <span className={`neo-status-pill-modern ${item.active ? 'approved' : 'rejected'}`}>
                                   {item.active ? 'ACTIVE' : 'RETIRED'}
                                 </span>
                               </td>
-                              <td style={{ fontSize: '11px', color: '#64748b' }}>
+
+                              <td style={{ fontSize: '12px', color: '#64748B' }}>
                                 {formatRelativeTime(item.created_at)}
                               </td>
+
                               <td>
                                 {item.active ? (
                                   <button

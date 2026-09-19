@@ -114,6 +114,18 @@ test.before(async () => {
       return res.end(JSON.stringify([{ status: 'ok' }]))
     }
 
+    if (req.method === 'DELETE' && req.url.startsWith('/rest/v1/user_reports')) {
+      const deletedItems = []
+      for (const [id, report] of mockReports.entries()) {
+        if (report.notes?.includes('DEMO_FIXTURE') || ['phishing-scam.lk', 'fake-ceb-bill.lk', 'suspicious-lottery.lk'].includes(report.reported_domain)) {
+          deletedItems.push(report)
+          mockReports.delete(id)
+        }
+      }
+      res.writeHead(200, { 'content-type': 'application/json' })
+      return res.end(JSON.stringify(deletedItems))
+    }
+
     // Default REST endpoints simulation
     res.writeHead(200, { 'content-type': 'application/json' })
     res.end(JSON.stringify([]))
@@ -495,5 +507,38 @@ test('GET & PATCH /api/moderation/intelligence: lists and toggles verified intel
     assert.equal(patchBody.success, true)
     assert.equal(patchBody.updated.active, false)
   }
+})
+
+test('POST /api/moderation/clear-demo: blocks requests without moderator token', async () => {
+  const unauthRes = await fetch(`http://localhost:${apiPort}/api/moderation/clear-demo`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+  })
+  assert.equal(unauthRes.status, 401)
+})
+
+test('POST /api/moderation/clear-demo: clears demo reports when called by verified moderator', async () => {
+  // First ensure there is at least one seed
+  await fetch(`http://localhost:${apiPort}/api/moderation/seed-demo`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      Authorization: `Bearer ${validModeratorToken}`,
+    },
+  })
+
+  // Clear demo data
+  const clearRes = await fetch(`http://localhost:${apiPort}/api/moderation/clear-demo`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      Authorization: `Bearer ${validModeratorToken}`,
+    },
+  })
+
+  assert.equal(clearRes.status, 200)
+  const body = await clearRes.json()
+  assert.equal(body.success, true)
+  assert.ok(typeof body.count === 'number')
 })
 

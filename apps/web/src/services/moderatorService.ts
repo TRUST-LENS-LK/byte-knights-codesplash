@@ -17,6 +17,16 @@ export interface ModerationQueueItem {
   status: 'PENDING' | 'REVIEWED' | 'REJECTED' | 'APPROVED'
   created_at: string
   updated_at: string
+  threat?: {
+    title: string
+    subtitle: string
+    type: 'phishing' | 'scam' | 'malware' | 'safe'
+  }
+  risk_signal?: {
+    level: 'HIGH' | 'MEDIUM' | 'LOW'
+    color: string
+  }
+  detected_signals?: string[]
 }
 
 export interface ModerationReviewPayload {
@@ -307,6 +317,40 @@ export async function seedDemoReports(
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Network error seeding demo reports.',
+    }
+  }
+}
+
+export async function clearDemoReports(
+  token: string
+): Promise<{ success: boolean; count?: number; error?: string }> {
+  try {
+    const response = await fetch(`${API_BASE}/api/moderation/clear-demo`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({}),
+    })
+
+    const data = await response.json()
+
+    if (!response.ok) {
+      return {
+        success: false,
+        error: data.message || `Clear failed (${response.status})`,
+      }
+    }
+
+    return {
+      success: true,
+      count: data.count,
+    }
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Network error clearing demo reports.',
     }
   }
 }

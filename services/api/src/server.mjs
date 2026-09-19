@@ -18,6 +18,7 @@ import {
   validateCreateReport,
   validateModerationAction,
   seedDemoQueue,
+  clearDemoQueue,
   getVerifiedIntelligenceList,
   updateIntelligenceStatus,
   getEngineSettings,
@@ -135,7 +136,15 @@ const server = createServer(async (req, res) => {
   }
 
   // Routes below require POST or PATCH with a JSON body
-  const validPostRoutes = ['/api/analyze', '/api/reports', '/api/scanner/preview', '/api/moderation/review', '/api/moderation/login', '/api/moderation/seed-demo']
+  const validPostRoutes = [
+    '/api/analyze',
+    '/api/reports',
+    '/api/scanner/preview',
+    '/api/moderation/review',
+    '/api/moderation/login',
+    '/api/moderation/seed-demo',
+    '/api/moderation/clear-demo',
+  ]
   const isPatchSettings = req.method === 'PATCH' && pathname === '/api/moderation/settings'
   const isPatchIntel = req.method === 'PATCH' && pathname.startsWith('/api/moderation/intelligence/')
   const isValidPost = req.method === 'POST' && validPostRoutes.includes(pathname)
@@ -252,6 +261,20 @@ const server = createServer(async (req, res) => {
       return send(res, 200, { seeded, count: seeded.length, requestId }, requestId)
     } catch (error) {
       return send(res, 502, { code: 'SEED_FAILED', message: error.message, requestId }, requestId)
+    }
+  }
+
+  // Route: POST /api/moderation/clear-demo (Protected Demo Clear)
+  if (pathname === '/api/moderation/clear-demo' && req.method === 'POST') {
+    const auth = await authorizeModerator(req)
+    if (!auth.authorized) {
+      return send(res, 401, { code: 'UNAUTHORIZED', message: auth.error || 'Moderator access required.', requestId }, requestId)
+    }
+    try {
+      const result = await clearDemoQueue()
+      return send(res, 200, { success: true, count: result.count, requestId }, requestId)
+    } catch (error) {
+      return send(res, 502, { code: 'CLEAR_FAILED', message: error.message, requestId }, requestId)
     }
   }
 

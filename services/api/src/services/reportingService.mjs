@@ -1,6 +1,7 @@
 import { randomUUID, createHash } from 'node:crypto'
 import { SUPABASE_SERVICE_ROLE_KEY, SUPABASE_URL } from '../config/env.mjs'
 import { DEMO_REPORTS } from '../fixtures/demoReports.mjs'
+import { analyzeMessage } from '@trustlens/rules'
 
 const REQUEST_TIMEOUT_MS = 8_000
 
@@ -8,6 +9,169 @@ const REQUEST_TIMEOUT_MS = 8_000
 const inMemoryReports = new Map()
 const inMemoryIntel = new Map()
 const inMemoryAuditLogs = []
+
+/**
+ * Extracts normalized plain text from a report for deep deterministic rules analysis.
+ */
+export function extractCleanTextForAnalysis(report) {
+  if (!report) return ''
+  const parts = []
+  if (report.raw_excerpt) parts.push(report.raw_excerpt)
+  if (report.notes) {
+    const match = report.notes.match(/\[Reported Message Excerpt\]:\s*"([^"]+)"/i)
+    if (match) {
+      parts.push(match[1])
+    }
+    const userMatch = report.notes.match(/\[Submitter Context\]:\s*([\s\S]+)$/i)
+    if (userMatch) {
+      parts.push(userMatch[1])
+    } else if (!match) {
+      parts.push(report.notes)
+    }
+  }
+  return parts.join(' ').trim()
+}
+
+/**
+ * Automates deterministic threat triage and risk signal evaluation using @trustlens/rules
+ * and verified threat intelligence matching.
+ */
+export function enrichReportWithTriage(report) {
+  if (!report) return report
+
+  // 1. False positive: Submitter reporting legitimate message incorrectly flagged
+  if (report.report_type === 'false_positive') {
+    return {
+      ...report,
+      threat: { title: 'False Alarm', subtitle: 'User Dispute', type: 'safe' },
+      risk_signal: { level: 'LOW', color: '#10B981' },
+      detected_signals: ['user_dispute'],
+    }
+  }
+
+  const rawDomain = report.reported_domain || ''
+  const domain = rawDomain.toLowerCase().replace(/hxxps?:\/\//i, '').replace(/\[\.\]/g, '.').replace(/\[@\]/g, '@').trim()
+
+  // 2. Check known verified intelligence
+  if (domain) {
+    const knownIntel = Array.from(inMemoryIntel.values()).find(
+      (item) => item.active && item.indicator_value?.toLowerCase() === domain
+    )
+    if (knownIntel) {
+      if (knownIntel.risk_level === 'CONFIRMED_SCAM') {
+        return {
+          ...report,
+          threat: { title: 'Confirmed Threat', subtitle: knownIntel.category || 'Verified Malicious Indicator', type: 'phishing' },
+          risk_signal: { level: 'HIGH', color: '#EF4444' },
+          detected_signals: ['verified_threat_intelligence_match'],
+        }
+      }
+      if (knownIntel.risk_level === 'VERIFIED_SAFE') {
+        return {
+          ...report,
+          threat: { title: 'Official Domain', subtitle: knownIntel.category || 'Verified Entity', type: 'safe' },
+          risk_signal: { level: 'LOW', color: '#10B981' },
+          detected_signals: ['verified_safe_match'],
+        }
+      }
+    }
+  }
+
+  // 3. Check for raw IP address infrastructure (e.g. 192.168.21.144)
+  if (domain && /^(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?$/.test(domain)) {
+    return {
+      ...report,
+      threat: { title: 'Suspicious Domain', subtitle: 'Raw IP Infrastructure', type: 'phishing' },
+      risk_signal: { level: 'HIGH', color: '#EF4444' },
+      detected_signals: ['raw_ip_host'],
+    }
+  }
+
+  // 4. Run deterministic rules engine on content (notes + excerpt)
+  const textToAnalyze = extractCleanTextForAnalysis(report)
+  const decision = textToAnalyze ? analyzeMessage(textToAnalyze) : null
+
+  let title = domain ? 'Suspicious Domain' : 'Suspicious Message'
+  let subtitle = domain ? 'Unverified Web Target' : 'Citizen Submission'
+  let type = domain ? 'phishing' : 'scam'
+  let riskLevel = 'MEDIUM'
+  const detectedSignals = decision?.findings?.map((f) => f.canonicalSignal) || []
+  const lowerText = (textToAnalyze || '').toLowerCase()
+
+  if (decision && decision.findings.length > 0) {
+    const findingCategories = new Set(decision.findings.map((f) => f.category))
+
+    if (findingCategories.has('CREDENTIAL_THEFT')) {
+      title = 'Phishing'
+      subtitle = 'Credential Harvesting'
+      type = 'phishing'
+    } else if (findingCategories.has('ADVANCE_FEE_FRAUD')) {
+      title = 'Scam'
+      subtitle = 'Advance Fee Fraud'
+      type = 'scam'
+    } else if (findingCategories.has('EMPLOYMENT_FRAUD')) {
+      title = 'Scam'
+      subtitle = 'Fake Job Offer'
+      type = 'scam'
+    } else if (findingCategories.has('URGENCY_MANIPULATION')) {
+      title = 'Social Engineering'
+      subtitle = 'Urgency Pressure'
+      type = 'scam'
+    } else if (!domain) {
+      if (/subscription|invoice|refund|renew|charge|geek squad|norton|mcafee|paypal|apple/.test(lowerText)) {
+        title = 'Scam'
+        subtitle = 'Subscription / Invoice Fraud'
+        type = 'scam'
+      } else {
+        title = 'Suspicious Message'
+        subtitle = 'Citizen Submission'
+        type = 'scam'
+      }
+    }
+
+    riskLevel = decision.riskBand === 'HIGH' ? 'HIGH' : decision.riskBand === 'LOW' ? 'LOW' : 'MEDIUM'
+  } else if (!domain) {
+    if (/subscription|invoice|refund|renew|charge|geek squad|norton|mcafee|paypal|apple/.test(lowerText)) {
+      title = 'Scam'
+      subtitle = 'Subscription / Invoice Fraud'
+      type = 'scam'
+    } else if (/job|salary|part-time|hiring|earn|bonus/.test(lowerText)) {
+      title = 'Scam'
+      subtitle = 'Fake Job Offer'
+      type = 'scam'
+    } else if (/lottery|prize|won|lucky|cash|gift|reward/.test(lowerText)) {
+      title = 'Scam'
+      subtitle = 'Lottery / Prize Fraud'
+      type = 'scam'
+    } else if (/boc|combank|bank|hnb|sampath|card|debit|credit|fund|login|verify|otp|pin|password|credential|security/.test(lowerText)) {
+      title = 'Phishing'
+      subtitle = 'Credential Harvesting'
+      type = 'phishing'
+    } else {
+      title = 'Suspicious Message'
+      subtitle = 'Citizen Submission'
+      type = 'scam'
+    }
+  }
+
+  // If report_type === 'false_negative', user reported an evasion that bypassed automated filters
+  if (report.report_type === 'false_negative' && riskLevel === 'LOW') {
+    riskLevel = 'MEDIUM'
+  }
+
+  const colorMap = {
+    HIGH: '#EF4444',
+    MEDIUM: '#F59E0B',
+    LOW: '#10B981',
+  }
+
+  return {
+    ...report,
+    threat: { title, subtitle, type },
+    risk_signal: { level: riskLevel, color: colorMap[riskLevel] || '#F59E0B' },
+    detected_signals: detectedSignals,
+  }
+}
 
 const initialDemoIntel = [
   {
@@ -268,7 +432,7 @@ export async function getModerationQueue(statusOrOptions = 'PENDING') {
     const contentRange = response.headers.get('content-range') || ''
     const match = contentRange.match(/\/(\d+|\*)$/)
     const total = match && match[1] !== '*' ? parseInt(match[1], 10) : reports.length
-    return { reports, total }
+    return { reports: reports.map(enrichReportWithTriage), total }
   }
 
   const list = Array.from(inMemoryReports.values()).sort(
@@ -277,7 +441,7 @@ export async function getModerationQueue(statusOrOptions = 'PENDING') {
   const filtered = status && status !== 'ALL' ? list.filter((r) => r.status === status) : list
   const total = filtered.length
   const reports = limit !== null && limit > 0 ? filtered.slice(offset, offset + limit) : filtered
-  return { reports, total }
+  return { reports: reports.map(enrichReportWithTriage), total }
 }
 
 function computeStatsFromReports(reports) {
@@ -910,14 +1074,15 @@ export async function updateIntelligenceStatus(id, { active, notes, category, ac
 export async function seedDemoQueue() {
   const seeded = []
   for (const demo of DEMO_REPORTS) {
+    const freshId = randomUUID()
     const dbPayload = {
-      id: demo.id,
+      id: freshId,
       report_type: demo.report_type,
       content_sha256: demo.content_sha256,
       reported_domain: demo.reported_domain,
-      notes: `[Reported Message Excerpt]: "${demo.raw_excerpt}"\n\n[Submitter Context]: ${demo.notes}`,
+      notes: `[Reported Message Excerpt]: "${demo.raw_excerpt}"\n\n[Submitter Context]: ${demo.notes} [DEMO_FIXTURE]`,
       status: demo.status,
-      created_at: demo.created_at,
+      created_at: new Date().toISOString(),
     }
     if (isSupabaseConfigured()) {
       try {
@@ -954,5 +1119,75 @@ export async function seedDemoQueue() {
   }
 
   return seeded
+}
+
+export async function clearDemoQueue() {
+  const demoDomains = [
+    'ceb-billpay-portal.xyz',
+    'combank-secure-update.online',
+    'mohe.gov.lk',
+    'phishing-scam.lk',
+    'srilanka-telecom-rewards.xyz',
+    'fake-prize.lk',
+    'news-alert.lk',
+    'bank-login.lk',
+    'lottery-win.lk',
+    'update-security.lk',
+    'election-result.lk',
+    'health-offer.lk',
+    'boc-ebank-login.info',
+    'dialog-mega-cash-win.top',
+  ]
+
+  let deletedCount = 0
+
+  if (isSupabaseConfigured()) {
+    try {
+      // 1. Delete reports matching [DEMO_FIXTURE]
+      const resFixture = await fetch(
+        `${SUPABASE_URL}/rest/v1/user_reports?notes=ilike.*DEMO_FIXTURE*`,
+        {
+          method: 'DELETE',
+          headers: { ...getHeaders(), Prefer: 'return=representation' },
+          signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        }
+      )
+      if (resFixture.ok) {
+        const deleted = await resFixture.json()
+        deletedCount += Array.isArray(deleted) ? deleted.length : 0
+      }
+
+      // 2. Delete reports matching demo domains
+      for (const domain of demoDomains) {
+        const res = await fetch(
+          `${SUPABASE_URL}/rest/v1/user_reports?reported_domain=eq.${encodeURIComponent(domain)}`,
+          {
+            method: 'DELETE',
+            headers: { ...getHeaders(), Prefer: 'return=representation' },
+            signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+          }
+        )
+        if (res.ok) {
+          const deleted = await res.json()
+          deletedCount += Array.isArray(deleted) ? deleted.length : 0
+        }
+      }
+    } catch {
+      // Fallback
+    }
+  }
+
+  // Clear from in-memory fallback store
+  for (const [id, report] of inMemoryReports.entries()) {
+    if (
+      report.notes?.includes('DEMO_FIXTURE') ||
+      demoDomains.includes(report.reported_domain)
+    ) {
+      inMemoryReports.delete(id)
+      deletedCount++
+    }
+  }
+
+  return { count: deletedCount }
 }
 

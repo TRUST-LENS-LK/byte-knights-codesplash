@@ -10,6 +10,7 @@ import {
   Check,
   Send,
   ShieldCheck,
+  Hash,
 } from 'lucide-react'
 import {
   type CreatedReport,
@@ -42,21 +43,21 @@ const REPORT_TYPE_CONFIG: Record<
     icon: ShieldAlert,
     title: 'Unreported Threat',
     desc: 'Phishing, bank fraud, fake job, or malicious link',
-    color: '#e11d48',
+    color: '#EF4444',
     typeClass: 'is-threat',
   },
   false_positive: {
     icon: AlertTriangle,
     title: 'False Alarm',
     desc: 'Legitimate message incorrectly flagged as risky',
-    color: '#d97706',
+    color: '#F59E0B',
     typeClass: 'is-alarm',
   },
   false_negative: {
     icon: Search,
     title: 'Evaded Detection',
     desc: 'Dangerous scam that bypassed safety filters',
-    color: '#0284c7',
+    color: '#0066FF',
     typeClass: 'is-evaded',
   },
 }
@@ -199,7 +200,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({
                   title="Copy Reference ID"
                 >
                   <code>{successReport.id}</code>
-                  {copiedId ? <Check size={12} color="#10b981" /> : <Copy size={12} />}
+                  {copiedId ? <Check size={12} color="#10B981" /> : <Copy size={12} />}
                 </button>
               </div>
 
@@ -233,9 +234,14 @@ export const ReportModal: React.FC<ReportModalProps> = ({
           <>
             {/* Modal Header */}
             <div className="modal-header">
-              <div className="modal-header-text">
-                <h3 id="modal-title">Report Threat or False Alarm</h3>
-                <p>Help improve TrustLens detection for Sri Lankan fraud patterns.</p>
+              <div className="modal-header-left">
+                <div className="modal-header-icon">
+                  <ShieldAlert size={20} aria-hidden="true" />
+                </div>
+                <div className="modal-header-text">
+                  <h3 id="modal-title">Report Threat or False Alarm</h3>
+                  <p>Help improve TrustLens detection for Sri Lankan fraud patterns.</p>
+                </div>
               </div>
               <button
                 type="button"
@@ -244,7 +250,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({
                 aria-label="Close dialog"
                 disabled={isSubmitting}
               >
-                <X size={17} aria-hidden="true" />
+                <X size={16} aria-hidden="true" />
               </button>
             </div>
 
@@ -285,7 +291,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({
                             <IconComponent size={17} aria-hidden="true" />
                           </div>
                           <div className={`reason-radio ${isSelected ? 'active' : ''}`} aria-hidden="true">
-                            {isSelected && <Check size={10} strokeWidth={3} />}
+                            {isSelected && <Check size={11} strokeWidth={3} />}
                           </div>
                         </div>
                         <div className="reason-text">
@@ -298,11 +304,19 @@ export const ReportModal: React.FC<ReportModalProps> = ({
                 </div>
               </div>
 
-              {/* 2. Scanned Snippet & Target URL (Clean, side-by-side or stacked cleanly) */}
+              {/* 2. Scanned Snippet & Target URL */}
               <div className="form-row-compact">
                 {content && (
                   <div className="snippet-box">
-                    <span className="snippet-label">Scanned Content Snippet</span>
+                    <div className="snippet-header">
+                      <span className="snippet-label">Scanned Content Snippet</span>
+                      {sha256 && (
+                        <span className="snippet-sha-pill" title={`SHA-256 Fingerprint: ${sha256}`}>
+                          <Hash size={10} aria-hidden="true" />
+                          <span>{sha256.slice(0, 8)}...</span>
+                        </span>
+                      )}
+                    </div>
                     <p className="snippet-text">
                       "{content.length > 140 ? content.slice(0, 137) + '...' : content}"
                     </p>
@@ -321,14 +335,17 @@ export const ReportModal: React.FC<ReportModalProps> = ({
                       </span>
                     )}
                   </div>
-                  <input
-                    id="target-indicator"
-                    type="text"
-                    value={targetIndicator}
-                    onChange={(e) => setManualIndicator(e.target.value)}
-                    placeholder="e.g. ceb-online-pay.top"
-                    className="target-input-field"
-                  />
+                  <div className="target-input-wrapper">
+                    <Globe size={13} className="target-input-icon" aria-hidden="true" />
+                    <input
+                      id="target-indicator"
+                      type="text"
+                      value={targetIndicator}
+                      onChange={(e) => setManualIndicator(e.target.value)}
+                      placeholder="e.g. ceb-online-pay.top"
+                      className="target-input-field"
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -356,7 +373,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({
               {/* 4. Footer with Privacy Assurance & Action Buttons */}
               <div className="modal-footer">
                 <div className="privacy-assurance">
-                  <ShieldCheck size={14} color="#087f8c" aria-hidden="true" />
+                  <ShieldCheck size={14} aria-hidden="true" />
                   <span>Zero-PII • Content hashed locally • Submitter anonymous</span>
                 </div>
 

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Shield, ShieldCheck, AlertOctagon, AlertTriangle } from 'lucide-react'
 import { analyzeSubmission, analyzeWithApi } from './services/analysisService'
 import { CommunityReportBar } from './components/CommunityReportBar'
@@ -22,7 +22,41 @@ interface IntelligenceOverlay {
 }
 
 function App() {
-  const [view, setView] = useState<'checker' | 'moderator'>('checker')
+  const [view, setView] = useState<'checker' | 'moderator'>(() => {
+    if (typeof window !== 'undefined') {
+      const hash = window.location.hash
+      if (hash.startsWith('#moderator')) return 'moderator'
+      const stored = sessionStorage.getItem('trustlens_view')
+      if (stored === 'moderator') return 'moderator'
+    }
+    return 'checker'
+  })
+
+  // Sync view changes to sessionStorage and URL hash
+  useEffect(() => {
+    if (view === 'moderator') {
+      sessionStorage.setItem('trustlens_view', 'moderator')
+      if (!window.location.hash.startsWith('#moderator')) {
+        window.location.hash = '#moderator'
+      }
+    } else {
+      sessionStorage.setItem('trustlens_view', 'checker')
+      if (window.location.hash.startsWith('#moderator')) {
+        window.history.replaceState(null, '', window.location.pathname + window.location.search)
+      }
+    }
+  }, [view])
+
+  // Listen to browser back/forward hash changes
+  useEffect(() => {
+    const handleHashChange = () => {
+      const isMod = window.location.hash.startsWith('#moderator')
+      setView(isMod ? 'moderator' : 'checker')
+    }
+    window.addEventListener('hashchange', handleHashChange)
+    return () => window.removeEventListener('hashchange', handleHashChange)
+  }, [])
+
   const [isReportModalOpen, setIsReportModalOpen] = useState(false)
   const [text, setText] = useState('')
   const [checked, setChecked] = useState(false)
@@ -85,18 +119,35 @@ function App() {
 
   const detectedDomain = entities.find((e) => e.type === 'url' || e.type === 'domain')?.value || null
 
+  const handleBackToScanner = () => {
+    sessionStorage.setItem('trustlens_view', 'checker')
+    sessionStorage.removeItem('trustlens_mod_nav')
+    if (typeof window !== 'undefined') {
+      window.history.replaceState(null, '', window.location.pathname + window.location.search)
+    }
+    setView('checker')
+  }
+
   if (view === 'moderator') {
-    return <ModeratorDashboard onBackToScanner={() => setView('checker')} />
+    return <ModeratorDashboard onBackToScanner={handleBackToScanner} />
   }
 
   return (
     <main className="app-shell">
       <nav className="nav">
         <span className="brand-mark">TL</span>
-        <span className="brand" style={{ cursor: 'pointer' }} onClick={() => setView('checker')}>TrustLens <em>LK</em></span>
+        <span className="brand" style={{ cursor: 'pointer' }} onClick={handleBackToScanner}>TrustLens <em>LK</em></span>
         <span className="nav-note">Scam decision support</span>
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <button type="button" className="btn-secondary" onClick={() => setView('moderator')} style={{ fontSize: '12px', padding: '6px 14px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => {
+              sessionStorage.setItem('trustlens_view', 'moderator')
+              setView('moderator')
+            }}
+            style={{ fontSize: '12px', padding: '6px 14px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+          >
             <Shield size={14} aria-hidden="true" />
             <span>Moderator Portal</span>
           </button>
