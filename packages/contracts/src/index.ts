@@ -46,7 +46,7 @@ export type CanonicalSignal = (typeof CANONICAL_SIGNALS)[number];
 // "url" needs a proper url string, and a "screenshot" needs an image reference.
 export const submissionSchema = z
   .object({
-    type: z.enum(["message", "url", "screenshot"]),
+    type: z.enum(["message", "url", "screenshot"]).optional(),
     text: z.string().max(10000).optional(),
     url: z.string().url().max(2048).optional(),
     imageRef: z.string().max(512).optional(),
@@ -55,11 +55,11 @@ export const submissionSchema = z
       .optional(),
     retentionConsent: z.boolean().default(false),
   })
-  .refine((submission) => submission.type !== "url" || Boolean(submission.url), {
-    message: "url is required when type is 'url'.",
+  .refine((submission) => submission.type !== "url" || Boolean(submission.url || submission.text), {
+    message: "url or text is required when type is 'url'.",
     path: ["url"],
   })
-  .refine((submission) => submission.type !== "message" || Boolean(submission.text), {
+  .refine((submission) => submission.type !== "message" || Boolean(submission.text || submission.url), {
     message: "text is required when type is 'message'.",
     path: ["text"],
   });
