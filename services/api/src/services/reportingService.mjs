@@ -9,6 +9,78 @@ const inMemoryReports = new Map()
 const inMemoryIntel = new Map()
 const inMemoryAuditLogs = []
 
+const initialDemoIntel = [
+  {
+    id: 'intel-demo-001',
+    source_report_id: 'report-demo-001',
+    indicator_type: 'domain',
+    indicator_value: 'ceb-bill-pay.top',
+    defanged_value: 'hxxps://ceb-bill-pay[.]top',
+    risk_level: 'CONFIRMED_SCAM',
+    category: 'Utility Phishing',
+    confidence: 0.98,
+    notes: 'Impersonates Ceylon Electricity Board payment portal with fake bill settlement gateway.',
+    active: true,
+    created_at: new Date(Date.now() - 86400000 * 2).toISOString(),
+    updated_at: new Date(Date.now() - 86400000 * 2).toISOString(),
+  },
+  {
+    id: 'intel-demo-002',
+    source_report_id: 'report-demo-002',
+    indicator_type: 'domain',
+    indicator_value: 'srilanka-telecom-rewards.xyz',
+    defanged_value: 'hxxps://srilanka-telecom-rewards[.]xyz',
+    risk_level: 'CONFIRMED_SCAM',
+    category: 'Telecom Impersonation',
+    confidence: 0.95,
+    notes: 'Fraudulent SMS campaign offering fake data packages requiring OTP entry.',
+    active: true,
+    created_at: new Date(Date.now() - 86400000 * 4).toISOString(),
+    updated_at: new Date(Date.now() - 86400000 * 4).toISOString(),
+  },
+  {
+    id: 'intel-demo-003',
+    source_report_id: null,
+    indicator_type: 'domain',
+    indicator_value: 'gov.lk',
+    defanged_value: 'hxxps://gov[.]lk',
+    risk_level: 'VERIFIED_SAFE',
+    category: 'Government Portal',
+    confidence: 1.0,
+    notes: 'Official Sri Lanka Government Web Portal top-level domain.',
+    active: true,
+    created_at: new Date(Date.now() - 86400000 * 10).toISOString(),
+    updated_at: new Date(Date.now() - 86400000 * 10).toISOString(),
+  },
+]
+
+for (const item of initialDemoIntel) {
+  inMemoryIntel.set(item.id, { ...item })
+}
+
+let engineSettings = {
+  enableVerifiedIntel: process.env.ENABLE_VERIFIED_INTEL !== 'false',
+  lastUpdated: new Date().toISOString(),
+  updatedBy: 'system',
+}
+
+export function isVerifiedIntelEnabled() {
+  return engineSettings.enableVerifiedIntel
+}
+
+export function getEngineSettings() {
+  return { ...engineSettings }
+}
+
+export function updateEngineSettings(newSettings = {}, actor = 'moderator') {
+  if (typeof newSettings.enableVerifiedIntel === 'boolean') {
+    engineSettings.enableVerifiedIntel = newSettings.enableVerifiedIntel
+    engineSettings.lastUpdated = new Date().toISOString()
+    engineSettings.updatedBy = actor
+  }
+  return { ...engineSettings }
+}
+
 export function isSupabaseConfigured() {
   return Boolean(SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY)
 }
@@ -240,7 +312,7 @@ function computeStatsFromReports(reports) {
             if (report.status === 'APPROVED' || report.status === 'REJECTED') entry.resolved++
           }
         }
-      } catch (_) {}
+      } catch (_) { }
     }
 
     // Categorization
@@ -493,7 +565,7 @@ export async function checkVerifiedIntelligence(entities = [], contentSha256 = n
     try {
       const hostname = new URL(u.startsWith('http') ? u : `https://${u}`).hostname
       if (hostname) expandedDomains.push(...extractDomainVariants(hostname))
-    } catch {}
+    } catch { }
   }
 
   const rawIndicators = [...new Set([...rawDomains, ...expandedDomains, ...urls, ...phones, ...emails])].filter(Boolean)
@@ -514,6 +586,7 @@ export async function checkVerifiedIntelligence(entities = [], contentSha256 = n
       if (indicators.length) {
         const quoted = indicators.map((ind) => `"${ind.replace(/"/g, '')}"`).join(',')
         filters.push(`indicator_value.in.(${quoted})`)
+        filters.push(`defanged_value.in.(${quoted})`)
       }
       if (contentSha256) {
         filters.push(`indicator_value.eq.${contentSha256}`)
@@ -544,7 +617,7 @@ export async function checkVerifiedIntelligence(entities = [], contentSha256 = n
   } else {
     for (const intel of inMemoryIntel.values()) {
       if (!intel.active) continue
-      if (indicators.includes(intel.indicator_value) || contentSha256 === intel.indicator_value) {
+      if (indicators.includes(intel.indicator_value) || indicators.includes(intel.defanged_value) || contentSha256 === intel.indicator_value) {
         findings.push({
           canonicalSignal: intel.risk_level === 'CONFIRMED_SCAM' ? 'verified_scam_intelligence' : 'verified_safe_intelligence',
           category: intel.category || 'Threat Intelligence',
@@ -565,6 +638,158 @@ export function resetInMemoryStores() {
   inMemoryReports.clear()
   inMemoryIntel.clear()
   inMemoryAuditLogs.length = 0
+}
+
+export async function getVerifiedIntelligenceList(options = {}) {
+  const {
+    status = 'all',
+    type = 'all',
+    riskLevel = 'all',
+    search = '',
+    page = 1,
+    limit = 20,
+  } = options
+
+  const parsedPage = Math.max(1, parseInt(page, 10) || 1)
+  const parsedLimit = Math.min(100, Math.max(1, parseInt(limit, 10) || 20))
+  const offset = (parsedPage - 1) * parsedLimit
+
+  if (isSupabaseConfigured()) {
+    try {
+      const filters = []
+      if (status === 'active') filters.push('active=eq.true')
+      if (status === 'retired') filters.push('active=eq.false')
+      if (type && type !== 'all') filters.push(`indicator_type=eq.${type}`)
+      if (riskLevel && riskLevel !== 'all') filters.push(`risk_level=eq.${riskLevel}`)
+      if (search && search.trim()) {
+        const cleanSearch = search.trim().replace(/"/g, '')
+        filters.push(`or=(indicator_value.ilike.*${cleanSearch}*,defanged_value.ilike.*${cleanSearch}*,notes.ilike.*${cleanSearch}*,category.ilike.*${cleanSearch}*)`)
+      }
+
+      const queryString = filters.length ? `?${filters.join('&')}` : ''
+      const url = `${SUPABASE_URL}/rest/v1/verified_intelligence${queryString}${queryString ? '&' : '?'}order=created_at.desc&limit=${parsedLimit}&offset=${offset}`
+
+      const res = await fetch(url, {
+        headers: {
+          ...getHeaders(),
+          Prefer: 'count=exact',
+        },
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      })
+
+      if (res.ok) {
+        const intelligence = await res.json()
+        const contentRange = res.headers.get('content-range')
+        let total = intelligence.length
+        if (contentRange) {
+          const match = contentRange.match(/\/(\d+|\*)$/)
+          if (match && match[1] !== '*') total = parseInt(match[1], 10)
+        }
+        return {
+          intelligence,
+          total,
+          page: parsedPage,
+          limit: parsedLimit,
+          totalPages: Math.ceil(total / parsedLimit) || 1,
+        }
+      }
+    } catch {
+      // Fallback to in-memory on connection or query error
+    }
+  }
+
+  // In-memory fallback
+  let items = Array.from(inMemoryIntel.values())
+  if (status === 'active') items = items.filter((item) => item.active === true)
+  if (status === 'retired') items = items.filter((item) => item.active === false)
+  if (type && type !== 'all') items = items.filter((item) => item.indicator_type === type)
+  if (riskLevel && riskLevel !== 'all') items = items.filter((item) => item.risk_level === riskLevel)
+  if (search && search.trim()) {
+    const s = search.trim().toLowerCase()
+    items = items.filter(
+      (item) =>
+        (item.indicator_value && item.indicator_value.toLowerCase().includes(s)) ||
+        (item.defanged_value && item.defanged_value.toLowerCase().includes(s)) ||
+        (item.notes && item.notes.toLowerCase().includes(s)) ||
+        (item.category && item.category.toLowerCase().includes(s))
+    )
+  }
+
+  items.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+
+  const total = items.length
+  const paginated = items.slice(offset, offset + parsedLimit)
+
+  return {
+    intelligence: paginated,
+    total,
+    page: parsedPage,
+    limit: parsedLimit,
+    totalPages: Math.ceil(total / parsedLimit) || 1,
+  }
+}
+
+export async function updateIntelligenceStatus(id, { active, notes, actorRole = 'moderator' } = {}) {
+  const updatedAt = new Date().toISOString()
+
+  if (isSupabaseConfigured()) {
+    try {
+      const updatePayload = {
+        active: Boolean(active),
+        updated_at: updatedAt,
+      }
+      if (typeof notes === 'string' && notes.trim()) {
+        updatePayload.notes = notes.trim()
+      }
+
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/verified_intelligence?id=eq.${id}`, {
+        method: 'PATCH',
+        headers: getHeaders(),
+        body: JSON.stringify(updatePayload),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      })
+
+      if (res.ok) {
+        const [updated] = await res.json()
+        if (updated) {
+          inMemoryAuditLogs.push({
+            id: randomUUID(),
+            report_id: updated.source_report_id || id,
+            actor_role: actorRole,
+            action: active ? 'REACTIVATE_INTEL' : 'RETIRE_INTEL',
+            notes: notes || `Intelligence ${active ? 'reactivated' : 'retired'}`,
+            created_at: updatedAt,
+          })
+          return updated
+        }
+      }
+    } catch {
+      // Fallback to in-memory on error
+    }
+  }
+
+  const existing = inMemoryIntel.get(id)
+  if (!existing) {
+    throw new Error('Intelligence item not found.')
+  }
+
+  existing.active = Boolean(active)
+  if (typeof notes === 'string' && notes.trim()) {
+    existing.notes = notes.trim()
+  }
+  existing.updated_at = updatedAt
+  inMemoryIntel.set(id, existing)
+
+  inMemoryAuditLogs.push({
+    id: randomUUID(),
+    report_id: existing.source_report_id || id,
+    actor_role: actorRole,
+    action: active ? 'REACTIVATE_INTEL' : 'RETIRE_INTEL',
+    notes: notes || `Intelligence ${active ? 'reactivated' : 'retired'}`,
+    created_at: updatedAt,
+  })
+
+  return existing
 }
 
 export async function seedDemoQueue() {
@@ -596,5 +821,23 @@ export async function seedDemoQueue() {
       seeded.push(dbPayload)
     }
   }
+
+  // Ensure demo intelligence items are seeded as well
+  for (const item of initialDemoIntel) {
+    if (isSupabaseConfigured()) {
+      try {
+        await fetch(`${SUPABASE_URL}/rest/v1/verified_intelligence`, {
+          method: 'POST',
+          headers: { ...getHeaders(), Prefer: 'resolution=ignore-duplicates' },
+          body: JSON.stringify(item),
+        })
+      } catch {}
+    }
+    if (!inMemoryIntel.has(item.id)) {
+      inMemoryIntel.set(item.id, { ...item })
+    }
+  }
+
   return seeded
 }
+

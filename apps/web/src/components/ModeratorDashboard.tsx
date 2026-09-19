@@ -22,14 +22,23 @@ import {
   PanelLeftOpen,
   Download,
   ArrowRight,
+  Hash,
+  Phone,
+  Power,
+  Search,
 } from 'lucide-react'
 import {
   type ModerationQueueItem,
   type ModeratorUser,
   type ModerationStats,
+  type VerifiedIntelligenceItem,
   clearSession,
   fetchModerationQueue,
   fetchModerationStats,
+  fetchEngineSettings,
+  updateEngineSettings,
+  fetchVerifiedIntelligence,
+  toggleIntelligenceStatus,
   getStoredSession,
   loginModerator,
   reviewModerationItem,
@@ -230,7 +239,7 @@ const CuteRobotAvatar: React.FC<CuteRobotAvatarProps> = ({ isPasswordFocused, is
             {/* Left Eye Socket: Stationary, High-Contrast Clearly Visible Boundary */}
             <circle cx="36" cy="46" r="11" fill="#1e293b" stroke="#d4ff32" strokeWidth="1.2" />
             <circle cx="36" cy="46" r="9.2" fill="#ffffff" />
-            
+
             {/* Left Black Dot Pupil (ONLY THIS MOVES) */}
             <circle
               cx={36 + pupilOffset.x}
@@ -392,8 +401,8 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
   const [token, setToken] = useState<string | null>(() => getStoredSession().token)
   const [user, setUser] = useState<ModeratorUser | null>(() => getStoredSession().user)
 
-  // Navigation State (3 focused views: Dashboard, Queue, Audit)
-  const [activeNav, setActiveNav] = useState<'DASHBOARD' | 'QUEUE' | 'AUDIT'>('DASHBOARD')
+  // Navigation State (4 views: Dashboard, Queue, Audit, Intelligence)
+  const [activeNav, setActiveNav] = useState<'DASHBOARD' | 'QUEUE' | 'AUDIT' | 'INTELLIGENCE'>('DASHBOARD')
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
 
   // Auth Form State
@@ -414,6 +423,20 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
   const [isLoadingQueue, setIsLoadingQueue] = useState(false)
   const [queueError, setQueueError] = useState<string | null>(null)
 
+  // Verified Intelligence State
+  const [intelligenceList, setIntelligenceList] = useState<VerifiedIntelligenceItem[]>([])
+  const [intelStatusFilter, setIntelStatusFilter] = useState<'active' | 'retired' | 'all'>('all')
+  const [intelTypeFilter, setIntelTypeFilter] = useState<'domain' | 'content_hash' | 'phone' | 'url' | 'all'>('all')
+  const [intelRiskFilter, setIntelRiskFilter] = useState<'CONFIRMED_SCAM' | 'VERIFIED_SAFE' | 'all'>('all')
+  const [intelSearchQuery, setIntelSearchQuery] = useState('')
+  const [intelPage, setIntelPage] = useState(1)
+  const [intelPageSize, setIntelPageSize] = useState<number>(10)
+  const [intelTotal, setIntelTotal] = useState(0)
+  const [intelTotalPages, setIntelTotalPages] = useState(1)
+  const [isLoadingIntel, setIsLoadingIntel] = useState(false)
+  const [intelError, setIntelError] = useState<string | null>(null)
+  const [isUpdatingIntel, setIsUpdatingIntel] = useState(false)
+
   // Queue Pagination State
   const [queuePage, setQueuePage] = useState(1)
   const [queuePageSize, setQueuePageSize] = useState<number>(10)
@@ -426,6 +449,10 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
   const [reviewModalReport, setReviewModalReport] = useState<ModerationQueueItem | null>(null)
   const [isProcessingReview, setIsProcessingReview] = useState(false)
   const [isSeeding, setIsSeeding] = useState(false)
+
+  // Dynamic Threat Feedback Loop Engine State
+  const [engineEnabled, setEngineEnabled] = useState<boolean>(true)
+  const [isTogglingEngine, setIsTogglingEngine] = useState<boolean>(false)
 
   // Toast Notification
   const [toastMessage, setToastMessage] = useState<string | null>(null)
@@ -524,6 +551,108 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
       showToast(`Welcome, ${res.user.email} (Verified ${res.user.role})`)
     } else {
       setLoginError(res.error || 'Invalid credentials or missing moderator privileges.')
+    }
+  }
+
+  // Load initial engine settings
+  useEffect(() => {
+    if (!token) return
+    fetchEngineSettings(token).then((res) => {
+      if (res.success && res.settings) {
+        setEngineEnabled(res.settings.enableVerifiedIntel)
+      }
+    })
+  }, [token])
+
+  const handleToggleEngine = async () => {
+    if (!token || isTogglingEngine) return
+    const nextState = !engineEnabled
+    setIsTogglingEngine(true)
+    // Optimistic update
+    setEngineEnabled(nextState)
+    const res = await updateEngineSettings(token, { enableVerifiedIntel: nextState })
+    setIsTogglingEngine(false)
+    if (res.success && res.settings) {
+      setEngineEnabled(res.settings.enableVerifiedIntel)
+      showToast(
+        nextState
+          ? '⚡ Threat Feedback Loop ACTIVE: Real-time community intelligence matching enabled.'
+          : '⏸️ Threat Feedback Loop PAUSED: Scanner will only use static heuristics.'
+      )
+    } else {
+      setEngineEnabled(!nextState)
+      showToast(`Failed to update engine status: ${res.error}`)
+    }
+  }
+
+  // Load initial intelligence count
+  useEffect(() => {
+    if (!token) return
+    fetchVerifiedIntelligence(token, { status: 'active', limit: 1 }).then((res) => {
+      if (res.success && typeof res.total === 'number') {
+        setIntelTotal(res.total)
+      }
+    })
+  }, [token])
+
+  const loadIntelligence = useCallback(
+    async (showSpinner = false) => {
+      if (!token) return
+      if (showSpinner) setIsLoadingIntel(true)
+      setIntelError(null)
+      const res = await fetchVerifiedIntelligence(token, {
+        status: intelStatusFilter,
+        type: intelTypeFilter,
+        riskLevel: intelRiskFilter,
+        search: intelSearchQuery,
+        page: intelPage,
+        limit: intelPageSize,
+      })
+      setIsLoadingIntel(false)
+      if (res.success && res.intelligence) {
+        setIntelligenceList(res.intelligence)
+        setIntelTotal(res.total || 0)
+        setIntelTotalPages(res.totalPages || 1)
+      } else {
+        setIntelError(res.error || 'Could not load verified intelligence.')
+      }
+    },
+    [token, intelStatusFilter, intelTypeFilter, intelRiskFilter, intelSearchQuery, intelPage, intelPageSize]
+  )
+
+  useEffect(() => {
+    if (activeNav === 'INTELLIGENCE' && token) {
+      void loadIntelligence(true)
+    }
+  }, [activeNav, token, loadIntelligence])
+
+  const handleToggleIntelStatus = async (item: VerifiedIntelligenceItem, newActive: boolean) => {
+    if (!token) return
+    const actionVerb = newActive ? 'reactivate' : 'retire'
+    const promptMsg = newActive
+      ? `Reactivate indicator "${item.defanged_value}" back into the active threat intelligence feed?`
+      : `Retire indicator "${item.defanged_value}"? It will no longer be flagged as an active threat in public checks.`
+    if (!window.confirm(promptMsg)) return
+
+    // Optimistic update
+    setIntelligenceList((prev) =>
+      prev.map((i) => (i.id === item.id ? { ...i, active: newActive } : i))
+    )
+
+    setIsUpdatingIntel(true)
+    const res = await toggleIntelligenceStatus(token, item.id, newActive, `Indicator ${actionVerb}d by moderator`)
+    setIsUpdatingIntel(false)
+
+    if (res.success) {
+      showToast(`Indicator ${item.defanged_value} successfully ${actionVerb}d.`)
+      void loadIntelligence()
+      void loadReports()
+    } else {
+      // Revert on error
+      setIntelligenceList((prev) =>
+        prev.map((i) => (i.id === item.id ? { ...i, active: item.active } : i))
+      )
+      showToast(`Failed to update indicator: ${res.error}`)
     }
   }
 
@@ -922,6 +1051,26 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
               <li>
                 <button
                   type="button"
+                  className={`neo-nav-btn ${activeNav === 'INTELLIGENCE' ? 'active' : ''}`}
+                  onClick={() => setActiveNav('INTELLIGENCE')}
+                  title="Verified Intelligence"
+                >
+                  <ShieldCheck size={17} aria-hidden="true" />
+                  {!isSidebarCollapsed && <span>Verified Intel</span>}
+                  {intelTotal > 0 && (
+                    <span
+                      className={isSidebarCollapsed ? 'neo-badge-dot' : 'neo-badge-count'}
+                      style={{ background: '#059669', color: '#ffffff' }}
+                      title={`${intelTotal} verified indicators`}
+                    >
+                      {!isSidebarCollapsed && intelTotal}
+                    </span>
+                  )}
+                </button>
+              </li>
+              <li>
+                <button
+                  type="button"
                   className={`neo-nav-btn ${activeNav === 'AUDIT' ? 'active' : ''}`}
                   onClick={() => setActiveNav('AUDIT')}
                   title="Audit"
@@ -986,11 +1135,31 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                 {activeNav === 'DASHBOARD' && 'Threat Intelligence Dashboard'}
                 {activeNav === 'QUEUE' && 'Citizen Moderation Queue'}
                 {activeNav === 'AUDIT' && 'Moderation Audit Trail'}
+                {activeNav === 'INTELLIGENCE' && 'Verified Threat Intelligence Feed'}
               </h1>
               <p className="neo-header-date">{todayStr} • Sri Lanka National Threat Center</p>
             </div>
 
             <div className="neo-header-actions">
+              {/* Dynamic Small Threat Feedback Loop Toggle with Text and Color Change */}
+              <button
+                type="button"
+                className={`neo-btn-feedback-toggle ${engineEnabled ? 'on' : 'off'}`}
+                onClick={handleToggleEngine}
+                disabled={isTogglingEngine}
+                title={
+                  engineEnabled
+                    ? 'Threat Feedback Loop: ON (Click to turn OFF)'
+                    : 'Threat Feedback Loop: OFF (Click to turn ON)'
+                }
+              >
+                <span className="neo-feedback-text">Feedback Loop</span>
+                <span className="neo-feedback-switch">
+                  <span className="neo-feedback-knob" />
+                </span>
+                <span className="neo-feedback-state">{engineEnabled ? 'ON' : 'OFF'}</span>
+              </button>
+
               {/* Consistent Public Scanner Button */}
               <button
                 type="button"
@@ -1427,102 +1596,101 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                         </tr>
                       ) : (
                         paginatedReports.map((item) => {
-                        const parsed = parseReportNotes(item.notes)
-                        const excerpt = item.raw_excerpt || parsed.excerpt
-                        const displayText = excerpt || parsed.userNotes || ''
+                          const parsed = parseReportNotes(item.notes)
+                          const excerpt = item.raw_excerpt || parsed.excerpt
+                          const displayText = excerpt || parsed.userNotes || ''
 
-                        return (
-                          <tr key={item.id}>
-                            {/* Indicator */}
-                            <td>
-                              <div className="neo-indicator-cell">
-                                <Globe size={13} color="#64748b" aria-hidden="true" />
-                                <span
-                                  className={`neo-indicator-badge ${
-                                    !item.reported_domain
-                                      ? 'text-only'
-                                      : item.status === 'APPROVED' && item.report_type === 'false_positive'
-                                        ? 'safe'
-                                        : ''
-                                  }`}
-                                >
-                                  {formatCleanIndicator(item.reported_domain)}
-                                </span>
-                              </div>
-                            </td>
-
-                            {/* Classification */}
-                            <td>
-                              <span className={`neo-pill-badge ${item.report_type}`}>
-                                {item.report_type === 'suspicious'
-                                  ? 'Reported Threat'
-                                  : item.report_type === 'false_positive'
-                                    ? 'False Alarm'
-                                    : 'Evaded Threat'}
-                              </span>
-                            </td>
-
-                            {/* Submitter Excerpt */}
-                            <td style={{ maxWidth: '320px' }}>
-                              {displayText ? (
-                                <div className="neo-excerpt-cell">
+                          return (
+                            <tr key={item.id}>
+                              {/* Indicator */}
+                              <td>
+                                <div className="neo-indicator-cell">
+                                  <Globe size={13} color="#64748b" aria-hidden="true" />
                                   <span
-                                    className="neo-excerpt-text"
-                                    title={excerpt ? `"${excerpt}"` : parsed.userNotes || undefined}
+                                    className={`neo-indicator-badge ${!item.reported_domain
+                                        ? 'text-only'
+                                        : item.status === 'APPROVED' && item.report_type === 'false_positive'
+                                          ? 'safe'
+                                          : ''
+                                      }`}
                                   >
-                                    {excerpt ? `"${excerpt}"` : parsed.userNotes}
+                                    {formatCleanIndicator(item.reported_domain)}
                                   </span>
                                 </div>
-                              ) : (
-                                <span style={{ fontSize: '11.5px', color: '#94a3b8', fontStyle: 'italic' }}>
-                                  No excerpt provided
+                              </td>
+
+                              {/* Classification */}
+                              <td>
+                                <span className={`neo-pill-badge ${item.report_type}`}>
+                                  {item.report_type === 'suspicious'
+                                    ? 'Reported Threat'
+                                    : item.report_type === 'false_positive'
+                                      ? 'False Alarm'
+                                      : 'Evaded Threat'}
                                 </span>
-                              )}
-                            </td>
+                              </td>
 
-                            {/* SHA-256 Fingerprint */}
-                            <td>
-                              <span className="neo-fingerprint-badge" title={item.content_sha256}>
-                                {item.content_sha256.slice(0, 10)}...
-                              </span>
-                            </td>
+                              {/* Submitter Excerpt */}
+                              <td style={{ maxWidth: '320px' }}>
+                                {displayText ? (
+                                  <div className="neo-excerpt-cell">
+                                    <span
+                                      className="neo-excerpt-text"
+                                      title={excerpt ? `"${excerpt}"` : parsed.userNotes || undefined}
+                                    >
+                                      {excerpt ? `"${excerpt}"` : parsed.userNotes}
+                                    </span>
+                                  </div>
+                                ) : (
+                                  <span style={{ fontSize: '11.5px', color: '#94a3b8', fontStyle: 'italic' }}>
+                                    No excerpt provided
+                                  </span>
+                                )}
+                              </td>
 
-                            {/* Status */}
-                            <td>
-                              <span className={`neo-status-pill ${item.status}`}>
-                                {item.status}
-                              </span>
-                            </td>
+                              {/* SHA-256 Fingerprint */}
+                              <td>
+                                <span className="neo-fingerprint-badge" title={item.content_sha256}>
+                                  {item.content_sha256.slice(0, 10)}...
+                                </span>
+                              </td>
 
-                            {/* Action Trigger */}
-                            <td>
-                              {item.status === 'PENDING' ? (
-                                <button
-                                  type="button"
-                                  className="neo-btn-table-action"
-                                  onClick={() => setReviewModalReport(item)}
-                                >
-                                  Review & Decide
-                                </button>
-                              ) : (
-                                <button
-                                  type="button"
-                                  className="neo-btn-table-action"
-                                  style={{
-                                    background: '#f1f5f9',
-                                    color: '#475569',
-                                    borderColor: '#cbd5e1',
-                                  }}
-                                  onClick={() => setReviewModalReport(item)}
-                                  title="Inspect submission record"
-                                >
-                                  Inspect
-                                </button>
-                              )}
-                            </td>
-                          </tr>
-                        )
-                      })
+                              {/* Status */}
+                              <td>
+                                <span className={`neo-status-pill ${item.status}`}>
+                                  {item.status}
+                                </span>
+                              </td>
+
+                              {/* Action Trigger */}
+                              <td>
+                                {item.status === 'PENDING' ? (
+                                  <button
+                                    type="button"
+                                    className="neo-btn-table-action"
+                                    onClick={() => setReviewModalReport(item)}
+                                  >
+                                    Review & Decide
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    className="neo-btn-table-action"
+                                    style={{
+                                      background: '#f1f5f9',
+                                      color: '#475569',
+                                      borderColor: '#cbd5e1',
+                                    }}
+                                    onClick={() => setReviewModalReport(item)}
+                                    title="Inspect submission record"
+                                  >
+                                    Inspect
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+                          )
+                        })
                       )}
                     </tbody>
                   </table>
@@ -1766,6 +1934,343 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                         className="neo-btn-page-nav"
                         disabled={auditPage >= auditTotalPages}
                         onClick={() => setAuditPage(auditTotalPages)}
+                        title="Last Page"
+                      >
+                        »
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </section>
+          )}
+
+          {/* ========================================================================= */}
+          {/* VIEW 4: VERIFIED INTELLIGENCE MANAGEMENT TAB                             */}
+          {/* ========================================================================= */}
+          {activeNav === 'INTELLIGENCE' && (
+            <section className="neo-view-content" aria-label="Verified Intelligence Management">
+              {/* Top 4 Stat Metric Cards */}
+              <div className="neo-intel-metrics-grid">
+                <div className="neo-intel-metric-card">
+                  <div className="neo-intel-metric-icon" style={{ background: '#e0f2fe', color: '#0369a1' }}>
+                    <ShieldCheck size={18} aria-hidden="true" />
+                  </div>
+                  <div>
+                    <span className="neo-intel-metric-label">Total Indicators</span>
+                    <strong className="neo-intel-metric-value">{intelTotal}</strong>
+                  </div>
+                </div>
+
+                <div className="neo-intel-metric-card">
+                  <div className="neo-intel-metric-icon" style={{ background: '#fee2e2', color: '#b91c1c' }}>
+                    <ShieldAlert size={18} aria-hidden="true" />
+                  </div>
+                  <div>
+                    <span className="neo-intel-metric-label">Confirmed Scams</span>
+                    <strong className="neo-intel-metric-value">
+                      {intelligenceList.filter((i) => i.risk_level === 'CONFIRMED_SCAM' && i.active).length}
+                    </strong>
+                  </div>
+                </div>
+
+                <div className="neo-intel-metric-card">
+                  <div className="neo-intel-metric-icon" style={{ background: '#dcfce7', color: '#15803d' }}>
+                    <CheckCircle2 size={18} aria-hidden="true" />
+                  </div>
+                  <div>
+                    <span className="neo-intel-metric-label">Verified Safe</span>
+                    <strong className="neo-intel-metric-value">
+                      {intelligenceList.filter((i) => i.risk_level === 'VERIFIED_SAFE' && i.active).length}
+                    </strong>
+                  </div>
+                </div>
+
+                <div className="neo-intel-metric-card">
+                  <div className="neo-intel-metric-icon" style={{ background: '#f1f5f9', color: '#64748b' }}>
+                    <Power size={18} aria-hidden="true" />
+                  </div>
+                  <div>
+                    <span className="neo-intel-metric-label">Retired Indicators</span>
+                    <strong className="neo-intel-metric-value">
+                      {intelligenceList.filter((i) => !i.active).length}
+                    </strong>
+                  </div>
+                </div>
+              </div>
+
+              {/* Intelligence Table Card */}
+              <div className="neo-card">
+                <div className="neo-card-header" style={{ flexWrap: 'wrap', gap: '12px' }}>
+                  <div>
+                    <h3 className="neo-card-title">Sanitized Threat Intelligence Feed</h3>
+                    <span className="neo-card-subtitle">
+                      Active cryptographic fingerprints and defanged indicators feeding public scanner reconciliation
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <button
+                      type="button"
+                      className="neo-btn-toolbar-action"
+                      onClick={() => void loadIntelligence(true)}
+                      disabled={isLoadingIntel}
+                      title="Refresh intelligence feed"
+                    >
+                      <RefreshCw size={13} className={isLoadingIntel ? 'neo-spin' : ''} aria-hidden="true" />
+                      <span>Refresh</span>
+                    </button>
+                  </div>
+                </div>
+
+                {intelError && (
+                  <div className="neo-login-error" style={{ margin: '16px 20px 0' }}>
+                    <AlertCircle size={15} aria-hidden="true" />
+                    <span>{intelError}</span>
+                  </div>
+                )}
+
+                {/* Filter / Search Toolbar */}
+                <div className="neo-intel-toolbar">
+                  <div className="neo-search-box">
+                    <Search size={14} className="neo-search-icon" aria-hidden="true" />
+                    <input
+                      type="text"
+                      value={intelSearchQuery}
+                      onChange={(e) => {
+                        setIntelSearchQuery(e.target.value)
+                        setIntelPage(1)
+                      }}
+                      placeholder="Search indicator, category, notes..."
+                      className="neo-input-search"
+                    />
+                  </div>
+
+                  <div className="neo-intel-filter-group">
+                    <select
+                      value={intelStatusFilter}
+                      onChange={(e) => {
+                        setIntelStatusFilter(e.target.value as 'active' | 'retired' | 'all')
+                        setIntelPage(1)
+                      }}
+                      className="neo-select-filter"
+                    >
+                      <option value="all">All Statuses</option>
+                      <option value="active">Active Only</option>
+                      <option value="retired">Retired Only</option>
+                    </select>
+
+                    <select
+                      value={intelTypeFilter}
+                      onChange={(e) => {
+                        setIntelTypeFilter(e.target.value as 'domain' | 'content_hash' | 'phone' | 'url' | 'all')
+                        setIntelPage(1)
+                      }}
+                      className="neo-select-filter"
+                    >
+                      <option value="all">All Indicator Types</option>
+                      <option value="domain">Domain</option>
+                      <option value="url">URL</option>
+                      <option value="content_hash">Content Hash</option>
+                      <option value="phone">Phone</option>
+                    </select>
+
+                    <select
+                      value={intelRiskFilter}
+                      onChange={(e) => {
+                        setIntelRiskFilter(e.target.value as 'CONFIRMED_SCAM' | 'VERIFIED_SAFE' | 'all')
+                        setIntelPage(1)
+                      }}
+                      className="neo-select-filter"
+                    >
+                      <option value="all">All Risk Levels</option>
+                      <option value="CONFIRMED_SCAM">Confirmed Scam</option>
+                      <option value="VERIFIED_SAFE">Verified Safe</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Table Container */}
+                <div className="neo-table-container">
+                  <table className="neo-table">
+                    <thead>
+                      <tr>
+                        <th>Defanged Indicator</th>
+                        <th>Type</th>
+                        <th>Risk Level</th>
+                        <th>Confidence</th>
+                        <th>Status</th>
+                        <th>Added</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {isLoadingIntel ? (
+                        <tr>
+                          <td colSpan={7} style={{ textAlign: 'center', padding: '40px' }}>
+                            <RefreshCw size={24} className="neo-spin" style={{ color: '#64748b' }} />
+                            <p style={{ margin: '8px 0 0', color: '#64748b', fontSize: '13px' }}>
+                              Loading verified threat intelligence...
+                            </p>
+                          </td>
+                        </tr>
+                      ) : intelligenceList.length === 0 ? (
+                        <tr>
+                          <td colSpan={7} style={{ textAlign: 'center', padding: '40px', color: '#64748b' }}>
+                            <ShieldCheck size={28} style={{ color: '#94a3b8', margin: '0 auto 8px', display: 'block' }} />
+                            <p style={{ margin: 0, fontWeight: 600 }}>No threat intelligence indicators found</p>
+                            <p style={{ margin: '4px 0 0', fontSize: '11.5px' }}>
+                              Approved reports will automatically appear here as sanitized intelligence indicators.
+                            </p>
+                          </td>
+                        </tr>
+                      ) : (
+                        intelligenceList.map((item) => {
+                          const isSafe = item.risk_level === 'VERIFIED_SAFE'
+                          return (
+                            <tr key={item.id} className={!item.active ? 'neo-row-retired' : ''}>
+                              <td>
+                                <div className="neo-indicator-cell">
+                                  {item.indicator_type === 'domain' || item.indicator_type === 'url' ? (
+                                    <Globe size={13} color="#64748b" aria-hidden="true" />
+                                  ) : item.indicator_type === 'phone' ? (
+                                    <Phone size={13} color="#64748b" aria-hidden="true" />
+                                  ) : (
+                                    <Hash size={13} color="#64748b" aria-hidden="true" />
+                                  )}
+                                  <span
+                                    className={`neo-indicator-badge ${isSafe ? 'safe' : ''} ${!item.active ? 'retired' : ''}`}
+                                    title={`Defanged: ${item.defanged_value}`}
+                                  >
+                                    {item.defanged_value}
+                                  </span>
+                                </div>
+                              </td>
+                              <td>
+                                <span className="neo-type-badge">
+                                  {item.indicator_type.toUpperCase()}
+                                </span>
+                              </td>
+                              <td>
+                                <span className={`neo-pill-badge ${isSafe ? 'false_positive' : 'suspicious'}`}>
+                                  {isSafe ? 'VERIFIED SAFE' : 'CONFIRMED SCAM'}
+                                </span>
+                              </td>
+                              <td>
+                                <div className="neo-confidence-wrapper">
+                                  <div
+                                    className="neo-confidence-bar"
+                                    style={{
+                                      width: `${Math.round(item.confidence * 100)}%`,
+                                      background: isSafe ? '#10b981' : '#ef4444',
+                                    }}
+                                  />
+                                  <span>{Math.round(item.confidence * 100)}%</span>
+                                </div>
+                              </td>
+                              <td>
+                                <span className={`neo-status-pill ${item.active ? 'APPROVED' : 'REJECTED'}`}>
+                                  {item.active ? 'ACTIVE' : 'RETIRED'}
+                                </span>
+                              </td>
+                              <td style={{ fontSize: '11px', color: '#64748b' }}>
+                                {formatRelativeTime(item.created_at)}
+                              </td>
+                              <td>
+                                {item.active ? (
+                                  <button
+                                    type="button"
+                                    className="neo-btn-retire-intel"
+                                    onClick={() => handleToggleIntelStatus(item, false)}
+                                    disabled={isUpdatingIntel}
+                                    title="Retire this indicator from active threat matching"
+                                  >
+                                    <Power size={12} aria-hidden="true" />
+                                    <span>Retire</span>
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    className="neo-btn-reactivate-intel"
+                                    onClick={() => handleToggleIntelStatus(item, true)}
+                                    disabled={isUpdatingIntel}
+                                    title="Reactivate this indicator in active threat matching"
+                                  >
+                                    <RefreshCw size={12} aria-hidden="true" />
+                                    <span>Reactivate</span>
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+                          )
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Pagination Controls */}
+                {intelTotal > 0 && (
+                  <div className="neo-pagination-bar">
+                    <div className="neo-pagination-info">
+                      <span>
+                        Showing <strong>{(intelPage - 1) * intelPageSize + 1}</strong> to{' '}
+                        <strong>{Math.min(intelPage * intelPageSize, intelTotal)}</strong> of{' '}
+                        <strong>{intelTotal}</strong> indicators
+                      </span>
+                      <div className="neo-page-size-selector">
+                        <label htmlFor="intel-page-size">Per page:</label>
+                        <select
+                          id="intel-page-size"
+                          value={intelPageSize}
+                          onChange={(e) => {
+                            setIntelPageSize(Number(e.target.value))
+                            setIntelPage(1)
+                          }}
+                        >
+                          <option value={10}>10</option>
+                          <option value={20}>20</option>
+                          <option value={50}>50</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="neo-pagination-actions">
+                      <button
+                        type="button"
+                        className="neo-btn-page-nav"
+                        disabled={intelPage <= 1}
+                        onClick={() => setIntelPage(1)}
+                        title="First Page"
+                      >
+                        «
+                      </button>
+                      <button
+                        type="button"
+                        className="neo-btn-page-nav"
+                        disabled={intelPage <= 1}
+                        onClick={() => setIntelPage((p) => Math.max(1, p - 1))}
+                        title="Previous Page"
+                      >
+                        ‹ Prev
+                      </button>
+
+                      {renderPaginationNumbers(intelPage, intelTotalPages, setIntelPage)}
+
+                      <button
+                        type="button"
+                        className="neo-btn-page-nav"
+                        disabled={intelPage >= intelTotalPages}
+                        onClick={() => setIntelPage((p) => Math.min(intelTotalPages, p + 1))}
+                        title="Next Page"
+                      >
+                        Next ›
+                      </button>
+                      <button
+                        type="button"
+                        className="neo-btn-page-nav"
+                        disabled={intelPage >= intelTotalPages}
+                        onClick={() => setIntelPage(intelTotalPages)}
                         title="Last Page"
                       >
                         »

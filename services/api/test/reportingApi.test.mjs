@@ -425,3 +425,75 @@ test('POST /api/moderation/seed-demo: populates demo fixtures when called by ver
   assert.ok(Array.isArray(body.seeded))
   assert.equal(body.count, 3)
 })
+
+test('GET & PATCH /api/moderation/settings: manages engine settings dynamically', async () => {
+  // 1. Blocks unauthorized
+  const unauthRes = await fetch(`http://localhost:${apiPort}/api/moderation/settings`)
+  assert.equal(unauthRes.status, 401)
+
+  // 2. GET settings with valid token
+  const getRes = await fetch(`http://localhost:${apiPort}/api/moderation/settings`, {
+    headers: { Authorization: `Bearer ${validModeratorToken}` },
+  })
+  assert.equal(getRes.status, 200)
+  const getBody = await getRes.json()
+  assert.equal(getBody.success, true)
+  assert.equal(typeof getBody.settings.enableVerifiedIntel, 'boolean')
+
+  // 3. PATCH settings to toggle off
+  const patchRes = await fetch(`http://localhost:${apiPort}/api/moderation/settings`, {
+    method: 'PATCH',
+    headers: {
+      'content-type': 'application/json',
+      Authorization: `Bearer ${validModeratorToken}`,
+    },
+    body: JSON.stringify({ enableVerifiedIntel: false }),
+  })
+  assert.equal(patchRes.status, 200)
+  const patchBody = await patchRes.json()
+  assert.equal(patchBody.settings.enableVerifiedIntel, false)
+
+  // 4. Restore setting to true
+  await fetch(`http://localhost:${apiPort}/api/moderation/settings`, {
+    method: 'PATCH',
+    headers: {
+      'content-type': 'application/json',
+      Authorization: `Bearer ${validModeratorToken}`,
+    },
+    body: JSON.stringify({ enableVerifiedIntel: true }),
+  })
+})
+
+test('GET & PATCH /api/moderation/intelligence: lists and toggles verified intelligence', async () => {
+  // 1. Blocks unauthorized
+  const unauthRes = await fetch(`http://localhost:${apiPort}/api/moderation/intelligence`)
+  assert.equal(unauthRes.status, 401)
+
+  // 2. GET intelligence with valid token
+  const getRes = await fetch(`http://localhost:${apiPort}/api/moderation/intelligence?status=all&page=1&limit=10`, {
+    headers: { Authorization: `Bearer ${validModeratorToken}` },
+  })
+  assert.equal(getRes.status, 200)
+  const getBody = await getRes.json()
+  assert.equal(getBody.success, true)
+  assert.ok(Array.isArray(getBody.intelligence))
+  assert.ok(getBody.total >= 0)
+
+  // 3. PATCH status if an item exists
+  if (getBody.intelligence.length > 0) {
+    const item = getBody.intelligence[0]
+    const patchRes = await fetch(`http://localhost:${apiPort}/api/moderation/intelligence/${item.id}`, {
+      method: 'PATCH',
+      headers: {
+        'content-type': 'application/json',
+        Authorization: `Bearer ${validModeratorToken}`,
+      },
+      body: JSON.stringify({ active: false, notes: 'Retired for test' }),
+    })
+    assert.equal(patchRes.status, 200)
+    const patchBody = await patchRes.json()
+    assert.equal(patchBody.success, true)
+    assert.equal(patchBody.updated.active, false)
+  }
+})
+

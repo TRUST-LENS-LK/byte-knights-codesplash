@@ -219,8 +219,7 @@ export function reconcileDecision(decision, verifiedFindings = []) {
     overlay.consensusRatio = 1.0
     overlay.consensusSummary = `${scamCount} Scam Report(s) (100% Threat Consensus)`
     trace.push(
-      `🔴 Confirmed Threat Intelligence: ${scamCount} report(s) verified as malicious by community moderators (Confidence: ${(scamConfidence * 100).toFixed(0)}%).`,
-      `Matched threat indicators have been cryptographically indexed in the TrustLens Sri Lanka threat register.`
+      `🔴 Confirmed Threat Intelligence: ${scamCount} report(s) verified as malicious by community moderators (Confidence: ${(scamConfidence * 100).toFixed(0)}%).`
     )
     applyScamEscalation(decision, overlay, trace, scamFindings)
 

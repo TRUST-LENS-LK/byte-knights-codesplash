@@ -255,9 +255,25 @@ export const verifiedIntelligenceSchema = z.object({
   createdAt: z.string(),
 });
 
+export const verifiedIntelligenceQuerySchema = z.object({
+  status: z.enum(["active", "retired", "all"]).default("all"),
+  type: z.enum(["domain", "content_hash", "phone", "url", "all"]).default("all"),
+  riskLevel: z.enum(["CONFIRMED_SCAM", "VERIFIED_SAFE", "all"]).default("all"),
+  search: z.string().optional(),
+  page: z.coerce.number().int().positive().default(1),
+  limit: z.coerce.number().int().positive().max(100).default(20),
+});
+
+export const updateIntelligenceStatusSchema = z.object({
+  active: z.boolean(),
+  notes: z.string().max(1000).optional().nullable(),
+});
+
 export type UserReportType = z.infer<typeof userReportTypeSchema>;
 export type UserReportStatus = z.infer<typeof userReportStatusSchema>;
 export type CreateUserReport = z.infer<typeof createUserReportSchema>;
 export type UserReport = z.infer<typeof userReportSchema>;
 export type ModerationAction = z.infer<typeof moderationActionSchema>;
 export type VerifiedIntelligence = z.infer<typeof verifiedIntelligenceSchema>;
+export type VerifiedIntelligenceQuery = z.infer<typeof verifiedIntelligenceQuerySchema>;
+export type UpdateIntelligenceStatus = z.infer<typeof updateIntelligenceStatusSchema>;

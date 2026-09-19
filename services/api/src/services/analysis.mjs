@@ -39,8 +39,49 @@ export function extractEntities(text) {
             endIndex: entity.endIndex,
             confidence: 0.98,
           })
+          existingDomainValues.add(hostname)
         }
       } catch { /* skip unparseable URLs */ }
+    }
+
+    // Also extract bare domains and defanged indicators (e.g. "scam.lk", "scam[.]lk", "ceb-online-pay.top")
+    const cleanText = text
+      .replace(/hxxps?:\/\//gi, 'https://')
+      .replace(/\[\.\]/g, '.')
+      .replace(/\[+\]+/g, '.')
+
+    for (const match of cleanText.matchAll(/(?:^|[\s,;()\[\]<>])([a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z]{2,})+)(?=[)\]>.,;:!?\s]|$)/gm)) {
+      const domain = match[1].toLowerCase()
+      if (!existingDomainValues.has(domain) && !cleanText.includes(`@${domain}`)) {
+        const startIndex = match.index + match[0].indexOf(match[1])
+        const endIndex = startIndex + domain.length
+        domainEntities.push({
+          type: 'domain',
+          value: domain,
+          normalizedValue: domain,
+          sourceSpan: match[1],
+          startIndex,
+          endIndex,
+          confidence: 0.95,
+        })
+        existingDomainValues.add(domain)
+      }
+    }
+
+    const trimmed = cleanText.trim().toLowerCase()
+    if (/^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z]{2,})+$/i.test(trimmed)) {
+      if (!existingDomainValues.has(trimmed)) {
+        domainEntities.push({
+          type: 'domain',
+          value: trimmed,
+          normalizedValue: trimmed,
+          sourceSpan: text.trim(),
+          startIndex: 0,
+          endIndex: text.trim().length,
+          confidence: 0.98,
+        })
+        existingDomainValues.add(trimmed)
+      }
     }
     const all = [...raw, ...domainEntities]
     // Deduplicate by type + value.

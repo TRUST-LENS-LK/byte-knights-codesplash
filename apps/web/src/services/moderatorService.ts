@@ -309,3 +309,146 @@ export async function seedDemoReports(
     }
   }
 }
+
+export interface EngineSettings {
+  enableVerifiedIntel: boolean
+  lastUpdated?: string
+  updatedBy?: string
+}
+
+export async function fetchEngineSettings(
+  token: string
+): Promise<{ success: boolean; settings?: EngineSettings; error?: string }> {
+  try {
+    const res = await fetch(`${API_BASE}/api/moderation/settings`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+    const data = await res.json()
+    if (!res.ok) {
+      return { success: false, error: data.message || `Failed to fetch engine settings (${res.status})` }
+    }
+    return { success: true, settings: data.settings }
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : 'Network error' }
+  }
+}
+
+export async function updateEngineSettings(
+  token: string,
+  settings: { enableVerifiedIntel: boolean }
+): Promise<{ success: boolean; settings?: EngineSettings; error?: string }> {
+  try {
+    const res = await fetch(`${API_BASE}/api/moderation/settings`, {
+      method: 'PATCH',
+      headers: {
+        'content-type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(settings),
+    })
+    const data = await res.json()
+    if (!res.ok) {
+      return { success: false, error: data.message || `Failed to update engine settings (${res.status})` }
+    }
+    return { success: true, settings: data.settings }
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : 'Network error' }
+  }
+}
+
+export interface VerifiedIntelligenceItem {
+  id: string
+  source_report_id: string | null
+  indicator_type: 'domain' | 'content_hash' | 'phone' | 'url'
+  indicator_value: string
+  defanged_value: string
+  risk_level: 'CONFIRMED_SCAM' | 'VERIFIED_SAFE'
+  category: string | null
+  confidence: number
+  notes: string | null
+  active: boolean
+  created_at: string
+  updated_at?: string
+}
+
+export interface VerifiedIntelligenceResponse {
+  success: boolean
+  intelligence?: VerifiedIntelligenceItem[]
+  total?: number
+  page?: number
+  limit?: number
+  totalPages?: number
+  error?: string
+}
+
+export async function fetchVerifiedIntelligence(
+  token: string,
+  options: {
+    status?: 'active' | 'retired' | 'all'
+    type?: 'domain' | 'content_hash' | 'phone' | 'url' | 'all'
+    riskLevel?: 'CONFIRMED_SCAM' | 'VERIFIED_SAFE' | 'all'
+    search?: string
+    page?: number
+    limit?: number
+  } = {}
+): Promise<VerifiedIntelligenceResponse> {
+  const { status = 'all', type = 'all', riskLevel = 'all', search = '', page = 1, limit = 20 } = options
+  const queryParams = new URLSearchParams()
+  if (status) queryParams.set('status', status)
+  if (type) queryParams.set('type', type)
+  if (riskLevel) queryParams.set('riskLevel', riskLevel)
+  if (search.trim()) queryParams.set('search', search.trim())
+  queryParams.set('page', String(page))
+  queryParams.set('limit', String(limit))
+
+  try {
+    const res = await fetch(`${API_BASE}/api/moderation/intelligence?${queryParams.toString()}`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+    const data = await res.json()
+    if (!res.ok) {
+      return { success: false, error: data.message || `Failed to fetch intelligence (${res.status})` }
+    }
+    return {
+      success: true,
+      intelligence: data.intelligence || [],
+      total: data.total || 0,
+      page: data.page || 1,
+      limit: data.limit || 20,
+      totalPages: data.totalPages || 1,
+    }
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : 'Network error' }
+  }
+}
+
+export async function toggleIntelligenceStatus(
+  token: string,
+  id: string,
+  active: boolean,
+  notes?: string
+): Promise<{ success: boolean; updated?: VerifiedIntelligenceItem; error?: string }> {
+  try {
+    const res = await fetch(`${API_BASE}/api/moderation/intelligence/${id}`, {
+      method: 'PATCH',
+      headers: {
+        'content-type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ active, notes }),
+    })
+    const data = await res.json()
+    if (!res.ok) {
+      return { success: false, error: data.message || `Failed to update status (${res.status})` }
+    }
+    return { success: true, updated: data.updated }
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : 'Network error' }
+  }
+}
+
+
