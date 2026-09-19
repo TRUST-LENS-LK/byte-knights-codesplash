@@ -19,3 +19,17 @@ export function isDirectoryEntryStale(record: StalenessInput, now: Date = new Da
   if (Number.isNaN(reviewDate.getTime())) return false
   return reviewDate.getTime() < now.getTime()
 }
+
+/**
+ * True when a submitted domain is exactly the official domain, or a
+ * subdomain of it, for example "online.boc.lk" matches an official domain of
+ * "boc.lk", but "notboc.lk" does not. Comparison is case-insensitive; both
+ * values are normalized defensively even though callers should already be
+ * passing lowercased, trimmed strings.
+ */
+export function matchesOfficialDomain(submittedDomain: string, officialDomain: string): boolean {
+  const submitted = submittedDomain.trim().toLowerCase()
+  const official = officialDomain.trim().toLowerCase()
+  if (!submitted || !official) return false
+  return submitted === official || submitted.endsWith(`.${official}`)
+}

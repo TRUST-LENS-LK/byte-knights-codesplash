@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isDirectoryEntryStale } from './index'
+import { isDirectoryEntryStale, matchesOfficialDomain } from './index'
 
 const FIXED_NOW = new Date('2026-09-19T00:00:00Z')
 
@@ -30,5 +30,29 @@ describe('isDirectoryEntryStale', () => {
 
   it('treats an unparseable review date as not stale rather than throwing', () => {
     expect(isDirectoryEntryStale({ status: 'ACTIVE', nextReviewDate: 'not-a-date' }, FIXED_NOW)).toBe(false)
+  })
+})
+
+describe('matchesOfficialDomain', () => {
+  it('matches an exact domain', () => {
+    expect(matchesOfficialDomain('boc.lk', 'boc.lk')).toBe(true)
+  })
+
+  it('matches a subdomain of the official domain', () => {
+    expect(matchesOfficialDomain('online.boc.lk', 'boc.lk')).toBe(true)
+  })
+
+  it('does not match a lookalike domain that merely contains the official domain as a substring', () => {
+    expect(matchesOfficialDomain('notboc.lk', 'boc.lk')).toBe(false)
+    expect(matchesOfficialDomain('boc.lk.evil.com', 'boc.lk')).toBe(false)
+  })
+
+  it('is case-insensitive', () => {
+    expect(matchesOfficialDomain('Online.BOC.LK', 'boc.lk')).toBe(true)
+  })
+
+  it('rejects empty inputs', () => {
+    expect(matchesOfficialDomain('', 'boc.lk')).toBe(false)
+    expect(matchesOfficialDomain('boc.lk', '')).toBe(false)
   })
 })

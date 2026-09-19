@@ -7,6 +7,7 @@ import { analyze, applyScannerRisk, extractEntities, validateSubmission } from '
 import { persistIfConsented } from './services/persistence.mjs'
 import { consumeRateLimit } from './services/rateLimit.mjs'
 import { verifyApprovedDomains } from './services/domainVerification.mjs'
+import { listDomainDirectory, lookupDomainDirectory } from './services/domainDirectory.mjs'
 import { inspectScannerUrl, scannerFindings } from './services/urlSafety.mjs'
 import {
   checkVerifiedIntelligence,
@@ -37,6 +38,36 @@ const server = createServer(async (req, res) => {
   if (req.method === 'GET' && pathname === '/openapi.json') {
     res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' })
     return res.end(JSON.stringify(getOpenApiSpec(), null, 2))
+  }
+
+  // Domain Directory (Public GET) — matches the RLS policy, which already
+  // lets anon/authenticated callers read active organizations directly, so
+  // this endpoint requires no auth. It exists so the frontend and other
+  // members can get a validated, camelCase response instead of talking to
+  // Supabase's REST API directly.
+  if (req.method === 'GET' && pathname === '/api/domain-directory') {
+    try {
+      const category = parsedUrl.searchParams.get('category') || undefined
+      const includeStale = parsedUrl.searchParams.get('includeStale') === 'true'
+      const entries = await listDomainDirectory({ category, includeStale })
+      return send(res, 200, { entries, count: entries.length, requestId }, requestId)
+    } catch (error) {
+      return send(res, 502, { code: 'DIRECTORY_FETCH_ERROR', message: error.message, requestId }, requestId)
+    }
+  }
+
+  // Domain Directory Lookup (Public GET)
+  if (req.method === 'GET' && pathname === '/api/domain-directory/lookup') {
+    const domain = parsedUrl.searchParams.get('domain')
+    if (!domain || !domain.trim()) {
+      return send(res, 400, { code: 'INVALID_SUBMISSION', message: 'domain query parameter is required.', requestId }, requestId)
+    }
+    try {
+      const result = await lookupDomainDirectory(domain)
+      return send(res, 200, { ...result, submittedDomain: domain.trim().toLowerCase(), requestId }, requestId)
+    } catch (error) {
+      return send(res, 502, { code: 'DIRECTORY_LOOKUP_ERROR', message: error.message, requestId }, requestId)
+    }
   }
 
   // Moderation Stats & High-Level Aggregations (Protected GET)
