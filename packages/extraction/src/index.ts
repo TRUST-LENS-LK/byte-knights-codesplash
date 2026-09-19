@@ -1,8 +1,8 @@
-import { extractedEntitySchema, type ExtractedEntity } from '../../../packages/contracts/src/index'
-import { extractUrls } from './extractors/urlExtractor'
-import { extractPhones } from './extractors/phoneExtractor'
-import { extractAmounts } from './extractors/amountExtractor'
-import { extractOrganizations } from './extractors/organizationExtractor'
+import { extractedEntitySchema, type ExtractedEntity } from '@trustlens/contracts'
+import { extractUrls } from './extractors/urlExtractor.js'
+import { extractPhones } from './extractors/phoneExtractor.js'
+import { extractAmounts } from './extractors/amountExtractor.js'
+import { extractOrganizations } from './extractors/organizationExtractor.js'
 
 // ---------------------------------------------------------------------------
 // Email extractor (inline — simple enough to not need its own module)

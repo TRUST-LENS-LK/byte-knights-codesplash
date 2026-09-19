@@ -1,4 +1,4 @@
-import { createUserReportSchema } from '../../../../packages/contracts/src'
+import { createUserReportSchema } from '@trustlens/contracts'
 
 export type ReportType = 'suspicious' | 'false_positive' | 'false_negative'
 

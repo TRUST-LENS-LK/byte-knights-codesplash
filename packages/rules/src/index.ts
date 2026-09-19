@@ -1,8 +1,8 @@
-import { type RiskDecision } from '../../../packages/contracts/src/index'
-import { detectUrgency } from './detectors/urgencyDetector'
-import { detectAdvancePayment } from './detectors/paymentDetector'
-import { detectCredentialRequest } from './detectors/credentialDetector'
-import { detectJobScam } from './detectors/jobScamDetector'
+import { type RiskDecision } from '@trustlens/contracts'
+import { detectUrgency } from './detectors/urgencyDetector.js'
+import { detectAdvancePayment } from './detectors/paymentDetector.js'
+import { detectCredentialRequest } from './detectors/credentialDetector.js'
+import { detectJobScam } from './detectors/jobScamDetector.js'
 
 // ---------------------------------------------------------------------------
 // Policy version — increment when rule logic changes significantly

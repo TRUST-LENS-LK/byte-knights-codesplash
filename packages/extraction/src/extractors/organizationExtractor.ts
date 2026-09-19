@@ -1,4 +1,4 @@
-import { type ExtractedEntity } from '../../../../packages/contracts/src/index'
+import { type ExtractedEntity } from '@trustlens/contracts'
 
 /**
  * Organization name extraction strategy:

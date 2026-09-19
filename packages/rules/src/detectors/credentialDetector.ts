@@ -1,4 +1,4 @@
-import { findingSchema, type Finding } from '../../../../packages/contracts/src/index'
+import { findingSchema, type Finding } from '@trustlens/contracts'
 
 /**
  * CREDENTIAL REQUEST DETECTOR

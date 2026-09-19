@@ -1,6 +1,6 @@
-import { extractEntities } from '../../../../packages/extraction/src'
-import { analyzeMessage } from '../../../../packages/rules/src'
-import type { ExtractedEntity, RiskDecision } from '../../../../packages/contracts/src'
+import { extractEntities } from '@trustlens/extraction'
+import { analyzeMessage } from '@trustlens/rules'
+import type { ExtractedEntity, RiskDecision } from '@trustlens/contracts'
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8787'
 

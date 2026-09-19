@@ -1,4 +1,4 @@
-import { type ExtractedEntity } from '../../../../packages/contracts/src/index'
+import { type ExtractedEntity } from '@trustlens/contracts'
 
 /**
  * Matches both standard and defanged URLs.

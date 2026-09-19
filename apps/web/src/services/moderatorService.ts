@@ -1,4 +1,4 @@
-import { moderationActionSchema } from '../../../../packages/contracts/src'
+import { moderationActionSchema } from '@trustlens/contracts'
 
 export interface ModeratorUser {
   id: string
