@@ -176,6 +176,41 @@ export function getOpenApiSpec() {
             requestId: { type: 'string', format: 'uuid' },
           },
         },
+        OfficialDomainRecord: {
+          type: 'object',
+          required: ['name', 'officialDomain', 'status', 'active'],
+          properties: {
+            id: { type: 'integer', nullable: true, example: 3 },
+            name: { type: 'string', example: 'Bank of Ceylon' },
+            officialDomain: { type: 'string', example: 'boc.lk' },
+            category: { type: 'string', nullable: true, example: 'Banking' },
+            sourceUrl: { type: 'string', format: 'uri', nullable: true, example: 'https://www.boc.lk' },
+            reviewer: { type: 'string', nullable: true, example: 'Isuru Adikaram' },
+            verifiedAt: { type: 'string', format: 'date-time', nullable: true },
+            nextReviewDate: { type: 'string', format: 'date', nullable: true, example: '2026-12-18' },
+            status: { type: 'string', enum: ['ACTIVE', 'STALE', 'RETIRED'] },
+            active: { type: 'boolean' },
+          },
+        },
+        DomainDirectoryListResponse: {
+          type: 'object',
+          required: ['entries', 'count', 'requestId'],
+          properties: {
+            entries: { type: 'array', items: { $ref: '#/components/schemas/OfficialDomainRecord' } },
+            count: { type: 'integer', example: 13 },
+            requestId: { type: 'string', format: 'uuid' },
+          },
+        },
+        DomainDirectoryLookupResponse: {
+          type: 'object',
+          required: ['outcome', 'matchedRecord', 'submittedDomain', 'requestId'],
+          properties: {
+            outcome: { type: 'string', enum: ['MATCHED', 'STALE', 'UNKNOWN'], description: 'MISMATCH is only produced by /api/analyze, which also compares a claimed organization; a plain domain lookup cannot detect impersonation on its own.' },
+            matchedRecord: { allOf: [{ $ref: '#/components/schemas/OfficialDomainRecord' }], nullable: true },
+            submittedDomain: { type: 'string', example: 'online.boc.lk' },
+            requestId: { type: 'string', format: 'uuid' },
+          },
+        },
       },
     },
 
@@ -304,6 +339,67 @@ export function getOpenApiSpec() {
             },
             503: {
               description: 'Reporting storage unavailable',
+              content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } },
+            },
+          },
+        },
+      },
+      '/api/domain-directory': {
+        get: {
+          summary: 'List official domain directory entries',
+          description: 'Returns reviewed organizations from the official domain directory. Requires no auth: matches the RLS policy that already lets anon/authenticated callers read active organizations directly from Supabase.',
+          parameters: [
+            {
+              name: 'category',
+              in: 'query',
+              required: false,
+              schema: { type: 'string', example: 'Banking' },
+              description: 'Filter entries to one category',
+            },
+            {
+              name: 'includeStale',
+              in: 'query',
+              required: false,
+              schema: { type: 'string', enum: ['true', 'false'], default: 'false' },
+              description: 'Include entries past their review date (excluded by default, since they cannot contribute positive evidence)',
+            },
+          ],
+          responses: {
+            200: {
+              description: 'Directory entries',
+              content: { 'application/json': { schema: { $ref: '#/components/schemas/DomainDirectoryListResponse' } } },
+            },
+            502: {
+              description: 'Directory fetch failed',
+              content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } },
+            },
+          },
+        },
+      },
+      '/api/domain-directory/lookup': {
+        get: {
+          summary: 'Look up one domain against the official directory',
+          description: 'Checks whether a submitted domain matches a reviewed organization. UNKNOWN means not verified, never fraudulent; STALE means a match exists but its review date has passed.',
+          parameters: [
+            {
+              name: 'domain',
+              in: 'query',
+              required: true,
+              schema: { type: 'string', example: 'online.boc.lk' },
+              description: 'The domain to check, an exact match or a subdomain of a directory entry both match',
+            },
+          ],
+          responses: {
+            200: {
+              description: 'Lookup result',
+              content: { 'application/json': { schema: { $ref: '#/components/schemas/DomainDirectoryLookupResponse' } } },
+            },
+            400: {
+              description: 'Missing domain query parameter',
+              content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } },
+            },
+            502: {
+              description: 'Directory lookup failed',
               content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } },
             },
           },
