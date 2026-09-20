@@ -384,7 +384,14 @@ const server = createServer(async (req, res) => {
       const scanPromises = urlEntities.map(async (urlEntity) => {
         const scanRes = await fetch(`${process.env.SCANNER_URL}/scan`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            // Matches the optional shared-secret check in the scanner
+            // service. Sending an empty string when unset is harmless: the
+            // scanner only enforces the header when it has its own secret
+            // configured.
+            'x-scanner-secret': process.env.SCANNER_SHARED_SECRET || '',
+          },
           body: JSON.stringify({ url: urlEntity.value }),
           signal: AbortSignal.timeout(10000)
         })
