@@ -169,7 +169,9 @@ function App() {
   return (
     <main className="app-shell">
       <nav className="nav">
-        <span className="brand-mark">TL</span>
+        <span className="brand-mark" style={{ cursor: 'pointer' }} onClick={handleBackToScanner} title="TrustLens LK">
+          <img src="/TrustLens_Icon.png" alt="TrustLens LK" />
+        </span>
         <span className="brand" style={{ cursor: 'pointer' }} onClick={handleBackToScanner}>TrustLens <em>LK</em></span>
         <span className="nav-note">Scam decision support</span>
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -477,7 +479,13 @@ function App() {
           reportedDomain={detectedDomain}
         />
       </>
-      <footer><span>TrustLens LK</span><span>Rules and verified checks guide the recommendation.</span></footer>
+      <footer>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+          <img src="/TrustLens_Icon.png" alt="" style={{ width: '18px', height: '18px', objectFit: 'contain' }} />
+          <span>TrustLens LK</span>
+        </span>
+        <span>Rules and verified checks guide the recommendation.</span>
+      </footer>
     </main>
   )
 }

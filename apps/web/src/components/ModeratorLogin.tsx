@@ -45,11 +45,8 @@ export const ModeratorLogin: React.FC<ModeratorLoginProps> = ({
     <div className="neo-login-viewport">
       <div className="neo-login-container">
         <div className="neo-login-card">
-          {/* Top Bar: Segmented Pill Indicator & Circular Back Button */}
-          <div className="neo-login-top-bar">
-            <div className="neo-login-segmented-pill">
-              <span className="neo-pill-badge active">TrustLens LK</span>
-            </div>
+          {/* Top Bar: Circular Back Button only */}
+          <div className="neo-login-top-bar" style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '8px' }}>
             <button
               type="button"
               className="neo-login-close-btn"
@@ -61,9 +58,27 @@ export const ModeratorLogin: React.FC<ModeratorLoginProps> = ({
             </button>
           </div>
 
-          {/* Header & Typography */}
-          <div className="neo-login-header">
-            <h1 className="neo-login-title">Sign In to Moderator Deck</h1>
+          {/* Header & Brand: Bigger Logo + Prominent TrustLensLK */}
+          <div className="neo-login-header" style={{ textAlign: 'center', marginBottom: '24px' }}>
+            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '12px' }}>
+              <img
+                src="/TrustLens_Icon.png"
+                alt="TrustLens LK"
+                style={{
+                  width: '92px',
+                  height: 'auto',
+                  maxHeight: '74px',
+                  objectFit: 'contain',
+                  filter: 'drop-shadow(0 6px 16px rgba(7, 94, 206, 0.18))',
+                }}
+              />
+            </div>
+            <div style={{ fontSize: '28px', fontWeight: '800', letterSpacing: '-0.03em', color: '#0F172A', lineHeight: '1.2', marginBottom: '6px' }}>
+              TrustLens<span style={{ color: '#0066FF' }}>LK</span>
+            </div>
+            <h1 className="neo-login-title" style={{ fontSize: '15px', fontWeight: '600', color: '#64748B', margin: '0' }}>
+              Sign In to Moderator Deck
+            </h1>
           </div>
 
           {/* Error Message */}

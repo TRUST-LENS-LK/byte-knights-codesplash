@@ -1122,7 +1122,9 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
         <aside className={`neo-sidebar ${isSidebarCollapsed ? 'collapsed' : ''}`}>
           <div>
             <div className="neo-brand-header">
-              <div className="neo-brand-mark" title="TrustLens LK">TL</div>
+              <div className="neo-brand-mark" title="TrustLens LK">
+                <img src="/TrustLens_Icon.png" alt="TrustLens LK" />
+              </div>
               {!isSidebarCollapsed && (
                 <div className="neo-brand-title">
                   TrustLens<span>LK</span>
