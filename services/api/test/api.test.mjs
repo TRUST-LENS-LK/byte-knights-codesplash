@@ -230,6 +230,11 @@ test('consented reports persist a hash and pending status', async () => {
     let raw = ''
     for await (const chunk of req) raw += chunk
     requests.push({ method: req.method, url: req.url, headers: req.headers, body: raw ? JSON.parse(raw) : null })
+    if (req.method === 'GET') {
+      res.writeHead(200, { 'content-type': 'application/json' })
+      res.end(JSON.stringify([]))
+      return
+    }
     res.writeHead(201, { 'content-type': 'application/json' })
     res.end(JSON.stringify([{ id: 'report-test-id' }]))
   })
@@ -242,12 +247,14 @@ test('consented reports persist a hash and pending status', async () => {
     assert.equal(response.status, 201)
     assert.equal(body.reportId, 'report-test-id')
     assert.equal(body.status, 'PENDING')
-    assert.equal(requests[0].url, '/rest/v1/user_reports')
-    assert.equal(requests[0].headers.apikey, 'test-service-key')
-    assert.equal(requests[0].body.report_type, 'suspicious')
-    assert.equal(requests[0].body.reported_domain, 'example.com')
-    assert.equal(requests[0].body.status, 'PENDING')
-    assert.match(requests[0].body.content_sha256, /^[a-f0-9]{64}$/)
+    const postReq = requests.find((r) => r.method === 'POST')
+    assert.ok(postReq, 'Expected a POST request to persist report')
+    assert.equal(postReq.url, '/rest/v1/user_reports')
+    assert.equal(postReq.headers.apikey, 'test-service-key')
+    assert.equal(postReq.body.report_type, 'suspicious')
+    assert.equal(postReq.body.reported_domain, 'example.com')
+    assert.equal(postReq.body.status, 'PENDING')
+    assert.match(postReq.body.content_sha256, /^[a-f0-9]{64}$/)
   } finally {
     reportChild.kill()
     await new Promise((resolve) => supabase.close(resolve))

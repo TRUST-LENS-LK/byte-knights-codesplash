@@ -85,6 +85,14 @@ test.before(async () => {
       if (statusMatch && statusMatch[1] !== 'ALL') {
         allItems = allItems.filter((r) => r.status === statusMatch[1])
       }
+      const hashMatch = req.url.match(/content_sha256=eq\.([a-f0-9]+)/i)
+      if (hashMatch) {
+        allItems = allItems.filter((r) => r.content_sha256 === hashMatch[1].toLowerCase())
+      }
+      const typeMatch = req.url.match(/report_type=eq\.([a-z_]+)/i)
+      if (typeMatch) {
+        allItems = allItems.filter((r) => r.report_type === typeMatch[1])
+      }
 
       const total = allItems.length
       const limitMatch = req.url.match(/limit=(\d+)/)
@@ -207,6 +215,46 @@ test('POST /api/reports: successfully creates a user report with PENDING status'
   assert.equal(body.report.report_type, 'suspicious')
   assert.equal(body.report.reported_domain, 'phishing-srilanka-portal.xyz')
   assert.match(body.report.id, /^[0-9a-f-]{36}$/)
+})
+
+test('POST /api/reports: coalesces duplicate pending report within cooldown window instead of creating duplicate rows', async () => {
+  const hash = 'a1'.repeat(32)
+  const payload1 = {
+    reportType: 'suspicious',
+    contentSha256: hash,
+    reportedDomain: 'duplicate-check.lk',
+    notes: 'Initial citizen report about suspicious message.',
+  }
+
+  // 1. First submission creates the report
+  const res1 = await fetch(`http://localhost:${apiPort}/api/reports`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload1),
+  })
+  assert.equal(res1.status, 201)
+  const body1 = await res1.json()
+  assert.ok(body1.report?.id)
+  const initialId = body1.report.id
+
+  // 2. Second submission with the same hash within 15 minutes coalesces
+  const payload2 = {
+    reportType: 'suspicious',
+    contentSha256: hash,
+    reportedDomain: 'duplicate-check.lk',
+    notes: 'Second user reporting the same scam message.',
+  }
+  const res2 = await fetch(`http://localhost:${apiPort}/api/reports`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload2),
+  })
+  assert.equal(res2.status, 201)
+  const body2 = await res2.json()
+  assert.equal(body2.report.id, initialId, 'Should return the same existing report ID')
+  assert.equal(body2.report.coalesced, true, 'Should indicate report was coalesced')
+  assert.equal(body2.report.submission_count, 2, 'Should increment submission count to 2')
+  assert.match(body2.report.notes, /Corroborated Submissions:\s*2/)
 })
 
 test('GET /api/moderation/queue: blocks requests without token', async () => {

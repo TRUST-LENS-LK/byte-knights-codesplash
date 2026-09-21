@@ -362,7 +362,107 @@ export function validateModerationAction(body) {
   return null
 }
 
+export const DEDUPLICATION_WINDOW_MS = 15 * 60 * 1000 // 15-minute coalescing cooldown window
+
+/**
+ * Looks up an existing pending report submitted within the cooldown window with matching hash and type.
+ */
+export async function findDuplicatePendingReport(contentSha256, reportType, reportedDomain = null) {
+  const cutoff = new Date(Date.now() - DEDUPLICATION_WINDOW_MS).toISOString()
+
+  if (isSupabaseConfigured()) {
+    try {
+      const url = `${SUPABASE_URL}/rest/v1/user_reports?status=eq.PENDING&report_type=eq.${encodeURIComponent(reportType)}&content_sha256=eq.${encodeURIComponent(contentSha256)}&created_at=gte.${encodeURIComponent(cutoff)}&order=created_at.desc&limit=1`
+      const res = await fetch(url, {
+        headers: getHeaders(),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      })
+      if (res.ok) {
+        const items = await res.json()
+        if (items.length > 0) return items[0]
+      }
+    } catch {
+      // Fall through to in-memory check
+    }
+  }
+
+  const cutoffMs = Date.now() - DEDUPLICATION_WINDOW_MS
+  for (const report of inMemoryReports.values()) {
+    if (
+      report.status === 'PENDING' &&
+      report.report_type === reportType &&
+      report.content_sha256 === contentSha256 &&
+      new Date(report.created_at).getTime() >= cutoffMs
+    ) {
+      return report
+    }
+  }
+
+  return null
+}
+
 export async function submitReport(payload) {
+  const contentSha256 = payload.contentSha256.toLowerCase()
+  const reportType = payload.reportType
+  const reportedDomain = payload.reportedDomain?.trim().toLowerCase() || null
+
+  // ── Ingestion Deduplication (15-Minute Cooldown Window) ────────────
+  const existingPending = await findDuplicatePendingReport(contentSha256, reportType, reportedDomain)
+
+  if (existingPending) {
+    const countMatch = existingPending.notes?.match(/\[Corroborated Submissions:\s*(\d+)\]/i)
+    const currentCount = countMatch ? parseInt(countMatch[1], 10) : 1
+    const newCount = currentCount + 1
+
+    let updatedNotes = existingPending.notes || ''
+    if (countMatch) {
+      updatedNotes = updatedNotes.replace(/\[Corroborated Submissions:\s*\d+\]/i, `[Corroborated Submissions: ${newCount}]`)
+    } else {
+      updatedNotes = `[Corroborated Submissions: ${newCount}]\n${updatedNotes}`.trim()
+    }
+
+    const newContext = payload.notes?.trim()
+    if (newContext && !updatedNotes.includes(newContext)) {
+      const addition = `\n[Additional Context]: ${newContext}`
+      if ((updatedNotes + addition).length <= 2000) {
+        updatedNotes += addition
+      }
+    }
+
+    if (isSupabaseConfigured()) {
+      try {
+        const patchRes = await fetch(`${SUPABASE_URL}/rest/v1/user_reports?id=eq.${encodeURIComponent(existingPending.id)}`, {
+          method: 'PATCH',
+          headers: getHeaders(),
+          body: JSON.stringify({ notes: updatedNotes }),
+          signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        })
+        if (patchRes.ok) {
+          return {
+            ...existingPending,
+            notes: updatedNotes,
+            coalesced: true,
+            submission_count: newCount,
+          }
+        }
+      } catch {
+        // Fall back to in-memory update
+      }
+    }
+
+    existingPending.notes = updatedNotes
+    existingPending.submission_count = newCount
+    existingPending.coalesced = true
+    inMemoryReports.set(existingPending.id, existingPending)
+    return {
+      ...existingPending,
+      notes: updatedNotes,
+      coalesced: true,
+      submission_count: newCount,
+    }
+  }
+
+  // ── No Duplicate Found: Create New Pending Report ─────────────────
   let finalNotes = payload.notes?.trim() || null
   if (payload.rawExcerpt && (!finalNotes || !finalNotes.includes(payload.rawExcerpt))) {
     finalNotes = `[Reported Message Excerpt]: "${payload.rawExcerpt}"${finalNotes ? `\n\n[Submitter Context]: ${finalNotes}` : ''}`
@@ -370,9 +470,9 @@ export async function submitReport(payload) {
 
   const report = {
     id: randomUUID(),
-    report_type: payload.reportType,
-    content_sha256: payload.contentSha256.toLowerCase(),
-    reported_domain: payload.reportedDomain?.trim().toLowerCase() || null,
+    report_type: reportType,
+    content_sha256: contentSha256,
+    reported_domain: reportedDomain,
     notes: finalNotes,
     status: 'PENDING',
     created_at: new Date().toISOString(),
