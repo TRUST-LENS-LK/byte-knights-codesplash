@@ -8,6 +8,7 @@ import { persistIfConsented, purgeExpiredSubmissions } from './services/persiste
 import { consumeRateLimit } from './services/rateLimit.mjs'
 import { applyDomainMismatchRisk, checkClaimedOrganizationDomain, verifyApprovedDomains } from './services/domainVerification.mjs'
 import { checkGlobalDomainTrust } from './services/globalDomains.mjs'
+import { checkDomainAge } from './services/domainAge.mjs'
 import { listDomainDirectory, lookupDomainDirectory } from './services/domainDirectory.mjs'
 import { inspectScannerUrl, scannerFindings } from './services/urlSafety.mjs'
 import {
@@ -443,6 +444,20 @@ const server = createServer(async (req, res) => {
     if (organizationDomainCheck.findings.length) decision.findings.push(...organizationDomainCheck.findings)
     if (organizationDomainCheck.limitations.length) decision.limitations.push(...organizationDomainCheck.limitations)
     applyDomainMismatchRisk(decision)
+
+    // Tier 5 (domain age): the slowest tier, since it makes live external
+    // network calls (RDAP, then CT-log fallbacks). Only worth running when
+    // the domain is not already resolved by a faster, cheaper tier: skip it
+    // when Tier 1 already confirmed the domain (age adds nothing useful to
+    // a known-good match) or when a mismatch was already found (the verdict
+    // is already HIGH/STOP_AND_AVOID; waiting on slow external calls for
+    // evidence that cannot change that outcome would only hurt latency).
+    const alreadyResolved = approvedDomainFindings.length > 0 || organizationDomainCheck.findings.some((f) => f.canonicalSignal === 'domain_mismatch')
+    if (!alreadyResolved) {
+      const domainAgeCheck = await checkDomainAge(entities).catch(() => ({ findings: [], limitations: [] }))
+      if (domainAgeCheck.findings.length) decision.findings.push(...domainAgeCheck.findings)
+      if (domainAgeCheck.limitations.length) decision.limitations.push(...domainAgeCheck.limitations)
+    }
 
     // ── Intelligence Reconciliation Engine ─────────────────────────────
     let verifiedFindings = []
