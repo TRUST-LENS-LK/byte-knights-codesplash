@@ -7475,6 +7475,91 @@
   transform: translateY(-0.5px);
 }
 
+/* Keep the login surface liquid-glass after the dashboard style definitions. */
+.neo-login-viewport::before,
+.neo-login-viewport::after {
+  content: '';
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.neo-login-viewport::before {
+  width: 520px;
+  height: 520px;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: radial-gradient(circle, rgba(0, 102, 255, 0.16) 0%, rgba(6, 182, 212, 0.10) 45%, transparent 70%);
+  filter: blur(45px);
+}
+
+.neo-login-viewport::after {
+  width: 380px;
+  height: 380px;
+  top: 48%;
+  left: 51%;
+  transform: translate(-50%, -50%);
+  background: radial-gradient(circle, rgba(6, 182, 212, 0.20) 0%, rgba(59, 130, 246, 0.08) 50%, transparent 70%);
+  filter: blur(35px);
+}
+
+.neo-login-card {
+  padding: 0;
+  border-radius: 28px;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.60) 0%, rgba(255, 255, 255, 0.22) 45%, rgba(255, 255, 255, 0.42) 100%);
+  backdrop-filter: blur(20px) saturate(190%);
+  -webkit-backdrop-filter: blur(20px) saturate(190%);
+  border: 1.5px solid rgba(255, 255, 255, 0.90);
+  box-shadow:
+    0 32px 64px -12px rgba(6, 23, 51, 0.12),
+    0 12px 28px -6px rgba(0, 102, 255, 0.08),
+    inset 0 2px 2px 0 rgba(255, 255, 255, 1),
+    inset 0 12px 20px -4px rgba(15, 23, 42, 0.20),
+    inset 0 -2px 2px 0 rgba(255, 255, 255, 0.85),
+    inset 0 -12px 20px -4px rgba(15, 23, 42, 0.20),
+    inset 2px 0 2px 0 rgba(255, 255, 255, 0.90),
+    inset -2px 0 2px 0 rgba(255, 255, 255, 0.90),
+    inset 8px 0 14px -4px rgba(15, 23, 42, 0.08),
+    inset -8px 0 14px -4px rgba(15, 23, 42, 0.08);
+  isolation: isolate;
+}
+
+.neo-login-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0.12) 32%, transparent 50%, rgba(255, 255, 255, 0.15) 100%);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.neo-login-card .lg-inner {
+  position: absolute !important;
+  inset: 0 !important;
+  border-radius: inherit !important;
+  pointer-events: none !important;
+  z-index: 1 !important;
+}
+
+.neo-dark-input {
+  border: 1.5px solid rgba(255, 255, 255, 0.85);
+  background: rgba(255, 255, 255, 0.55);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: inset 0 1px 3px rgba(6, 23, 51, 0.04), inset 0 -1px 1px rgba(255, 255, 255, 0.9), 0 2px 6px rgba(0, 0, 0, 0.02);
+}
+
+.neo-login-btn-secondary {
+  background: rgba(255, 255, 255, 0.65);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1.5px solid rgba(255, 255, 255, 0.85);
+  box-shadow: 0 4px 12px rgba(6, 23, 51, 0.04), inset 0 1px 1px rgba(255, 255, 255, 0.95);
+}
+
 /* Toast Notification */
 .neo-toast {
   position: fixed;
