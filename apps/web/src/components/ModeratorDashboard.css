@@ -96,12 +96,9 @@
 
 /* ── Fixed Left Sidebar (Permanently Docked to Viewport, Non-Scrolling) ─── */
 .neo-sidebar {
-  background: #FFFFFF url('/trustlens_sidebar_bg.svg') no-repeat center bottom;
-  background-size: 100% auto;
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  background: #FFFFFF;
   border-right: 1px solid var(--neo-line);
-  padding: 24px 16px;
+  padding: 24px 0 24px 16px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -132,30 +129,43 @@
 
 .neo-sidebar.collapsed {
   width: 72px;
-  padding: 24px 12px;
+  padding: 24px 0;
   align-items: center;
 }
 
 .neo-brand-header {
   display: flex;
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
   align-items: center;
-  gap: 10px;
-  padding: 0 4px 16px;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 16px 16px 0;
   border-bottom: 1px solid var(--neo-line);
   position: relative;
   width: 100%;
+  box-sizing: border-box;
+}
+
+.neo-brand-header-left {
+  display: flex;
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
 }
 
 .neo-sidebar.collapsed .neo-brand-header {
-  flex-direction: column;
-  justify-content: center;
-  gap: 10px;
   padding: 0 0 16px;
+  justify-content: center;
+  align-items: center;
+  border-bottom: 1px solid var(--neo-line);
 }
 
 .neo-brand-mark {
-  width: 40px;
-  height: 40px;
+  width: 30px;
+  height: 30px;
   background: transparent;
   border: none;
   padding: 0;
@@ -179,45 +189,152 @@
 }
 
 .neo-brand-title {
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 800;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.02em;
   color: var(--neo-navy);
+  white-space: nowrap;
 }
 
 .neo-brand-title span {
   color: var(--neo-primary);
   font-weight: 750;
-  font-size: 13px;
-  margin-left: 3px;
+  font-size: 12px;
+  margin-left: 2px;
 }
 
+/* ChatGPT-Style Sidebar Toggle Button (Expanded State) */
 .neo-btn-toggle-sidebar {
   margin-left: auto;
   background: transparent;
   border: none;
   cursor: pointer;
-  color: var(--neo-muted);
-  padding: 6px;
+  color: #64748B;
+  width: 32px;
+  height: 32px;
   border-radius: 8px;
-  display: grid;
-  place-items: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   transition: all 0.15s ease;
+  flex-shrink: 0;
 }
 
 .neo-btn-toggle-sidebar:hover {
-  background: var(--neo-primary-light);
-  color: var(--neo-primary);
+  background: rgba(15, 23, 42, 0.06);
+  color: #0F172A;
 }
 
-.neo-sidebar.collapsed .neo-btn-toggle-sidebar {
-  margin-left: 0;
+.neo-btn-toggle-sidebar:active {
+  transform: scale(0.95);
+}
+
+/* ChatGPT-Style Collapsed Logo / Open-Sidebar Button Swap */
+.neo-brand-mark-collapsed-wrapper {
+  width: 38px;
+  height: 38px;
+  position: relative;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  transition: all 0.15s ease;
+  user-select: none;
+  outline: none;
+}
+
+.neo-brand-mark-collapsed-wrapper:focus-visible {
+  box-shadow: 0 0 0 2px #0066FF;
+}
+
+.neo-brand-mark-logo {
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 1;
+  transform: scale(1);
+  transition: opacity 0.18s cubic-bezier(0.16, 1, 0.3, 1), transform 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.neo-brand-mark-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.neo-brand-mark-open-btn {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transform: scale(0.88);
+  background: rgba(15, 23, 42, 0.06);
+  color: #0F172A;
+  transition: opacity 0.18s cubic-bezier(0.16, 1, 0.3, 1), transform 0.18s cubic-bezier(0.16, 1, 0.3, 1), background 0.15s ease;
+}
+
+/* Hover state: Logo fades out, Open Button appears in its exact place */
+.neo-brand-mark-collapsed-wrapper:hover .neo-brand-mark-logo,
+.neo-brand-mark-collapsed-wrapper:focus-visible .neo-brand-mark-logo {
+  opacity: 0;
+  transform: scale(0.8);
+}
+
+.neo-brand-mark-collapsed-wrapper:hover .neo-brand-mark-open-btn,
+.neo-brand-mark-collapsed-wrapper:focus-visible .neo-brand-mark-open-btn {
+  opacity: 1;
+  pointer-events: auto;
+  transform: scale(1);
+  background: rgba(15, 23, 42, 0.08);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+}
+
+.neo-brand-mark-collapsed-wrapper:active .neo-brand-mark-open-btn {
+  transform: scale(0.95);
+}
+
+/* Floating Tooltip matching ChatGPT Screenshot 2 */
+.neo-sidebar-floating-tooltip {
+  position: absolute;
+  left: calc(100% + 12px);
+  top: 50%;
+  transform: translateY(-50%) translateX(-4px);
+  background: #0F172A;
+  color: #FFFFFF;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 5px 10px;
+  border-radius: 6px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.2);
+  transition: opacity 0.15s ease, transform 0.15s ease, visibility 0.15s ease;
+  z-index: 1200;
+}
+
+.neo-brand-mark-collapsed-wrapper:hover .neo-sidebar-floating-tooltip,
+.neo-brand-mark-collapsed-wrapper:focus-visible .neo-sidebar-floating-tooltip {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(-50%) translateX(0);
 }
 
 .neo-nav-group {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
   list-style: none;
   padding: 0;
   margin: 16px 0 0;
@@ -228,22 +345,28 @@
   align-items: center;
 }
 
+.neo-nav-group li {
+  position: relative;
+  width: 100%;
+}
+
 .neo-nav-btn {
   display: flex;
   align-items: center;
   gap: 12px;
   padding: 10px 16px;
-  border-radius: 999px;
+  border-radius: 12px;
   font-size: 13.5px;
   font-weight: 600;
   color: #475569;
   background: transparent;
-  border: 1px solid transparent;
+  border: none;
   cursor: pointer;
-  width: 100%;
+  width: calc(100% - 16px);
   text-align: left;
-  transition: var(--neo-transition);
+  transition: background 0.15s ease, color 0.15s ease;
   position: relative;
+  box-sizing: border-box;
 }
 
 .neo-sidebar.collapsed .neo-nav-btn {
@@ -251,42 +374,70 @@
   padding: 12px;
   width: 46px;
   height: 46px;
+  border-radius: 12px;
+  margin-right: 0;
 }
 
 .neo-nav-btn:hover:not(.active) {
   background: rgba(0, 102, 255, 0.04);
   color: #0F172A;
-  transform: translateX(2px);
 }
 
 .neo-sidebar.collapsed .neo-nav-btn:hover {
   transform: scale(1.05);
 }
 
+/* Active connected tab seamlessly joining the main canvas */
 .neo-nav-btn.active {
-  background: #EFF6FF;
-  color: #0066FF;
+  background: var(--neo-bg);
+  color: var(--neo-primary);
   font-weight: 700;
-  border-color: rgba(0, 102, 255, 0.12);
+  width: 100%;
+  margin-right: -1px;
+  border-radius: 14px 0 0 14px;
+  border: none;
   box-shadow: none;
+  z-index: 5;
+}
+
+.neo-nav-btn.active::before {
+  content: '';
+  position: absolute;
+  top: -18px;
+  right: 0;
+  width: 18px;
+  height: 18px;
+  background: radial-gradient(circle at top left, transparent 18px, var(--neo-bg) 18.5px);
+  pointer-events: none;
+}
+
+.neo-nav-btn.active::after {
+  content: '';
+  position: absolute;
+  bottom: -18px;
+  right: 0;
+  width: 18px;
+  height: 18px;
+  background: radial-gradient(circle at bottom left, transparent 18px, var(--neo-bg) 18.5px);
+  pointer-events: none;
+}
+
+.neo-sidebar.collapsed .neo-nav-btn.active {
+  width: 46px;
+  border-radius: 12px;
+  background: rgba(0, 102, 255, 0.08);
+  margin-right: 0;
+}
+
+.neo-sidebar.collapsed .neo-nav-btn.active::before,
+.neo-sidebar.collapsed .neo-nav-btn.active::after {
+  display: none !important;
 }
 
 .neo-nav-btn.active svg {
-  color: #0066FF;
-  fill: currentColor;
+  color: var(--neo-primary);
+  stroke: var(--neo-primary);
   transition: all 0.2s ease;
-}
-
-.neo-nav-btn.active svg polyline,
-.neo-nav-btn.active svg line {
-  stroke: #FFFFFF !important;
-  stroke-width: 2.2px;
-}
-
-.neo-nav-btn.active svg path:not(:first-child) {
-  stroke: #FFFFFF !important;
-  fill: none !important;
-  stroke-width: 2px;
 }
 
 .neo-badge-count {
@@ -301,7 +452,7 @@
 }
 
 .neo-nav-btn.active .neo-badge-count {
-  background: #0066FF;
+  background: var(--neo-primary);
   color: #FFFFFF;
 }
 
@@ -330,12 +481,14 @@
   box-shadow: 0 4px 16px rgba(15, 23, 42, 0.04);
   position: relative;
   z-index: 5;
+  margin-right: 16px;
 }
 
 .neo-sidebar.collapsed .neo-sidebar-footer {
   width: 100%;
   align-items: center;
   padding: 8px;
+  margin-right: 0;
 }
 
 .neo-user-card {
@@ -1444,7 +1597,7 @@
 }
 
 .neo-category-name {
-  font-size: 11.5px;
+  font-size: 12.5px;
   font-weight: 600;
   color: #0F172A;
 }
@@ -4205,12 +4358,9 @@
 
 /* ── Fixed Left Sidebar (Permanently Docked to Viewport, Non-Scrolling) ─── */
 .neo-sidebar {
-  background: #FFFFFF url('/trustlens_sidebar_bg.svg') no-repeat center bottom;
-  background-size: 100% auto;
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  background: #FFFFFF;
   border-right: 1px solid var(--neo-line);
-  padding: 24px 16px;
+  padding: 24px 0 24px 16px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -4241,30 +4391,43 @@
 
 .neo-sidebar.collapsed {
   width: 72px;
-  padding: 24px 12px;
+  padding: 24px 0;
   align-items: center;
 }
 
 .neo-brand-header {
   display: flex;
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
   align-items: center;
-  gap: 10px;
-  padding: 0 4px 16px;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 16px 16px 0;
   border-bottom: 1px solid var(--neo-line);
   position: relative;
   width: 100%;
+  box-sizing: border-box;
+}
+
+.neo-brand-header-left {
+  display: flex;
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
 }
 
 .neo-sidebar.collapsed .neo-brand-header {
-  flex-direction: column;
-  justify-content: center;
-  gap: 10px;
   padding: 0 0 16px;
+  justify-content: center;
+  align-items: center;
+  border-bottom: 1px solid var(--neo-line);
 }
 
 .neo-brand-mark {
-  width: 40px;
-  height: 40px;
+  width: 30px;
+  height: 30px;
   background: transparent;
   border: none;
   padding: 0;
@@ -4288,45 +4451,152 @@
 }
 
 .neo-brand-title {
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 800;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.02em;
   color: var(--neo-navy);
+  white-space: nowrap;
 }
 
 .neo-brand-title span {
   color: var(--neo-primary);
   font-weight: 750;
-  font-size: 13px;
-  margin-left: 3px;
+  font-size: 12px;
+  margin-left: 2px;
 }
 
+/* ChatGPT-Style Sidebar Toggle Button (Expanded State) */
 .neo-btn-toggle-sidebar {
   margin-left: auto;
   background: transparent;
   border: none;
   cursor: pointer;
-  color: var(--neo-muted);
-  padding: 6px;
+  color: #64748B;
+  width: 32px;
+  height: 32px;
   border-radius: 8px;
-  display: grid;
-  place-items: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   transition: all 0.15s ease;
+  flex-shrink: 0;
 }
 
 .neo-btn-toggle-sidebar:hover {
-  background: var(--neo-primary-light);
-  color: var(--neo-primary);
+  background: rgba(15, 23, 42, 0.06);
+  color: #0F172A;
 }
 
-.neo-sidebar.collapsed .neo-btn-toggle-sidebar {
-  margin-left: 0;
+.neo-btn-toggle-sidebar:active {
+  transform: scale(0.95);
+}
+
+/* ChatGPT-Style Collapsed Logo / Open-Sidebar Button Swap */
+.neo-brand-mark-collapsed-wrapper {
+  width: 38px;
+  height: 38px;
+  position: relative;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  transition: all 0.15s ease;
+  user-select: none;
+  outline: none;
+}
+
+.neo-brand-mark-collapsed-wrapper:focus-visible {
+  box-shadow: 0 0 0 2px #0066FF;
+}
+
+.neo-brand-mark-logo {
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 1;
+  transform: scale(1);
+  transition: opacity 0.18s cubic-bezier(0.16, 1, 0.3, 1), transform 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.neo-brand-mark-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.neo-brand-mark-open-btn {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transform: scale(0.88);
+  background: rgba(15, 23, 42, 0.06);
+  color: #0F172A;
+  transition: opacity 0.18s cubic-bezier(0.16, 1, 0.3, 1), transform 0.18s cubic-bezier(0.16, 1, 0.3, 1), background 0.15s ease;
+}
+
+/* Hover state: Logo fades out, Open Button appears in its exact place */
+.neo-brand-mark-collapsed-wrapper:hover .neo-brand-mark-logo,
+.neo-brand-mark-collapsed-wrapper:focus-visible .neo-brand-mark-logo {
+  opacity: 0;
+  transform: scale(0.8);
+}
+
+.neo-brand-mark-collapsed-wrapper:hover .neo-brand-mark-open-btn,
+.neo-brand-mark-collapsed-wrapper:focus-visible .neo-brand-mark-open-btn {
+  opacity: 1;
+  pointer-events: auto;
+  transform: scale(1);
+  background: rgba(15, 23, 42, 0.08);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+}
+
+.neo-brand-mark-collapsed-wrapper:active .neo-brand-mark-open-btn {
+  transform: scale(0.95);
+}
+
+/* Floating Tooltip matching ChatGPT */
+.neo-sidebar-floating-tooltip {
+  position: absolute;
+  left: calc(100% + 12px);
+  top: 50%;
+  transform: translateY(-50%) translateX(-4px);
+  background: #0F172A;
+  color: #FFFFFF;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 5px 10px;
+  border-radius: 6px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.2);
+  transition: opacity 0.15s ease, transform 0.15s ease, visibility 0.15s ease;
+  z-index: 1200;
+}
+
+.neo-brand-mark-collapsed-wrapper:hover .neo-sidebar-floating-tooltip,
+.neo-brand-mark-collapsed-wrapper:focus-visible .neo-sidebar-floating-tooltip {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(-50%) translateX(0);
 }
 
 .neo-nav-group {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
   list-style: none;
   padding: 0;
   margin: 16px 0 0;
@@ -4337,22 +4607,28 @@
   align-items: center;
 }
 
+.neo-nav-group li {
+  position: relative;
+  width: 100%;
+}
+
 .neo-nav-btn {
   display: flex;
   align-items: center;
   gap: 12px;
   padding: 10px 16px;
-  border-radius: 999px;
+  border-radius: 12px;
   font-size: 13.5px;
   font-weight: 600;
   color: #475569;
   background: transparent;
-  border: 1px solid transparent;
+  border: none;
   cursor: pointer;
-  width: 100%;
+  width: calc(100% - 16px);
   text-align: left;
-  transition: var(--neo-transition);
+  transition: background 0.15s ease, color 0.15s ease;
   position: relative;
+  box-sizing: border-box;
 }
 
 .neo-sidebar.collapsed .neo-nav-btn {
@@ -4360,42 +4636,70 @@
   padding: 12px;
   width: 46px;
   height: 46px;
+  border-radius: 12px;
+  margin-right: 0;
 }
 
 .neo-nav-btn:hover:not(.active) {
   background: rgba(0, 102, 255, 0.04);
   color: #0F172A;
-  transform: translateX(2px);
 }
 
 .neo-sidebar.collapsed .neo-nav-btn:hover {
   transform: scale(1.05);
 }
 
+/* Active connected tab seamlessly joining the main canvas */
 .neo-nav-btn.active {
-  background: #EFF6FF;
-  color: #0066FF;
+  background: var(--neo-bg);
+  color: var(--neo-primary);
   font-weight: 700;
-  border-color: rgba(0, 102, 255, 0.12);
+  width: 100%;
+  margin-right: -1px;
+  border-radius: 14px 0 0 14px;
+  border: none;
   box-shadow: none;
+  z-index: 5;
+}
+
+.neo-nav-btn.active::before {
+  content: '';
+  position: absolute;
+  top: -18px;
+  right: 0;
+  width: 18px;
+  height: 18px;
+  background: radial-gradient(circle at top left, transparent 18px, var(--neo-bg) 18.5px);
+  pointer-events: none;
+}
+
+.neo-nav-btn.active::after {
+  content: '';
+  position: absolute;
+  bottom: -18px;
+  right: 0;
+  width: 18px;
+  height: 18px;
+  background: radial-gradient(circle at bottom left, transparent 18px, var(--neo-bg) 18.5px);
+  pointer-events: none;
+}
+
+.neo-sidebar.collapsed .neo-nav-btn.active {
+  width: 46px;
+  border-radius: 12px;
+  background: rgba(0, 102, 255, 0.08);
+  margin-right: 0;
+}
+
+.neo-sidebar.collapsed .neo-nav-btn.active::before,
+.neo-sidebar.collapsed .neo-nav-btn.active::after {
+  display: none !important;
 }
 
 .neo-nav-btn.active svg {
-  color: #0066FF;
-  fill: currentColor;
+  color: var(--neo-primary);
+  stroke: var(--neo-primary);
   transition: all 0.2s ease;
-}
-
-.neo-nav-btn.active svg polyline,
-.neo-nav-btn.active svg line {
-  stroke: #FFFFFF !important;
-  stroke-width: 2.2px;
-}
-
-.neo-nav-btn.active svg path:not(:first-child) {
-  stroke: #FFFFFF !important;
-  fill: none !important;
-  stroke-width: 2px;
 }
 
 .neo-badge-count {
@@ -4410,7 +4714,7 @@
 }
 
 .neo-nav-btn.active .neo-badge-count {
-  background: #0066FF;
+  background: var(--neo-primary);
   color: #FFFFFF;
 }
 
@@ -4439,12 +4743,14 @@
   box-shadow: 0 4px 16px rgba(15, 23, 42, 0.04);
   position: relative;
   z-index: 5;
+  margin-right: 16px;
 }
 
 .neo-sidebar.collapsed .neo-sidebar-footer {
   width: 100%;
   align-items: center;
   padding: 8px;
+  margin-right: 0;
 }
 
 .neo-user-card {
@@ -5553,7 +5859,7 @@
 }
 
 .neo-category-name {
-  font-size: 11.5px;
+  font-size: 12.5px;
   font-weight: 600;
   color: #0F172A;
 }

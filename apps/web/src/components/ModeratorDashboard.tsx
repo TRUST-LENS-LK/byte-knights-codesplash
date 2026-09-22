@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   LayoutDashboard,
   ShieldCheck,
-  ShieldAlert,
   Clock,
   CheckCircle2,
   RefreshCw,
@@ -22,13 +21,8 @@ import {
   Check,
   ChevronDown,
   RotateCcw,
-  XCircle,
-  Menu,
+  PanelLeft,
   Search,
-  CreditCard,
-  Layers,
-  PieChart,
-  AlertTriangle,
   X,
   History,
   Trash2,
@@ -352,7 +346,6 @@ interface DropdownOption<T extends string> {
 
 interface NeoFilterDropdownProps<T extends string> {
   label: string
-  icon?: React.ReactNode
   value: T
   options: DropdownOption<T>[]
   onChange: (val: T) => void
@@ -361,7 +354,6 @@ interface NeoFilterDropdownProps<T extends string> {
 
 function NeoFilterDropdown<T extends string>({
   label,
-  icon,
   value,
   options,
   onChange,
@@ -400,7 +392,6 @@ function NeoFilterDropdown<T extends string>({
         title={title || `Filter by ${label}`}
         aria-expanded={isOpen}
       >
-        {icon && <span className="neo-filter-icon">{icon}</span>}
         <span className="neo-filter-label">
           {isFiltered ? selectedOption?.label || label : label}
         </span>
@@ -1362,9 +1353,6 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
         title="Click to view pending reports in queue"
       >
         <div className="neo-kpi-content">
-          <div className="neo-kpi-icon-circle red">
-            <Clock size={16} aria-hidden="true" />
-          </div>
           <div className="neo-kpi-body">
             <div className="neo-kpi-metric-row">
               <span className="neo-kpi-value">{pendingCount}</span>
@@ -1399,9 +1387,6 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
         title={`Click to view approved reports (${confirmedThreatCount} confirmed threats, ${clearedSafeCount} false alarms verified safe)`}
       >
         <div className="neo-kpi-content">
-          <div className="neo-kpi-icon-circle green">
-            <CheckCircle2 size={16} aria-hidden="true" />
-          </div>
           <div className="neo-kpi-body">
             <div className="neo-kpi-metric-row">
               <span className="neo-kpi-value">{String(approvedReports.length).padStart(2, '0')}</span>
@@ -1436,9 +1421,6 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
         title="Click to view rejected reports in queue"
       >
         <div className="neo-kpi-content">
-          <div className="neo-kpi-icon-circle orange">
-            <XCircle size={16} aria-hidden="true" />
-          </div>
           <div className="neo-kpi-body">
             <div className="neo-kpi-metric-row">
               <span className="neo-kpi-value">{String(rejectedReports.length).padStart(2, '0')}</span>
@@ -1473,9 +1455,6 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
         title="Click to view all reports in queue"
       >
         <div className="neo-kpi-content">
-          <div className="neo-kpi-icon-circle blue">
-            <FileText size={16} aria-hidden="true" />
-          </div>
           <div className="neo-kpi-body">
             <div className="neo-kpi-metric-row">
               <span className="neo-kpi-value">{allReports.length}</span>
@@ -1525,23 +1504,50 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
         <aside className={`neo-sidebar ${isSidebarCollapsed ? 'collapsed' : ''}`}>
           <div>
             <div className="neo-brand-header">
-              <div className="neo-brand-mark" title="TrustLens LK">
-                <img src="/TrustLens_Icon.png" alt="TrustLens LK" />
-              </div>
-              {!isSidebarCollapsed && (
-                <div className="neo-brand-title">
-                  TrustLens<span>LK</span>
+              {isSidebarCollapsed ? (
+                <div
+                  className="neo-brand-mark-collapsed-wrapper"
+                  onClick={() => setIsSidebarCollapsed(false)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      setIsSidebarCollapsed(false)
+                    }
+                  }}
+                  title="Open sidebar"
+                  aria-label="Open sidebar"
+                >
+                  <div className="neo-brand-mark-logo">
+                    <img src="/TrustLens_Icon.png" alt="TrustLens LK" />
+                  </div>
+                  <div className="neo-brand-mark-open-btn" aria-hidden="true">
+                    <PanelLeft size={18} />
+                  </div>
+                  <span className="neo-sidebar-floating-tooltip">Open sidebar</span>
                 </div>
+              ) : (
+                <>
+                  <div className="neo-brand-header-left">
+                    <div className="neo-brand-mark" title="TrustLens LK">
+                      <img src="/TrustLens_Icon.png" alt="TrustLens LK" />
+                    </div>
+                    <div className="neo-brand-title">
+                      TrustLens<span>LK</span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="neo-btn-toggle-sidebar"
+                    onClick={() => setIsSidebarCollapsed(true)}
+                    title="Close sidebar"
+                    aria-label="Close sidebar"
+                  >
+                    <PanelLeft size={18} aria-hidden="true" />
+                  </button>
+                </>
               )}
-              <button
-                type="button"
-                className="neo-btn-toggle-sidebar"
-                onClick={() => setIsSidebarCollapsed((prev) => !prev)}
-                title={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-                aria-label={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-              >
-                <Menu size={16} aria-hidden="true" />
-              </button>
             </div>
 
             <ul className="neo-nav-group">
@@ -1792,9 +1798,6 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                 <div className="neo-card neo-bottom-modern-card">
                   <div className="neo-card-header">
                     <div className="neo-card-header-left">
-                      <div className="neo-card-icon-circle green">
-                        <ShieldCheck size={18} aria-hidden="true" />
-                      </div>
                       <h3 className="neo-card-title">Recent Verified Intel</h3>
                     </div>
                     <button
@@ -1814,20 +1817,15 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                   <div className="neo-snapshot-list">
                     {approvedReports.length === 0 ? (
                       <div className="neo-empty-snapshot">
-                        <ShieldCheck size={28} color="#94A3B8" aria-hidden="true" />
                         <p>No verified threat intelligence published yet.</p>
                       </div>
                     ) : (
                       approvedReports.slice(0, 3).map((item) => {
-                        const isDomain = Boolean(item.reported_domain)
                         const indicatorText = formatCleanIndicator(item.reported_domain || item.content_sha256.slice(0, 14))
                         const isThreat = item.report_type === 'suspicious' || item.report_type === 'false_negative'
                         return (
                           <div key={item.id} className="neo-snapshot-item">
                             <div className="neo-snapshot-item-left">
-                              <div className="neo-snapshot-icon-circle">
-                                {isDomain ? <Globe size={13} aria-hidden="true" /> : <Hash size={13} aria-hidden="true" />}
-                              </div>
                               <div className="neo-snapshot-target-col">
                                 <div className="neo-snapshot-target-row">
                                   <span className="neo-indicator-badge" title={item.reported_domain || item.content_sha256}>
@@ -1855,7 +1853,6 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                                 {isThreat ? 'CONFIRMED' : 'SAFE'}
                               </span>
                               <span className="neo-snapshot-time">
-                                <Clock size={11} aria-hidden="true" />
                                 {formatRelativeTime(item.updated_at || item.created_at)}
                               </span>
                             </div>
@@ -1870,9 +1867,6 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                 <div className="neo-card neo-bottom-modern-card">
                   <div className="neo-card-header">
                     <div className="neo-card-header-left">
-                      <div className="neo-card-icon-circle blue">
-                        <Layers size={18} aria-hidden="true" />
-                      </div>
                       <h3 className="neo-card-title">Threat Classification</h3>
                     </div>
                   </div>
@@ -1880,22 +1874,17 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                   <div className="neo-category-list">
                     {categoryStats.length === 0 ? (
                       <div className="neo-empty-snapshot">
-                        <PieChart size={28} color="#94A3B8" aria-hidden="true" />
                         <p>No categorized reports recorded yet.</p>
                       </div>
                     ) : (
                       categoryStats.map((cat) => {
                         const catLower = cat.category.toLowerCase()
-                        let CatIcon = AlertTriangle
                         let barColor = '#0066FF'
                         if (catLower.includes('bank') || catLower.includes('phish')) {
-                          CatIcon = CreditCard
                           barColor = '#6366F1'
                         } else if (catLower.includes('telecom') || catLower.includes('utility')) {
-                          CatIcon = Phone
                           barColor = '#F59E0B'
                         } else if (catLower.includes('false') || catLower.includes('alarm')) {
-                          CatIcon = ShieldCheck
                           barColor = '#10B981'
                         }
 
@@ -1911,9 +1900,6 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                           >
                             <div className="neo-category-row-top">
                               <div className="neo-category-label-group">
-                                <div className="neo-cat-icon-badge" style={{ color: barColor, background: `${barColor}15` }}>
-                                  <CatIcon size={13} aria-hidden="true" />
-                                </div>
                                 <span className="neo-category-name">{cat.category}</span>
                               </div>
                               <div className="neo-category-meta">
@@ -1947,9 +1933,6 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
 
                         <div className="neo-spotlight-target-box">
                           <div className="neo-spotlight-target-left">
-                            <div className="neo-spotlight-icon-circle">
-                              <ShieldAlert size={18} aria-hidden="true" />
-                            </div>
                             <div className="neo-spotlight-title-row">
                               <h4 className="neo-spotlight-title">
                                 {priorityIncident.reported_domain
@@ -1989,7 +1972,6 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                       <div className="neo-spotlight-bottom">
                         <div className="neo-spotlight-chips">
                           <div className="neo-spotlight-chip">
-                            <Clock size={11} aria-hidden="true" />
                             <span>Submitted {formatRelativeTime(priorityIncident.created_at)}</span>
                           </div>
                           <div className="neo-spotlight-chip">
@@ -2014,9 +1996,6 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                     </div>
                   ) : (
                     <div className="neo-spotlight-all-clear">
-                      <div className="neo-all-clear-icon">
-                        <CheckCircle2 size={36} color="#10B981" aria-hidden="true" />
-                      </div>
                       <span className="neo-priority-badge-live all-clear">
                         <span>✓ ZERO BACKLOG • ALL CLEAR</span>
                       </span>
@@ -2088,7 +2067,6 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                     {/* Type Filter Dropdown (Unreported Threat, False Alarm, Evaded Detection) */}
                     <NeoFilterDropdown
                       label="Type"
-                      icon={<Layers size={13} aria-hidden="true" />}
                       value={filterType}
                       onChange={(val) => {
                         setFilterType(val)
@@ -2106,7 +2084,6 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                     {/* Threat Filter Dropdown */}
                     <NeoFilterDropdown
                       label="Threat"
-                      icon={<ShieldAlert size={13} aria-hidden="true" />}
                       value={filterThreat}
                       onChange={(val) => {
                         setFilterThreat(val)
@@ -2125,7 +2102,6 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                     {/* Date Filter Dropdown */}
                     <NeoFilterDropdown
                       label="Date"
-                      icon={<Clock size={13} aria-hidden="true" />}
                       value={filterDate}
                       onChange={(val) => {
                         setFilterDate(val)
@@ -2491,7 +2467,6 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
 
                     {/* Retention Setting Selector Dropdown */}
                     <div className="neo-retention-selector-wrapper" title="Manually configure data retention TTL policy">
-                      <Clock size={13} className="neo-retention-icon" aria-hidden="true" />
                       <select
                         className="neo-retention-select"
                         value={retentionDays}
@@ -2763,9 +2738,6 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
               <div className="neo-intel-metrics-row">
                 <div className="neo-intel-stat-card">
                   <div className="neo-intel-stat-top">
-                    <div className="neo-intel-icon-circle blue">
-                      <ShieldCheck size={18} aria-hidden="true" />
-                    </div>
                     <span className="neo-intel-stat-label">Total Indicators</span>
                   </div>
                   <div className="neo-intel-stat-value">{intelTotal}</div>
@@ -2774,9 +2746,6 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
 
                 <div className="neo-intel-stat-card">
                   <div className="neo-intel-stat-top">
-                    <div className="neo-intel-icon-circle red">
-                      <ShieldAlert size={18} aria-hidden="true" />
-                    </div>
                     <span className="neo-intel-stat-label">Confirmed Threats</span>
                   </div>
                   <div className="neo-intel-stat-value">
@@ -2787,9 +2756,6 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
 
                 <div className="neo-intel-stat-card">
                   <div className="neo-intel-stat-top">
-                    <div className="neo-intel-icon-circle green">
-                      <CheckCircle2 size={18} aria-hidden="true" />
-                    </div>
                     <span className="neo-intel-stat-label">Verified Safe</span>
                   </div>
                   <div className="neo-intel-stat-value">
@@ -2800,9 +2766,6 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
 
                 <div className="neo-intel-stat-card">
                   <div className="neo-intel-stat-top">
-                    <div className="neo-intel-icon-circle slate">
-                      <Power size={18} aria-hidden="true" />
-                    </div>
                     <span className="neo-intel-stat-label">Retired Indicators</span>
                   </div>
                   <div className="neo-intel-stat-value">
@@ -2894,7 +2857,6 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                     {/* Status Filter */}
                     <NeoFilterDropdown
                       label="Status"
-                      icon={<Power size={13} aria-hidden="true" />}
                       value={intelStatusFilter}
                       onChange={(val) => {
                         setIntelStatusFilter(val)
@@ -2911,7 +2873,6 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                     {/* Indicator Type Filter */}
                     <NeoFilterDropdown
                       label="Type"
-                      icon={<Layers size={13} aria-hidden="true" />}
                       value={intelTypeFilter}
                       onChange={(val) => {
                         setIntelTypeFilter(val)
@@ -2930,7 +2891,6 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                     {/* Risk Filter */}
                     <NeoFilterDropdown
                       label="Risk"
-                      icon={<ShieldCheck size={13} aria-hidden="true" />}
                       value={intelRiskFilter}
                       onChange={(val) => {
                         setIntelRiskFilter(val)
@@ -3241,9 +3201,6 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
               <div className="neo-intel-metrics-row">
                 <div className="neo-intel-stat-card">
                   <div className="neo-intel-stat-top">
-                    <div className="neo-intel-icon-circle blue">
-                      <Globe size={18} aria-hidden="true" />
-                    </div>
                     <span className="neo-intel-stat-label">Total Entries</span>
                   </div>
                   <div className="neo-intel-stat-value">{domainEntries.length}</div>
@@ -3251,9 +3208,6 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                 </div>
                 <div className="neo-intel-stat-card">
                   <div className="neo-intel-stat-top">
-                    <div className="neo-intel-icon-circle green">
-                      <CheckCircle2 size={18} aria-hidden="true" />
-                    </div>
                     <span className="neo-intel-stat-label">Active</span>
                   </div>
                   <div className="neo-intel-stat-value">{domainEntries.filter((entry) => entry.status === 'ACTIVE').length}</div>
@@ -3261,9 +3215,6 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                 </div>
                 <div className="neo-intel-stat-card">
                   <div className="neo-intel-stat-top">
-                    <div className="neo-intel-icon-circle slate">
-                      <AlertTriangle size={18} aria-hidden="true" />
-                    </div>
                     <span className="neo-intel-stat-label">Stale</span>
                   </div>
                   <div className="neo-intel-stat-value">{domainEntries.filter((entry) => entry.status === 'STALE').length}</div>
@@ -3271,9 +3222,6 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                 </div>
                 <div className="neo-intel-stat-card">
                   <div className="neo-intel-stat-top">
-                    <div className="neo-intel-icon-circle slate">
-                      <Power size={18} aria-hidden="true" />
-                    </div>
                     <span className="neo-intel-stat-label">Retired</span>
                   </div>
                   <div className="neo-intel-stat-value">{domainEntries.filter((entry) => entry.status === 'RETIRED').length}</div>
