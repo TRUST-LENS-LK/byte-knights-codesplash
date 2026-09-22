@@ -1828,7 +1828,7 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                             <div className="neo-snapshot-item-left">
                               <div className="neo-snapshot-target-col">
                                 <div className="neo-snapshot-target-row">
-                                  <span className="neo-indicator-badge" title={item.reported_domain || item.content_sha256}>
+                                  <span className={`neo-indicator-badge ${isThreat ? 'threat' : 'safe'}`} title={item.reported_domain || item.content_sha256}>
                                     {indicatorText}
                                   </span>
                                   <button
@@ -2201,8 +2201,8 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                       {isLoadingQueue ? (
                         <tr>
                           <td colSpan={7} style={{ textAlign: 'center', padding: '48px 20px', color: '#64748B' }}>
-                            <RefreshCw size={24} className="neo-spin" style={{ margin: '0 auto 8px', display: 'block', color: '#0066FF' }} />
-                            <strong style={{ color: '#0F172A', fontSize: '14px' }}>Loading queue reports...</strong>
+                            <div className="neo-audit-loading-spinner" />
+                            <p style={{ margin: '10px 0 0', fontSize: '13px' }}>Loading queue reports...</p>
                           </td>
                         </tr>
                       ) : displayedReports.length === 0 ? (
@@ -2942,8 +2942,8 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                       {isLoadingIntel ? (
                         <tr>
                           <td colSpan={7} style={{ textAlign: 'center', padding: '48px 20px', color: '#64748B' }}>
-                            <RefreshCw size={24} className="neo-spin" style={{ margin: '0 auto 8px', display: 'block', color: '#0066FF' }} />
-                            <strong style={{ color: '#0F172A', fontSize: '14px' }}>Loading verified threat intelligence...</strong>
+                            <div className="neo-audit-loading-spinner" />
+                            <p style={{ margin: '10px 0 0', fontSize: '13px' }}>Loading verified threat intelligence...</p>
                           </td>
                         </tr>
                       ) : intelligenceList.length === 0 ? (
@@ -3307,8 +3307,8 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                     {isLoadingDomains ? (
                       <tr>
                         <td colSpan={7} style={{ textAlign: 'center', padding: '48px 20px', color: '#64748B' }}>
-                          <RefreshCw size={24} className="neo-spin" style={{ margin: '0 auto 8px', display: 'block', color: '#0066FF' }} />
-                          <strong style={{ color: '#0F172A', fontSize: '14px' }}>Loading the domain directory...</strong>
+                          <div className="neo-audit-loading-spinner" />
+                          <p style={{ margin: '10px 0 0', fontSize: '13px' }}>Loading the domain directory...</p>
                         </td>
                       </tr>
                     ) : domainEntries.length === 0 ? (
