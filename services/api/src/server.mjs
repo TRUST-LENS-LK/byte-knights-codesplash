@@ -9,6 +9,7 @@ import { consumeRateLimit } from './services/rateLimit.mjs'
 import { applyDomainMismatchRisk, checkClaimedOrganizationDomain, verifyApprovedDomains } from './services/domainVerification.mjs'
 import { checkGlobalDomainTrust } from './services/globalDomains.mjs'
 import { checkDomainAge } from './services/domainAge.mjs'
+import { applyKnownMaliciousRisk, checkSafeBrowsing } from './services/safeBrowsing.mjs'
 import { listDomainDirectory, lookupDomainDirectory } from './services/domainDirectory.mjs'
 import { inspectScannerUrl, scannerFindings } from './services/urlSafety.mjs'
 import {
@@ -440,6 +441,15 @@ const server = createServer(async (req, res) => {
       if (globalDomainCheck.findings.length) decision.findings.push(...globalDomainCheck.findings)
     }
 
+    // Tier 4: a single, fast live call to Google Safe Browsing, checked
+    // regardless of Tier 1/3 results, since it evaluates the URL's current
+    // live threat status, a genuinely independent signal from domain
+    // ownership (even a directory-matched domain could theoretically be
+    // compromised). Fails open silently when no API key is configured.
+    const safeBrowsingCheck = await checkSafeBrowsing(entities).catch(() => ({ findings: [] }))
+    if (safeBrowsingCheck.findings.length) decision.findings.push(...safeBrowsingCheck.findings)
+    applyKnownMaliciousRisk(decision)
+
     const organizationDomainCheck = await checkClaimedOrganizationDomain(entities).catch(() => ({ findings: [], limitations: [] }))
     if (organizationDomainCheck.findings.length) decision.findings.push(...organizationDomainCheck.findings)
     if (organizationDomainCheck.limitations.length) decision.limitations.push(...organizationDomainCheck.limitations)
@@ -452,7 +462,9 @@ const server = createServer(async (req, res) => {
     // a known-good match) or when a mismatch was already found (the verdict
     // is already HIGH/STOP_AND_AVOID; waiting on slow external calls for
     // evidence that cannot change that outcome would only hurt latency).
-    const alreadyResolved = approvedDomainFindings.length > 0 || organizationDomainCheck.findings.some((f) => f.canonicalSignal === 'domain_mismatch')
+    const alreadyResolved = approvedDomainFindings.length > 0
+      || organizationDomainCheck.findings.some((f) => f.canonicalSignal === 'domain_mismatch')
+      || safeBrowsingCheck.findings.some((f) => f.canonicalSignal === 'known_malicious_domain')
     if (!alreadyResolved) {
       const domainAgeCheck = await checkDomainAge(entities).catch(() => ({ findings: [], limitations: [] }))
       if (domainAgeCheck.findings.length) decision.findings.push(...domainAgeCheck.findings)
