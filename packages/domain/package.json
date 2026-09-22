@@ -17,7 +17,8 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@trustlens/contracts": "file:../contracts"
+    "@trustlens/contracts": "file:../contracts",
+    "tldts": "^7.4.14"
   },
   "devDependencies": {
     "typescript": "^7.0.2",

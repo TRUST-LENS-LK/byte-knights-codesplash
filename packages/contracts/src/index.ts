@@ -38,6 +38,12 @@ export const CANONICAL_SIGNALS = [
   // Verified intelligence (Member 5, supabase verified_intelligence table)
   "confirmed_scam_indicator",
   "verified_safe_indicator",
+
+  // Multi-tier domain verification (services/api/src/services/globalDomains.mjs,
+  // safeBrowsing.mjs, domainAge.mjs)
+  "known_global_domain",
+  "known_malicious_domain",
+  "new_domain_risk",
 ] as const;
 
 export type CanonicalSignal = (typeof CANONICAL_SIGNALS)[number];
