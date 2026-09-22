@@ -1,7 +1,7 @@
 import type { DomainVerification, OfficialDomainRecord } from '@trustlens/contracts'
 
-export * from './extraction'
-export * from './globalDomains'
+export * from './extraction.js'
+export * from './globalDomains.js'
 
 // The fields needed to decide staleness, so callers don't have to build a
 // full OfficialDomainRecord just to check one entry.

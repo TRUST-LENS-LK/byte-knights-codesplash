@@ -7,6 +7,7 @@ import { analyze, applyScannerRisk, extractEntities, validateSubmission } from '
 import { persistIfConsented, purgeExpiredSubmissions } from './services/persistence.mjs'
 import { consumeRateLimit } from './services/rateLimit.mjs'
 import { applyDomainMismatchRisk, checkClaimedOrganizationDomain, verifyApprovedDomains } from './services/domainVerification.mjs'
+import { checkGlobalDomainTrust } from './services/globalDomains.mjs'
 import { listDomainDirectory, lookupDomainDirectory } from './services/domainDirectory.mjs'
 import { inspectScannerUrl, scannerFindings } from './services/urlSafety.mjs'
 import {
@@ -429,6 +430,14 @@ const server = createServer(async (req, res) => {
       return []
     })
     if (approvedDomainFindings.length) decision.findings.push(...approvedDomainFindings)
+
+    // Tier 3: only check global popularity when the curated directory
+    // (Tier 1) did not already find a match, so the same domain never gets
+    // both an approved_domain and a known_global_domain finding at once.
+    if (!approvedDomainFindings.length) {
+      const globalDomainCheck = await checkGlobalDomainTrust(entities).catch(() => ({ findings: [] }))
+      if (globalDomainCheck.findings.length) decision.findings.push(...globalDomainCheck.findings)
+    }
 
     const organizationDomainCheck = await checkClaimedOrganizationDomain(entities).catch(() => ({ findings: [], limitations: [] }))
     if (organizationDomainCheck.findings.length) decision.findings.push(...organizationDomainCheck.findings)

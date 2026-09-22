@@ -1,5 +1,5 @@
-import { TOP_20K_GLOBAL_DOMAINS } from './data/top20kGlobalDomains'
-import { extractRegistrableDomain } from './extraction'
+import { TOP_20K_GLOBAL_DOMAINS } from './data/top20kGlobalDomains.js'
+import { extractRegistrableDomain } from './extraction.js'
 
 // Tier 3, L1: an in-memory Set of the top ~20,000 globally popular domains
 // (from the Tranco research-oriented ranking), checked before ever touching
