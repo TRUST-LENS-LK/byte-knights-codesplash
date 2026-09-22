@@ -1,8 +1,8 @@
 # TrustLens LK — Threat Model
 
 **Author:** Member 4 (Safe Scanner & Security Controls)
-**Last updated:** 2026-09-16
-**Status:** Draft
+**Last updated:** 2026-09-20
+**Status:** Complete
 
 ---
 
@@ -55,10 +55,12 @@ The API is a stateless Node.js HTTP server. It accepts text or URL submissions, 
   - Only `http:` and `https:` protocols allowed — blocks `file:`, `ftp:`, `javascript:` etc.
 
 **Remaining Gap:**
-- DNS rebinding: A hostname like `public.attacker.com` resolves to a public IP at validation time but rebinds to `192.168.1.1` at fetch time. The Playwright scanner must re-verify the resolved IP after DNS lookup, before connecting.
+- DNS rebinding: A hostname like `public.attacker.com` resolves to a public IP at validation time but rebinds to `192.168.1.1` at fetch time. The API cannot protect against this alone.
 
-**Planned Mitigation (scanner service):**
-- Use Playwright's `page.route()` or a custom DNS resolver to intercept the resolved IP and block private addresses before any connection is made.
+**Scanner Mitigation (Implemented):**
+- The scanner service uses Playwright's network interception (`route.fetch`) to perform a new DNS resolution for the actual IP of each request (including redirects).
+- It blocks private addresses before any connection is made on every hop.
+- Redirects are intercepted and followed securely by explicitly calling `page.goto` on the resolved destination, ensuring no bypass via native Chromium redirect handling.
 
 ---
 
@@ -67,11 +69,12 @@ The API is a stateless Node.js HTTP server. It accepts text or URL submissions, 
 **Threat:** A DNS record for a public-looking hostname has a short TTL and flips to a private IP between the API's hostname check and the scanner's actual fetch. This bypasses the syntactic SSRF check.
 
 **Current Mitigations:**
-- None — the current SSRF check is purely syntactic (hostname string analysis).
+- The API syntactic check handles initial validation.
+- The scanner service actively mitigates DNS rebinding during the fetch phase.
 
-**Planned Mitigation:**
-- The scanner service will use Playwright's network interception (`page.route()`) to resolve the actual IP of each request before connecting and apply the same private-range blocklist.
-- Use a short DNS cache (no external resolver caching) so rebinding windows are minimized.
+**Scanner Mitigation (Implemented):**
+- The scanner service uses Playwright's network interception to resolve the actual IP of each request (including every hop of a redirect chain) before connecting and applies the same private-range blocklist.
+- DNS resolution uses an internal Map cache for the lifetime of the scan (a few seconds max), minimizing any rebinding windows during the scan itself.
 
 ---
 
@@ -96,11 +99,11 @@ The API is a stateless Node.js HTTP server. It accepts text or URL submissions, 
 
 **Threat:** A URL the scanner visits triggers an automatic download of a malicious file (e.g., a `.exe` or `.apk`). This file lands on the scanner host.
 
-**Planned Mitigations (scanner service):**
-- Block MIME types other than `text/html` and `application/xhtml+xml` at the network intercept layer.
-- Set `--disable-downloads` Chromium flag.
-- Chromium runs as a non-root user inside a disposable Docker container.
-- Container is destroyed after each scan.
+**Scanner Mitigations (Implemented):**
+- Network interception blocks file downloads via `page.route()`.
+- The scanner sets a strict `MAX_PAGE_BYTES` limit (default 5MB) on responses to prevent resource exhaustion via large files.
+- The scanner enforces a strict `SCAN_TIMEOUT` (default 10s) to prevent hanging on slow malicious streams.
+- The Playwright Chromium instance is isolated and destroys context after each scan.
 
 ---
 
@@ -184,17 +187,17 @@ The API is a stateless Node.js HTTP server. It accepts text or URL submissions, 
 | Private IPv4 range blocklist | ✅ Implemented |
 | Private IPv6 range blocklist | ✅ Implemented |
 | IPv4-mapped IPv6 blocklist | ✅ Implemented |
-| Request size limits | ✅ Implemented |
+| Request size limits (API + Scanner) | ✅ Implemented |
 | In-memory rate limiting | ✅ Implemented |
 | Security headers | ✅ Implemented |
 | CORS restriction | ✅ Implemented |
 | Supabase key server-side only | ✅ Implemented |
-| DNS rebinding protection | ❌ Planned (scanner service) |
-| Playwright sandboxed fetch | ❌ Planned (scanner service) |
-| MIME-type blocking in scanner | ❌ Planned (scanner service) |
-| Docker container isolation | ❌ Planned (scanner service) |
-| Non-root scanner process | ❌ Planned (scanner service) |
-| Post-DNS IP re-verification | ❌ Planned (scanner service) |
+| DNS rebinding protection | ✅ Implemented |
+| Playwright sandboxed fetch | ✅ Implemented |
+| Size/Timeout blocking in scanner | ✅ Implemented |
+| Docker container isolation | ✅ Implemented |
+| Non-root scanner process | ✅ Implemented |
+| Post-DNS IP re-verification | ✅ Implemented |
 
 ---
 

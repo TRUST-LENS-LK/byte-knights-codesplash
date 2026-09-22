@@ -1,5 +1,6 @@
-import { useMemo, useState, useEffect, useRef } from 'react'
+﻿import { useMemo, useState, useEffect, useRef } from 'react'
 import {
+  Shield,
   ShieldCheck,
   ShieldAlert,
   AlertOctagon,
@@ -27,13 +28,10 @@ import {
   Flag,
   CheckCircle2,
 } from 'lucide-react'
-import { analyzeSubmission, analyzeWithApi, detectSubmissionType, normalizeUrlInput } from './services/analysisService'
-import { ScreenshotOcrUploader } from './components/ScreenshotOcrUploader'
-import { Camera } from 'lucide-react'
+import { analyzeSubmission, analyzeWithApi } from './services/analysisService'
 import { ReportModal } from './components/ReportModal'
 import { ModeratorDashboard } from './components/ModeratorDashboard'
 import './App.css'
-import './components/NavSentinelDock.css'
 
 interface IntelligenceOverlay {
   netVerdict: 'CONFIRMED_SCAM' | 'VERIFIED_SAFE' | 'CONFLICTED' | 'OFFICIAL_ENTITY' | 'POSSIBLE_IMPERSONATION' | 'NO_INTEL'
@@ -61,6 +59,23 @@ interface ScannerEvidenceItem {
   screenshotBase64?: string
 }
 
+const PRESETS = [
+  {
+    id: 'bank',
+    label: '⚡ Bank OTP Phishing',
+    text: 'Commercial Bank Alert: Your account is temporarily locked due to unverified KYC. Click http://combk-verify.info immediately or pay Rs 2,500 penalty to unlock.',
+  },
+  {
+    id: 'lottery',
+    label: '⚡ Prize & Fee Scam',
+    text: 'Congratulations! You won Rs 350,000 in Ceylon Telecom Mega Draw. Pay Rs 5,000 handling fee and share your OTP within 2 hours to claim your prize.',
+  },
+  {
+    id: 'gov',
+    label: '⚡ Official Gov Portal',
+    text: 'Visit the official government digital services directory at https://www.gov.lk/services to register for administrative appointments.',
+  },
+]
 
 function App() {
   useEffect(() => {
@@ -79,11 +94,10 @@ function App() {
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [apiAnalysis, setApiAnalysis] = useState<ReturnType<typeof analyzeSubmission> | null>(null)
   const [apiMode, setApiMode] = useState<'local' | 'api'>('local')
-  const [inputType, setInputType] = useState<'message' | 'screenshot'>('message')
   const [intelligenceOverlay, setIntelligenceOverlay] = useState<IntelligenceOverlay | null>(null)
 
-  // Results Dashboard Tabs & UI states (defaults to 'all' so users see complete evidence at once)
-  const [activeTab, setActiveTab] = useState<'all' | 'signals' | 'sandbox' | 'intel'>('all')
+  // Results Dashboard Tabs & UI states
+  const [activeTab, setActiveTab] = useState<'signals' | 'sandbox' | 'intel'>('signals')
   const [copiedKey, setCopiedKey] = useState<string | null>(null)
   const [selectedScreenshot, setSelectedScreenshot] = useState<string | null>(null)
   const [showTechnicalTrace, setShowTechnicalTrace] = useState(false)
@@ -130,29 +144,12 @@ function App() {
             ? 'suspicious'
             : 'verified-safe'
 
-  const checkMessage = async (overrideText?: string, typeOverride?: 'message' | 'url' | 'screenshot') => {
-    let targetText = overrideText ?? text
-    if (!targetText.trim()) return
-    
-    let finalType: 'message' | 'url' | 'screenshot' = 'message'
-    
-    if (typeOverride) {
-      finalType = typeOverride
-    } else if (inputType === 'screenshot') {
-      finalType = 'screenshot'
-    } else {
-      const trimmed = targetText.trim()
-      const isUrlLike = detectSubmissionType(trimmed) === 'url' || /^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(?:\/.*)?$/.test(trimmed)
-      if (isUrlLike && !/\s/.test(trimmed)) {
-        targetText = normalizeUrlInput(trimmed)
-        finalType = 'url'
-      }
-    }
-
+  const checkMessage = async () => {
+    if (!text.trim()) return
     setIsAnalyzing(true)
     setIntelligenceOverlay(null)
     try {
-      const result = await analyzeWithApi(targetText, finalType)
+      const result = await analyzeWithApi(text)
       setApiAnalysis(result)
       setApiMode('api')
       if ((result as Record<string, unknown>).intelligenceOverlay) {
@@ -227,32 +224,31 @@ function App() {
 
   return (
     <main className="app-shell">
-      {/* ── Minimal Clean Navigation Header ────────────────────────── */}
-      <header className="nav-header">
-        <div
-          className="nav-brand"
-          onClick={() => setView('checker')}
-          title="TrustLens LK"
-          role="button"
-          tabIndex={0}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') setView('checker')
-          }}
-        >
-          <div className="nav-logo-box">
-            <img src="/TrustLens_Icon.png" alt="TrustLens LK" className="nav-logo-img" />
+      {/* ── Navigation Header ────────────────────────────────────── */}
+      <header className="nav">
+        <div className="nav-left">
+          <div className="brand-wrapper" onClick={() => setView('checker')}>
+            <div className="brand-shield">
+              <Shield size={22} />
+            </div>
+            <div className="brand-info">
+              <span className="brand-name">
+                TrustLens <span className="brand-badge">LK</span>
+              </span>
+              <span className="brand-tagline">Cyber Threat Decision Support</span>
+            </div>
           </div>
-          <div className="nav-brand-title">
-            TrustLens <span className="nav-brand-badge">LK</span>
+          <div className="nav-status-pill">
+            <span className="pulse-dot" />
+            <span>Sandbox Core Active • SL-CERT Rules</span>
           </div>
         </div>
 
         <div className="nav-actions">
           <button
             type="button"
-            className="nav-btn-portal"
+            className="btn-portal"
             onClick={() => setView('moderator')}
-            title="Moderator Portal"
           >
             <ShieldCheck size={16} />
             <span>Moderator Portal</span>
@@ -299,35 +295,27 @@ function App() {
                 </button>
               )}
             </div>
+
+            <div className="presets-container">
+              <span className="preset-title">Test Sample:</span>
+              {PRESETS.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  className="preset-btn"
+                  onClick={() => {
+                    setText(p.text)
+                    setChecked(false)
+                    setIntelligenceOverlay(null)
+                  }}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
           </div>
 
-          <div className="input-mode-tabs">
-            <button
-              type="button"
-              className={`input-mode-tab ${inputType === 'message' ? 'active' : ''}`}
-              onClick={() => setInputType('message')}
-            >
-              <FileText size={15} />
-              <span>Text / URL</span>
-            </button>
-            <button
-              type="button"
-              className={`input-mode-tab ${inputType === 'screenshot' ? 'active' : ''}`}
-              onClick={() => setInputType('screenshot')}
-            >
-              <Camera size={15} />
-              <span>Upload Screenshot (OCR)</span>
-            </button>
-          </div>
-          {inputType === 'screenshot' && (
-            <ScreenshotOcrUploader 
-              onTextConfirmed={(ocrText) => {
-                setText(ocrText)
-              }}
-            />
-          )}
-          {inputType === 'message' && (
-            <div className="textarea-wrapper">
+          <div className="textarea-wrapper">
             <textarea
               id="message"
               className="console-textarea"
@@ -341,7 +329,6 @@ function App() {
               placeholder="Paste SMS, WhatsApp forward, email body, or suspicious URL here..."
             />
           </div>
-          )}
 
           <div className="console-card-footer">
             <div className="console-meta">
@@ -510,20 +497,11 @@ function App() {
             <nav className="dashboard-tabs" aria-label="Analysis Details Tabs">
               <button
                 type="button"
-                className={`tab-btn ${activeTab === 'all' ? 'active' : ''}`}
-                onClick={() => setActiveTab('all')}
-              >
-                <Layers size={16} />
-                <span>All Evidence (Overview)</span>
-              </button>
-
-              <button
-                type="button"
                 className={`tab-btn ${activeTab === 'signals' ? 'active' : ''}`}
                 onClick={() => setActiveTab('signals')}
               >
-                <Activity size={16} />
-                <span>Threat Signals</span>
+                <Layers size={16} />
+                <span>Threat Signals & Indicators</span>
                 <span className="tab-counter">{decision.findings.length}</span>
               </button>
 
@@ -535,7 +513,7 @@ function App() {
                 <Terminal size={16} />
                 <span>Safe Browser Sandbox</span>
                 {hasScreenshot ? (
-                  <span className="tab-badge-pill green">📸 Proof</span>
+                  <span className="tab-badge-pill green">📸 Proof Ready</span>
                 ) : (
                   <span className="tab-counter">{scannerEvidence?.length ?? 0}</span>
                 )}
@@ -559,19 +537,8 @@ function App() {
           <div className="dashboard-content-area">
 
             {/* ── TAB 1: THREAT SIGNALS & EXTRACTED IOCS ─────────────── */}
-            {(activeTab === 'all' || activeTab === 'signals') && (
+            {activeTab === 'signals' && (
               <div className="tab-pane active" id="tab-signals">
-                {activeTab === 'all' && (
-                  <div className="section-overview-header">
-                    <div className="section-overview-title">
-                      <Activity size={18} color="var(--brand-primary)" />
-                      <h3>Pillar 1: Threat Signals & Extracted Indicators</h3>
-                    </div>
-                    <span className="section-overview-badge">
-                      {decision.findings.length} Flagged Pattern{decision.findings.length === 1 ? '' : 's'}
-                    </span>
-                  </div>
-                )}
                 <div className="tab-grid-layout">
                   {/* Left Column: Flagged Behavioral Signals */}
                   <div className="pane-column-main">
@@ -705,19 +672,8 @@ function App() {
             )}
 
             {/* ── TAB 2: LIVE BROWSER SANDBOX & PROOF ───────────────── */}
-            {(activeTab === 'all' || activeTab === 'sandbox') && (
-              <div className="tab-pane active" id="tab-sandbox" style={activeTab === 'all' ? { marginTop: '28px' } : undefined}>
-                {activeTab === 'all' && (
-                  <div className="section-overview-header">
-                    <div className="section-overview-title">
-                      <Terminal size={18} color="var(--brand-secondary)" />
-                      <h3>Pillar 2: Safe Browser Sandbox & Visual Proof</h3>
-                    </div>
-                    <span className="section-overview-badge">
-                      {hasScreenshot ? '📸 DOM Screenshot Captured' : scannerEvidence?.length ? 'Isolated DOM Inspected' : 'Text Analysis Active'}
-                    </span>
-                  </div>
-                )}
+            {activeTab === 'sandbox' && (
+              <div className="tab-pane active" id="tab-sandbox">
                 {scannerEvidence && scannerEvidence.length > 0 ? (
                   <div className="sandbox-panel">
                     {scannerEvidence.map((ev, sIdx) => {
@@ -868,19 +824,8 @@ function App() {
             )}
 
             {/* ── TAB 3: NATIONAL REGISTRY & COMMUNITY INTEL ────────── */}
-            {(activeTab === 'all' || activeTab === 'intel') && (
-              <div className="tab-pane active" id="tab-intel" style={activeTab === 'all' ? { marginTop: '28px' } : undefined}>
-                {activeTab === 'all' && (
-                  <div className="section-overview-header">
-                    <div className="section-overview-title">
-                      <Building2 size={18} color="var(--brand-primary)" />
-                      <h3>Pillar 3: National Registry & Community Consensus</h3>
-                    </div>
-                    <span className="section-overview-badge">
-                      {isOfficialEntity ? 'Approved National Entity' : 'Crowdsourced Intelligence'}
-                    </span>
-                  </div>
-                )}
+            {activeTab === 'intel' && (
+              <div className="tab-pane active" id="tab-intel">
                 <div className="intel-tab-layout">
                   
                   {/* National Entity Check Card */}
