@@ -35,6 +35,7 @@ import {
   type ModeratorUser,
   type ModerationStats,
   type VerifiedIntelligenceItem,
+  type DomainDirectoryEntry,
   clearSession,
   fetchModerationQueue,
   fetchModerationStats,
@@ -47,6 +48,9 @@ import {
   reviewModerationItem,
   seedDemoReports,
   clearDemoReports,
+  fetchDomainDirectoryEntries,
+  createDomainDirectoryEntry,
+  updateDomainDirectoryEntry,
 } from '../services/moderatorService'
 import { defangIndicator } from '../services/reportingService'
 import { formatRelativeTime } from '../utils/formatTime'
@@ -255,16 +259,17 @@ export function generateSparklinePath(values: number[], width = 80, height = 32)
   return path
 }
 
-function getInitialNav(): 'DASHBOARD' | 'QUEUE' | 'AUDIT' | 'INTELLIGENCE' {
+function getInitialNav(): 'DASHBOARD' | 'QUEUE' | 'AUDIT' | 'INTELLIGENCE' | 'DOMAINS' {
   if (typeof window !== 'undefined') {
     const hash = window.location.hash.toLowerCase()
     if (hash.includes('queue')) return 'QUEUE'
     if (hash.includes('audit')) return 'AUDIT'
+    if (hash.includes('domains')) return 'DOMAINS'
     if (hash.includes('intelligence') || hash.includes('intel')) return 'INTELLIGENCE'
     if (hash.includes('dashboard')) return 'DASHBOARD'
 
     const stored = sessionStorage.getItem('trustlens_mod_nav')
-    if (stored === 'QUEUE' || stored === 'AUDIT' || stored === 'INTELLIGENCE' || stored === 'DASHBOARD') {
+    if (stored === 'QUEUE' || stored === 'AUDIT' || stored === 'INTELLIGENCE' || stored === 'DASHBOARD' || stored === 'DOMAINS') {
       return stored
     }
   }
@@ -275,8 +280,8 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
   const [token, setToken] = useState<string | null>(() => getStoredSession().token)
   const [user, setUser] = useState<ModeratorUser | null>(() => getStoredSession().user)
 
-  // Navigation State (4 views: Dashboard, Queue, Audit, Intelligence) - Preserved across browser refresh
-  const [activeNav, setActiveNav] = useState<'DASHBOARD' | 'QUEUE' | 'AUDIT' | 'INTELLIGENCE'>(getInitialNav)
+  // Navigation State (5 views: Dashboard, Queue, Audit, Intelligence, Domains) - Preserved across browser refresh
+  const [activeNav, setActiveNav] = useState<'DASHBOARD' | 'QUEUE' | 'AUDIT' | 'INTELLIGENCE' | 'DOMAINS'>(getInitialNav)
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
 
   // Sync activeNav changes to sessionStorage and URL hash
@@ -296,6 +301,7 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
       const hash = window.location.hash.toLowerCase()
       if (hash.includes('queue')) setActiveNav('QUEUE')
       else if (hash.includes('audit')) setActiveNav('AUDIT')
+      else if (hash.includes('domains')) setActiveNav('DOMAINS')
       else if (hash.includes('intelligence') || hash.includes('intel')) setActiveNav('INTELLIGENCE')
       else if (hash.includes('dashboard') || hash === '#moderator') setActiveNav('DASHBOARD')
     }
@@ -534,6 +540,77 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
         prev.map((i) => (i.id === item.id ? { ...i, active: item.active } : i))
       )
       showToast(`Failed to update indicator: ${res.error}`)
+    }
+  }
+
+  // ── Member 3: Domain Directory Management ──────────────────────────
+  const [domainEntries, setDomainEntries] = useState<DomainDirectoryEntry[]>([])
+  const [isLoadingDomains, setIsLoadingDomains] = useState(false)
+  const [domainsError, setDomainsError] = useState<string | null>(null)
+  const [isAddingDomain, setIsAddingDomain] = useState(false)
+  const [newDomainName, setNewDomainName] = useState('')
+  const [newDomainDomain, setNewDomainDomain] = useState('')
+  const [newDomainCategory, setNewDomainCategory] = useState('')
+  const [newDomainSourceUrl, setNewDomainSourceUrl] = useState('')
+
+  const loadDomainEntries = useCallback(async () => {
+    if (!token) return
+    setIsLoadingDomains(true)
+    setDomainsError(null)
+    const res = await fetchDomainDirectoryEntries(token)
+    setIsLoadingDomains(false)
+    if (res.success && res.entries) {
+      setDomainEntries(res.entries)
+    } else {
+      setDomainsError(res.error || 'Could not load the domain directory.')
+    }
+  }, [token])
+
+  useEffect(() => {
+    if (activeNav === 'DOMAINS' && token) {
+      void loadDomainEntries()
+    }
+  }, [activeNav, token, loadDomainEntries])
+
+  const handleAddDomainEntry = async () => {
+    if (!token) return
+    if (!newDomainName.trim() || !newDomainDomain.trim()) {
+      showToast('Organization name and domain are both required.')
+      return
+    }
+    setIsAddingDomain(true)
+    const res = await createDomainDirectoryEntry(token, {
+      name: newDomainName.trim(),
+      officialDomain: newDomainDomain.trim(),
+      category: newDomainCategory.trim() || undefined,
+      sourceUrl: newDomainSourceUrl.trim() || undefined,
+    })
+    setIsAddingDomain(false)
+    if (res.success) {
+      showToast(`Added ${newDomainName.trim()} (${newDomainDomain.trim()}) to the official domain directory.`)
+      setNewDomainName('')
+      setNewDomainDomain('')
+      setNewDomainCategory('')
+      setNewDomainSourceUrl('')
+      void loadDomainEntries()
+    } else {
+      showToast(`Failed to add domain: ${res.error}`)
+    }
+  }
+
+  const handleSetDomainStatus = async (entry: DomainDirectoryEntry, status: 'ACTIVE' | 'STALE' | 'RETIRED') => {
+    if (!token) return
+    const verb = status === 'RETIRED' ? 'retire' : status === 'ACTIVE' ? 'reactivate' : 'mark stale'
+    if (!window.confirm(`Are you sure you want to ${verb} "${entry.name}" (${entry.officialDomain})?`)) return
+
+    setDomainEntries((prev) => prev.map((item) => (item.id === entry.id ? { ...item, status } : item)))
+    const res = await updateDomainDirectoryEntry(token, entry.id, { status })
+    if (res.success) {
+      showToast(`${entry.name} is now ${status}.`)
+      void loadDomainEntries()
+    } else {
+      setDomainEntries((prev) => prev.map((item) => (item.id === entry.id ? { ...item, status: entry.status } : item)))
+      showToast(`Failed to update ${entry.name}: ${res.error}`)
     }
   }
 
@@ -1189,6 +1266,17 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
               <li>
                 <button
                   type="button"
+                  className={`neo-nav-btn ${activeNav === 'DOMAINS' ? 'active' : ''}`}
+                  onClick={() => setActiveNav('DOMAINS')}
+                  title="Official Domain Directory"
+                >
+                  <Globe size={17} aria-hidden="true" />
+                  {!isSidebarCollapsed && <span>Domains</span>}
+                </button>
+              </li>
+              <li>
+                <button
+                  type="button"
                   className={`neo-nav-btn ${activeNav === 'AUDIT' ? 'active' : ''}`}
                   onClick={() => setActiveNav('AUDIT')}
                   title="Audit"
@@ -1243,6 +1331,7 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                 {activeNav === 'QUEUE' && 'Citizen Moderation Queue'}
                 {activeNav === 'AUDIT' && 'Moderation Audit Trail'}
                 {activeNav === 'INTELLIGENCE' && 'Verified Threat Intelligence Feed'}
+                {activeNav === 'DOMAINS' && 'Official Domain Directory'}
               </h1>
               <p className="neo-header-date">{todayStr} · Sri Lanka National Threat Center</p>
             </div>
@@ -2629,6 +2718,208 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                     </div>
                   </div>
                 )}
+              </div>
+            </section>
+          )}
+
+          {/* ========================================================================= */}
+          {/* VIEW 5: OFFICIAL DOMAIN DIRECTORY MANAGEMENT (Member 3)                   */}
+          {/* ========================================================================= */}
+          {activeNav === 'DOMAINS' && (
+            <section className="neo-queue-view-layout" aria-label="Official Domain Directory Management">
+              <div className="neo-intel-metrics-row">
+                <div className="neo-intel-stat-card">
+                  <div className="neo-intel-stat-top">
+                    <div className="neo-intel-icon-circle blue">
+                      <Globe size={18} aria-hidden="true" />
+                    </div>
+                    <span className="neo-intel-stat-label">Total Entries</span>
+                  </div>
+                  <div className="neo-intel-stat-value">{domainEntries.length}</div>
+                  <span className="neo-intel-stat-sub">Curated official directory</span>
+                </div>
+                <div className="neo-intel-stat-card">
+                  <div className="neo-intel-stat-top">
+                    <div className="neo-intel-icon-circle green">
+                      <CheckCircle2 size={18} aria-hidden="true" />
+                    </div>
+                    <span className="neo-intel-stat-label">Active</span>
+                  </div>
+                  <div className="neo-intel-stat-value">{domainEntries.filter((entry) => entry.status === 'ACTIVE').length}</div>
+                  <span className="neo-intel-stat-sub green">Contributing positive evidence</span>
+                </div>
+                <div className="neo-intel-stat-card">
+                  <div className="neo-intel-stat-top">
+                    <div className="neo-intel-icon-circle slate">
+                      <AlertTriangle size={18} aria-hidden="true" />
+                    </div>
+                    <span className="neo-intel-stat-label">Stale</span>
+                  </div>
+                  <div className="neo-intel-stat-value">{domainEntries.filter((entry) => entry.status === 'STALE').length}</div>
+                  <span className="neo-intel-stat-sub">Due for re-review</span>
+                </div>
+                <div className="neo-intel-stat-card">
+                  <div className="neo-intel-stat-top">
+                    <div className="neo-intel-icon-circle slate">
+                      <Power size={18} aria-hidden="true" />
+                    </div>
+                    <span className="neo-intel-stat-label">Retired</span>
+                  </div>
+                  <div className="neo-intel-stat-value">{domainEntries.filter((entry) => entry.status === 'RETIRED').length}</div>
+                  <span className="neo-intel-stat-sub">No longer usable as evidence</span>
+                </div>
+              </div>
+
+              <div className="neo-modern-panel" style={{ marginTop: '20px', marginBottom: '20px' }}>
+                <h3 style={{ margin: '0 0 12px', fontSize: '14px', color: '#0F172A' }}>Add a new official domain</h3>
+                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                  <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#475569' }}>
+                    Organization name
+                    <input
+                      type="text"
+                      value={newDomainName}
+                      onChange={(e) => setNewDomainName(e.target.value)}
+                      placeholder="e.g. Commercial Bank of Ceylon"
+                      style={{ padding: '8px 10px', borderRadius: '6px', border: '1px solid #CBD5E1', minWidth: '220px' }}
+                    />
+                  </label>
+                  <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#475569' }}>
+                    Official domain
+                    <input
+                      type="text"
+                      value={newDomainDomain}
+                      onChange={(e) => setNewDomainDomain(e.target.value)}
+                      placeholder="e.g. combank.lk"
+                      style={{ padding: '8px 10px', borderRadius: '6px', border: '1px solid #CBD5E1', minWidth: '180px' }}
+                    />
+                  </label>
+                  <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#475569' }}>
+                    Category (optional)
+                    <input
+                      type="text"
+                      value={newDomainCategory}
+                      onChange={(e) => setNewDomainCategory(e.target.value)}
+                      placeholder="e.g. Banking"
+                      style={{ padding: '8px 10px', borderRadius: '6px', border: '1px solid #CBD5E1', minWidth: '140px' }}
+                    />
+                  </label>
+                  <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#475569' }}>
+                    Source URL (optional)
+                    <input
+                      type="text"
+                      value={newDomainSourceUrl}
+                      onChange={(e) => setNewDomainSourceUrl(e.target.value)}
+                      placeholder="https://..."
+                      style={{ padding: '8px 10px', borderRadius: '6px', border: '1px solid #CBD5E1', minWidth: '200px' }}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    className="neo-btn-primary"
+                    onClick={() => void handleAddDomainEntry()}
+                    disabled={isAddingDomain}
+                  >
+                    {isAddingDomain ? 'Adding...' : 'Add domain'}
+                  </button>
+                </div>
+              </div>
+
+              {domainsError && (
+                <div className="neo-modern-error-banner" role="alert" style={{ marginBottom: '16px' }}>
+                  <AlertCircle size={14} aria-hidden="true" />
+                  <span>{domainsError}</span>
+                </div>
+              )}
+
+              <div className="neo-modern-table-wrapper">
+                <table className="neo-modern-table">
+                  <thead>
+                    <tr>
+                      <th>ORGANIZATION</th>
+                      <th>DOMAIN</th>
+                      <th>CATEGORY</th>
+                      <th>STATUS</th>
+                      <th>REVIEWER</th>
+                      <th>NEXT REVIEW</th>
+                      <th>ACTIONS</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {isLoadingDomains ? (
+                      <tr>
+                        <td colSpan={7} style={{ textAlign: 'center', padding: '48px 20px', color: '#64748B' }}>
+                          <RefreshCw size={24} className="neo-spin" style={{ margin: '0 auto 8px', display: 'block', color: '#0066FF' }} />
+                          <strong style={{ color: '#0F172A', fontSize: '14px' }}>Loading the domain directory...</strong>
+                        </td>
+                      </tr>
+                    ) : domainEntries.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} style={{ textAlign: 'center', padding: '48px 20px', color: '#64748B' }}>
+                          <Globe size={32} color="#0066FF" style={{ margin: '0 auto 8px', display: 'block' }} />
+                          <strong style={{ color: '#0F172A', fontSize: '14px' }}>No domain directory entries yet</strong>
+                        </td>
+                      </tr>
+                    ) : (
+                      domainEntries.map((entry) => (
+                        <tr key={entry.id} className={entry.status === 'RETIRED' ? 'neo-row-retired' : ''}>
+                          <td>{entry.name}</td>
+                          <td>
+                            <div className="neo-target-cell">
+                              <div className="neo-target-icon-circle">
+                                <Globe size={14} color="#0066FF" aria-hidden="true" />
+                              </div>
+                              <span className="neo-target-domain">{entry.officialDomain}</span>
+                            </div>
+                          </td>
+                          <td>{entry.category || '—'}</td>
+                          <td>
+                            <span
+                              className={`neo-status-badge ${entry.status === 'ACTIVE' ? 'green' : entry.status === 'STALE' ? 'amber' : 'slate'}`}
+                            >
+                              {entry.status}
+                            </span>
+                          </td>
+                          <td>{entry.reviewer || '—'}</td>
+                          <td>{entry.nextReviewDate || '—'}</td>
+                          <td>
+                            <div style={{ display: 'flex', gap: '6px' }}>
+                              {entry.status !== 'ACTIVE' && (
+                                <button
+                                  type="button"
+                                  className="neo-btn-secondary-sm"
+                                  onClick={() => void handleSetDomainStatus(entry, 'ACTIVE')}
+                                  title="Reactivate this entry"
+                                >
+                                  Activate
+                                </button>
+                              )}
+                              {entry.status === 'ACTIVE' && (
+                                <button
+                                  type="button"
+                                  className="neo-btn-secondary-sm"
+                                  onClick={() => void handleSetDomainStatus(entry, 'STALE')}
+                                  title="Mark this entry as due for re-review"
+                                >
+                                  Mark Stale
+                                </button>
+                              )}
+                              {entry.status !== 'RETIRED' && (
+                                <button
+                                  type="button"
+                                  className="neo-btn-secondary-sm"
+                                  onClick={() => void handleSetDomainStatus(entry, 'RETIRED')}
+                                  title="Retire this entry"
+                                >
+                                  Retire
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
               </div>
             </section>
           )}

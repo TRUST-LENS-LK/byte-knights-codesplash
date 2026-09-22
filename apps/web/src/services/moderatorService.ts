@@ -507,3 +507,83 @@ export async function toggleIntelligenceStatus(
 
 
 
+
+// ============================================================================
+// Member 3: Domain Directory Management
+// ============================================================================
+
+export interface DomainDirectoryEntry {
+  id: number
+  name: string
+  officialDomain: string
+  category: string | null
+  sourceUrl: string | null
+  reviewer: string | null
+  verifiedAt: string | null
+  nextReviewDate: string | null
+  status: 'ACTIVE' | 'STALE' | 'RETIRED'
+  active: boolean
+}
+
+export interface DomainDirectoryListResponse {
+  success: boolean
+  entries?: DomainDirectoryEntry[]
+  count?: number
+  error?: string
+}
+
+export async function fetchDomainDirectoryEntries(token: string): Promise<DomainDirectoryListResponse> {
+  try {
+    const res = await fetch(`${API_BASE}/api/moderation/domains`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    const data = await res.json()
+    if (!res.ok) {
+      return { success: false, error: data.message || `Failed to fetch domain directory (${res.status})` }
+    }
+    return { success: true, entries: data.entries || [], count: data.count || 0 }
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : 'Network error' }
+  }
+}
+
+export async function createDomainDirectoryEntry(
+  token: string,
+  data: { name: string; officialDomain: string; category?: string; sourceUrl?: string }
+): Promise<{ success: boolean; entry?: DomainDirectoryEntry; error?: string }> {
+  try {
+    const res = await fetch(`${API_BASE}/api/moderation/domains`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify(data),
+    })
+    const body = await res.json()
+    if (!res.ok) {
+      return { success: false, error: body.message || `Failed to create domain entry (${res.status})` }
+    }
+    return { success: true, entry: body.entry }
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : 'Network error' }
+  }
+}
+
+export async function updateDomainDirectoryEntry(
+  token: string,
+  id: number,
+  updates: { status?: 'ACTIVE' | 'STALE' | 'RETIRED'; category?: string; sourceUrl?: string; reviewNotes?: string; active?: boolean }
+): Promise<{ success: boolean; updated?: DomainDirectoryEntry; error?: string }> {
+  try {
+    const res = await fetch(`${API_BASE}/api/moderation/domains/${id}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify(updates),
+    })
+    const body = await res.json()
+    if (!res.ok) {
+      return { success: false, error: body.message || `Failed to update domain entry (${res.status})` }
+    }
+    return { success: true, updated: body.updated }
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : 'Network error' }
+  }
+}
