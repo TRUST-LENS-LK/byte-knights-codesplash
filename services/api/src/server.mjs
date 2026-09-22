@@ -10,7 +10,7 @@ import { applyDomainMismatchRisk, checkClaimedOrganizationDomain, verifyApproved
 import { checkGlobalDomainTrust } from './services/globalDomains.mjs'
 import { checkDomainAge } from './services/domainAge.mjs'
 import { applyKnownMaliciousRisk, checkSafeBrowsing } from './services/safeBrowsing.mjs'
-import { listDomainDirectory, lookupDomainDirectory } from './services/domainDirectory.mjs'
+import { createDomainDirectoryEntry, listAllDomainDirectoryEntries, listDomainDirectory, lookupDomainDirectory, updateDomainDirectoryEntry } from './services/domainDirectory.mjs'
 import { inspectScannerUrl, scannerFindings } from './services/urlSafety.mjs'
 import {
   checkVerifiedIntelligence,
@@ -169,6 +169,22 @@ const server = createServer(async (req, res) => {
     }
   }
 
+  // Domain Directory Management List (Protected GET) — unlike the public
+  // /api/domain-directory, this shows every entry including retired ones,
+  // for the moderator management screen.
+  if (req.method === 'GET' && pathname === '/api/moderation/domains') {
+    const auth = await authorizeModerator(req)
+    if (!auth.authorized) {
+      return send(res, 401, { code: 'UNAUTHORIZED', message: auth.error || 'Moderator access required.', requestId }, requestId)
+    }
+    try {
+      const entries = await listAllDomainDirectoryEntries()
+      return send(res, 200, { success: true, entries, count: entries.length, requestId }, requestId)
+    } catch (error) {
+      return send(res, 502, { code: 'DIRECTORY_FETCH_ERROR', message: error.message, requestId }, requestId)
+    }
+  }
+
   // Routes below require POST or PATCH with a JSON body
   const validPostRoutes = [
     '/api/analyze',
@@ -178,12 +194,14 @@ const server = createServer(async (req, res) => {
     '/api/moderation/login',
     '/api/moderation/seed-demo',
     '/api/moderation/clear-demo',
+    '/api/moderation/domains',
   ]
   const isPatchSettings = req.method === 'PATCH' && pathname === '/api/moderation/settings'
   const isPatchIntel = req.method === 'PATCH' && pathname.startsWith('/api/moderation/intelligence/')
+  const isPatchDomains = req.method === 'PATCH' && pathname.startsWith('/api/moderation/domains/')
   const isValidPost = req.method === 'POST' && validPostRoutes.includes(pathname)
 
-  if (!isValidPost && !isPatchSettings && !isPatchIntel) {
+  if (!isValidPost && !isPatchSettings && !isPatchIntel && !isPatchDomains) {
     return send(res, 404, { code: 'NOT_FOUND', message: 'Route not found.', requestId }, requestId)
   }
 
@@ -321,7 +339,7 @@ const server = createServer(async (req, res) => {
     if (typeof body.enableVerifiedIntel !== 'boolean') {
       return send(res, 400, { code: 'INVALID_SETTINGS', message: 'enableVerifiedIntel must be a boolean.', requestId }, requestId)
     }
-    const settings = updateEngineSettings(body, auth.user?.email || auth.actorRole || 'moderator')
+    const settings = updateEngineSettings(body, auth.email || auth.actorRole || 'moderator')
     return send(res, 200, { success: true, settings, requestId }, requestId)
   }
 
@@ -349,6 +367,57 @@ const server = createServer(async (req, res) => {
     } catch (error) {
       return send(res, error.message === 'Intelligence item not found.' ? 404 : 502, {
         code: error.message === 'Intelligence item not found.' ? 'NOT_FOUND' : 'UPDATE_FAILED',
+        message: error.message,
+        requestId,
+      }, requestId)
+    }
+  }
+
+  // Route: POST /api/moderation/domains (Protected — add a directory entry)
+  if (pathname === '/api/moderation/domains' && req.method === 'POST') {
+    const auth = await authorizeModerator(req)
+    if (!auth.authorized) {
+      return send(res, 401, { code: 'UNAUTHORIZED', message: auth.error || 'Moderator access required.', requestId }, requestId)
+    }
+    if (typeof body.name !== 'string' || !body.name.trim() || typeof body.officialDomain !== 'string' || !body.officialDomain.trim()) {
+      return send(res, 400, { code: 'INVALID_SUBMISSION', message: 'name and officialDomain are required.', requestId }, requestId)
+    }
+    try {
+      const reviewer = auth.email || auth.actorRole || 'moderator'
+      const created = await createDomainDirectoryEntry(
+        { name: body.name.trim(), officialDomain: body.officialDomain.trim().toLowerCase(), category: body.category, sourceUrl: body.sourceUrl },
+        reviewer,
+      )
+      return send(res, 201, { success: true, entry: created, requestId }, requestId)
+    } catch (error) {
+      return send(res, 502, { code: 'DIRECTORY_CREATE_ERROR', message: error.message, requestId }, requestId)
+    }
+  }
+
+  // Route: PATCH /api/moderation/domains/:id (Protected — update a directory entry)
+  if (pathname.startsWith('/api/moderation/domains/') && req.method === 'PATCH') {
+    const auth = await authorizeModerator(req)
+    if (!auth.authorized) {
+      return send(res, 401, { code: 'UNAUTHORIZED', message: auth.error || 'Moderator access required.', requestId }, requestId)
+    }
+    const domainId = pathname.slice('/api/moderation/domains/'.length)
+    if (!domainId) {
+      return send(res, 400, { code: 'INVALID_ID', message: 'Domain directory ID is required.', requestId }, requestId)
+    }
+    const allowedKeys = ['status', 'category', 'sourceUrl', 'reviewNotes', 'active']
+    if (!allowedKeys.some((key) => body[key] !== undefined)) {
+      return send(res, 400, { code: 'INVALID_PAYLOAD', message: `At least one of ${allowedKeys.join(', ')} must be provided.`, requestId }, requestId)
+    }
+    if (body.status !== undefined && !['ACTIVE', 'STALE', 'RETIRED'].includes(body.status)) {
+      return send(res, 400, { code: 'INVALID_PAYLOAD', message: 'status must be ACTIVE, STALE, or RETIRED.', requestId }, requestId)
+    }
+    try {
+      const reviewer = auth.email || auth.actorRole || 'moderator'
+      const updated = await updateDomainDirectoryEntry(domainId, body, reviewer)
+      return send(res, 200, { success: true, updated, requestId }, requestId)
+    } catch (error) {
+      return send(res, error.message === 'Domain directory entry not found.' ? 404 : 502, {
+        code: error.message === 'Domain directory entry not found.' ? 'NOT_FOUND' : 'UPDATE_FAILED',
         message: error.message,
         requestId,
       }, requestId)
