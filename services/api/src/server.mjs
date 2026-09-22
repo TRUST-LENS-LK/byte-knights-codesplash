@@ -462,6 +462,15 @@ const server = createServer(async (req, res) => {
 
   // Route: POST /api/analyze
   try {
+    // The `url` field (and the URL entity extractor downstream) only
+    // recognizes an absolute http(s) URL. A dedicated URL submission's type
+    // already tells us the whole value is meant as a link, so a bare domain
+    // like "boc.lk" is normalized here rather than rejected or silently
+    // producing zero entities.
+    if (body && body.type === 'url' && typeof body.url === 'string' && body.url.trim() && !/^https?:\/\//i.test(body.url.trim())) {
+      body.url = `https://${body.url.trim()}`
+    }
+
     const validationError = validateSubmission(body)
     if (validationError) return send(res, 400, { code: 'INVALID_SUBMISSION', message: validationError, requestId }, requestId)
 

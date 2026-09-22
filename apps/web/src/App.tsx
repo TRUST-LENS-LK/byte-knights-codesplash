@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Shield, ShieldCheck, AlertOctagon, AlertTriangle, MessageSquare, Camera, Link2 } from 'lucide-react'
-import { analyzeSubmission, analyzeWithApi, detectSubmissionType } from './services/analysisService'
+import { analyzeSubmission, analyzeWithApi, detectSubmissionType, normalizeUrlInput } from './services/analysisService'
 import { CommunityReportBar } from './components/CommunityReportBar'
 import { ReportModal } from './components/ReportModal'
 import { ModeratorDashboard } from './components/ModeratorDashboard'
@@ -295,9 +295,9 @@ function App() {
                     setIntelligenceOverlay(null)
                   }}
                   onKeyDown={(event) => {
-                    if (event.key === 'Enter' && text.trim() && !isAnalyzing) void checkMessage()
+                    if (event.key === 'Enter' && text.trim() && !isAnalyzing) void checkMessage(normalizeUrlInput(text), 'url')
                   }}
-                  placeholder="https://suspicious-link.example/claim-prize"
+                  placeholder="e.g. suspicious-link.example/claim-prize"
                   style={{
                     width: '100%',
                     padding: '10px 12px',
@@ -315,7 +315,7 @@ function App() {
                   <span>{text.length}/2,048 characters</span>
                   <button
                     type="button"
-                    onClick={() => void checkMessage()}
+                    onClick={() => void checkMessage(normalizeUrlInput(text), 'url')}
                     disabled={!text.trim() || isAnalyzing}
                   >
                     {isAnalyzing ? 'Checking...' : 'Check safely'}
