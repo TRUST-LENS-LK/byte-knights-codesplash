@@ -513,14 +513,27 @@ test('GET & PATCH /api/moderation/settings: manages engine settings dynamically'
   const patchBody = await patchRes.json()
   assert.equal(patchBody.settings.enableVerifiedIntel, false)
 
-  // 4. Restore setting to true
+  // 4. PATCH auditRetentionDays
+  const patchRetentionRes = await fetch(`http://localhost:${apiPort}/api/moderation/settings`, {
+    method: 'PATCH',
+    headers: {
+      'content-type': 'application/json',
+      Authorization: `Bearer ${validModeratorToken}`,
+    },
+    body: JSON.stringify({ auditRetentionDays: 60 }),
+  })
+  assert.equal(patchRetentionRes.status, 200)
+  const patchRetentionBody = await patchRetentionRes.json()
+  assert.equal(patchRetentionBody.settings.auditRetentionDays, 60)
+
+  // 5. Restore setting to true and 90 days
   await fetch(`http://localhost:${apiPort}/api/moderation/settings`, {
     method: 'PATCH',
     headers: {
       'content-type': 'application/json',
       Authorization: `Bearer ${validModeratorToken}`,
     },
-    body: JSON.stringify({ enableVerifiedIntel: true }),
+    body: JSON.stringify({ enableVerifiedIntel: true, auditRetentionDays: 90 }),
   })
 })
 
@@ -588,5 +601,50 @@ test('POST /api/moderation/clear-demo: clears demo reports when called by verifi
   const body = await clearRes.json()
   assert.equal(body.success, true)
   assert.ok(typeof body.count === 'number')
+})
+
+test('GET /api/moderation/audit-logs: blocks unauthenticated requests and returns audit trail for moderator', async () => {
+  // 1. Unauthenticated request blocked
+  const unauthRes = await fetch(`http://localhost:${apiPort}/api/moderation/audit-logs`)
+  assert.equal(unauthRes.status, 401)
+
+  // 2. Authenticated query succeeds
+  const authRes = await fetch(`http://localhost:${apiPort}/api/moderation/audit-logs?page=1&limit=10`, {
+    headers: { Authorization: `Bearer ${validModeratorToken}` },
+  })
+  assert.equal(authRes.status, 200)
+  const body = await authRes.json()
+  assert.equal(body.success, true)
+  assert.ok(Array.isArray(body.auditLogs))
+  assert.ok(typeof body.total === 'number')
+  assert.equal(body.retentionDays, 90)
+})
+
+test('GET /api/moderation/audit-logs/stats: returns storage volume and retention health', async () => {
+  const statsRes = await fetch(`http://localhost:${apiPort}/api/moderation/audit-logs/stats`, {
+    headers: { Authorization: `Bearer ${validModeratorToken}` },
+  })
+  assert.equal(statsRes.status, 200)
+  const body = await statsRes.json()
+  assert.equal(body.success, true)
+  assert.ok(body.stats)
+  assert.equal(body.stats.retentionDays, 90)
+  assert.ok(['OPTIMAL', 'WARNING', 'CAPACITY_REACHED'].includes(body.stats.storageStatus))
+})
+
+test('POST /api/moderation/audit-logs/purge: executes retention purge and removes expired records', async () => {
+  const purgeRes = await fetch(`http://localhost:${apiPort}/api/moderation/audit-logs/purge`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      Authorization: `Bearer ${validModeratorToken}`,
+    },
+    body: JSON.stringify({}),
+  })
+  assert.equal(purgeRes.status, 200)
+  const body = await purgeRes.json()
+  assert.equal(body.success, true)
+  assert.ok(typeof body.purgedCount === 'number')
+  assert.equal(body.retentionDays, 90)
 })
 
