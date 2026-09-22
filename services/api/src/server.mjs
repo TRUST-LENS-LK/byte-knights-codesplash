@@ -25,6 +25,10 @@ import {
   getEngineSettings,
   updateEngineSettings,
   isVerifiedIntelEnabled,
+  AUDIT_RETENTION_DAYS,
+  getModerationAuditLogs,
+  purgeExpiredAuditLogs,
+  getAuditStorageStats,
 } from './services/reportingService.mjs'
 import { reconcileDecision } from './services/reconcileIntelligence.mjs'
 import { getOpenApiSpec, getSwaggerHtml } from './http/swagger.mjs'
@@ -166,6 +170,38 @@ const server = createServer(async (req, res) => {
     }
   }
 
+  // Moderation Audit Logs Query (Protected GET)
+  if (req.method === 'GET' && pathname === '/api/moderation/audit-logs') {
+    const auth = await authorizeModerator(req)
+    if (!auth.authorized) {
+      return send(res, 401, { code: 'UNAUTHORIZED', message: auth.error || 'Moderator access required.', requestId }, requestId)
+    }
+    try {
+      const action = parsedUrl.searchParams.get('action') || 'ALL'
+      const search = parsedUrl.searchParams.get('search') || ''
+      const page = parseInt(parsedUrl.searchParams.get('page') || '1', 10)
+      const limit = parseInt(parsedUrl.searchParams.get('limit') || '20', 10)
+      const result = await getModerationAuditLogs({ action, search, page, limit })
+      return send(res, 200, { success: true, ...result, requestId }, requestId)
+    } catch (error) {
+      return send(res, 502, { code: 'AUDIT_FETCH_ERROR', message: error.message, requestId }, requestId)
+    }
+  }
+
+  // Moderation Audit Storage & Retention Stats (Protected GET)
+  if (req.method === 'GET' && pathname === '/api/moderation/audit-logs/stats') {
+    const auth = await authorizeModerator(req)
+    if (!auth.authorized) {
+      return send(res, 401, { code: 'UNAUTHORIZED', message: auth.error || 'Moderator access required.', requestId }, requestId)
+    }
+    try {
+      const stats = await getAuditStorageStats()
+      return send(res, 200, { success: true, stats, requestId }, requestId)
+    } catch (error) {
+      return send(res, 502, { code: 'AUDIT_STATS_ERROR', message: error.message, requestId }, requestId)
+    }
+  }
+
   // Routes below require POST or PATCH with a JSON body
   const validPostRoutes = [
     '/api/analyze',
@@ -175,6 +211,7 @@ const server = createServer(async (req, res) => {
     '/api/moderation/login',
     '/api/moderation/seed-demo',
     '/api/moderation/clear-demo',
+    '/api/moderation/audit-logs/purge',
   ]
   const isPatchSettings = req.method === 'PATCH' && pathname === '/api/moderation/settings'
   const isPatchIntel = req.method === 'PATCH' && pathname.startsWith('/api/moderation/intelligence/')
@@ -274,10 +311,25 @@ const server = createServer(async (req, res) => {
       return send(res, 400, { code: 'INVALID_ACTION', message: validationError, requestId }, requestId)
     }
     try {
-      const result = await processModerationReview(body, auth.actorRole)
+      const result = await processModerationReview(body, auth.actorRole, auth.userEmail || auth.user?.email)
       return send(res, 200, { result, requestId }, requestId)
     } catch (error) {
       return send(res, error.message === 'Report not found.' ? 404 : 502, { code: error.message === 'Report not found.' ? 'REPORT_NOT_FOUND' : 'REVIEW_FAILED', message: error.message, requestId }, requestId)
+    }
+  }
+
+  // Route: POST /api/moderation/audit-logs/purge (Protected Retention Purge)
+  if (pathname === '/api/moderation/audit-logs/purge') {
+    const auth = await authorizeModerator(req)
+    if (!auth.authorized) {
+      return send(res, 401, { code: 'UNAUTHORIZED', message: auth.error || 'Moderator access required.', requestId }, requestId)
+    }
+    try {
+      const { retentionDays, graceDays } = body || {}
+      const result = await purgeExpiredAuditLogs(retentionDays, graceDays)
+      return send(res, 200, { success: true, ...result, requestId }, requestId)
+    } catch (error) {
+      return send(res, 502, { code: 'PURGE_FAILED', message: error.message, requestId }, requestId)
     }
   }
 
@@ -315,10 +367,10 @@ const server = createServer(async (req, res) => {
     if (!auth.authorized) {
       return send(res, 401, { code: 'UNAUTHORIZED', message: auth.error || 'Moderator access required.', requestId }, requestId)
     }
-    if (typeof body.enableVerifiedIntel !== 'boolean') {
-      return send(res, 400, { code: 'INVALID_SETTINGS', message: 'enableVerifiedIntel must be a boolean.', requestId }, requestId)
+    if (typeof body.enableVerifiedIntel !== 'boolean' && typeof body.auditRetentionDays !== 'number') {
+      return send(res, 400, { code: 'INVALID_SETTINGS', message: 'At least one of enableVerifiedIntel (boolean) or auditRetentionDays (number) must be provided.', requestId }, requestId)
     }
-    const settings = updateEngineSettings(body, auth.user?.email || auth.actorRole || 'moderator')
+    const settings = updateEngineSettings(body, auth.actorRole || 'moderator', auth.userEmail || auth.user?.email)
     return send(res, 200, { success: true, settings, requestId }, requestId)
   }
 
@@ -341,6 +393,7 @@ const server = createServer(async (req, res) => {
         notes: body.notes,
         category: body.category,
         actorRole: auth.actorRole,
+        actorEmail: auth.userEmail || auth.user?.email,
       })
       return send(res, 200, { success: true, updated, requestId }, requestId)
     } catch (error) {
@@ -484,6 +537,14 @@ async function runRetentionPurge() {
     if (deleted) console.log(`Retention purge removed ${deleted} expired submission(s).`)
   } catch (error) {
     console.error('Retention purge failed:', error.message)
+  }
+  try {
+    const auditPurged = await purgeExpiredAuditLogs()
+    if (auditPurged?.purgedCount) {
+      console.log(`Audit retention purge removed ${auditPurged.purgedCount} expired log entry(ies).`)
+    }
+  } catch (error) {
+    console.error('Audit retention purge failed:', error.message)
   }
 }
 const purgeTimer = setInterval(runRetentionPurge, PURGE_INTERVAL_MS)

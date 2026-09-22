@@ -37,7 +37,7 @@ export async function authorizeModerator(req) {
       return { authorized: false, error: 'Forbidden: account does not have moderator privileges.' }
     }
 
-    return { authorized: true, actorRole: role, userId: user.id }
+    return { authorized: true, actorRole: role, userId: user.id, userEmail: user.email || null, user }
   } catch (error) {
     return { authorized: false, error: 'Authentication service temporarily unavailable.' }
   }
