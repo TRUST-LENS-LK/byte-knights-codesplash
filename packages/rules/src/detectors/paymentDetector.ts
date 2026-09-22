@@ -56,8 +56,8 @@ const PAYMENT_PATTERNS: { pattern: RegExp; evidence: string; strength: number }[
   },
   // Singlish & informal variants: "denna" (give/pay in Sinhala)
   {
-    pattern: /\b(?:fee\s+eka\s+(?:gewanna|denna|kathanawa)|reg(?:istration)?\s+fee\s+(?:pay|send|denna|gewanna))\b/i,
-    evidence: 'Singlish/Sinhala payment demand detected (fee eka gewanna / denna)',
+    pattern: /(?:\b(?:fee\s+eka\s+(?:gewanna|denna|kathanawa)|reg(?:istration)?\s+fee\s+(?:pay|send|denna|gewanna)|pay\s+(?:the\s+)?fee)|ගාස්තු|ගෙවන්න|මුදල්|ගෙවීම්)/i,
+    evidence: 'Singlish/Sinhala payment demand detected (fee / payment request)',
     strength: 0.95,
   },
   // Generic upfront / prepayment language

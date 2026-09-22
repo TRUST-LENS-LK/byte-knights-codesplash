@@ -3,6 +3,13 @@ import { scanUrl } from './scanner.mjs'
 
 const PORT = process.env.PORT || 8788
 const MAX_BODY_BYTES = 10000
+// Optional shared secret between this scanner and the main API. Left unset,
+// the endpoint stays open (matches its current behavior, so local
+// development is not blocked by a missing secret); set the same value in
+// both services' environments to require it. This is a defense-in-depth
+// measure against this service being reachable by something other than the
+// main API, not a replacement for keeping it off a public network.
+const SHARED_SECRET = process.env.SCANNER_SHARED_SECRET || ''
 
 function send(res, status, body) {
   res.writeHead(status, { 'Content-Type': 'application/json' })
@@ -16,6 +23,10 @@ const server = createServer(async (req, res) => {
 
   if (req.method !== 'POST' || req.url !== '/scan') {
     return send(res, 404, { error: 'Not found' })
+  }
+
+  if (SHARED_SECRET && req.headers['x-scanner-secret'] !== SHARED_SECRET) {
+    return send(res, 401, { error: 'Unauthorized' })
   }
 
   let raw = ''

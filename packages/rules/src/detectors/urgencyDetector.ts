@@ -28,7 +28,7 @@ const URGENCY_PATTERNS: { pattern: RegExp; evidence: string; strength: number }[
   },
   // Today / time-bound urgency
   {
-    pattern: /\b(?:today only|by today|before (?:\d+\s*(?:am|pm|hours?)|tonight|midnight)|within \d+\s*(?:minutes?|hours?|days?))\b/i,
+    pattern: /\b(?:today only|by today|ada|අදම|before (?:\d+\s*(?:am|pm|hours?)|tonight|midnight)|within \d+\s*(?:minutes?|hours?|days?))\b/i,
     evidence: 'Time-bound urgency with specific deadline',
     strength: 0.70,
   },

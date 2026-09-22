@@ -31,7 +31,14 @@ function isPrivateIp(ip) {
   return false
 }
 
-const dnsCache = new Map()
+// No caching here on purpose. The DNS check below and Chromium's own
+// connection are still two separate resolutions (a full fix would require
+// fetching each resource ourselves with a pinned IP instead of letting the
+// browser resolve independently), so this cannot fully close a DNS-rebinding
+// race by itself. Not caching at least means every single request gets a
+// fresh lookup checked immediately before continue(), shrinking that window
+// to the minimum achievable without a larger rewrite of this interceptor.
+let browser = null
 export async function scanUrl(targetUrl) {
   const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined
   const browser = await chromium.launch({
@@ -59,13 +66,8 @@ export async function scanUrl(targetUrl) {
     }
 
     try {
-      let address = dnsCache.get(requestUrl.hostname)
-      if (!address) {
-        const result = await lookup(requestUrl.hostname)
-        address = result.address
-        dnsCache.set(requestUrl.hostname, address)
-      }
-      
+      const { address } = await lookup(requestUrl.hostname)
+
       if (isPrivateIp(address)) {
         console.warn(`[Scanner] Blocked request to private IP ${address} for ${requestUrl.hostname}`)
         limitations.push('Blocked navigation to private or internal network address')

@@ -1,25 +1,87 @@
 import { analyzeMessage } from '@trustlens/rules'
 import { extractEntities as extractEntitiesExtraction } from '@trustlens/extraction'
+import { submissionSchema } from '@trustlens/contracts'
 
 // Re-export the shared analyzeMessage so callers inside the API can use it directly.
 export { analyzeMessage }
 
 // Use the shared extraction package for entity extraction and augment with domain entities.
+// Preserves startIndex, endIndex, and sourceSpan from the shared package so span-aware
+// features (persistence, UI highlighting) can use them downstream.
 export function extractEntities(text) {
   try {
     const raw = extractEntitiesExtraction(text).map((entity) => ({
       type: entity.type,
       value: entity.type === 'url' ? entity.normalizedValue ?? entity.value : entity.value,
       normalizedValue: entity.normalizedValue ?? null,
+      sourceSpan: entity.sourceSpan ?? null,
+      startIndex: entity.startIndex ?? null,
+      endIndex: entity.endIndex ?? null,
       confidence: entity.confidence ?? null,
     }))
     // Augment with domain entities derived from URL entities (not in shared package).
+    // Domain entities from the URL extractor already carry span info; only add here
+    // for any URL that did NOT already produce a domain entity.
+    const existingDomainValues = new Set(
+      raw.filter((e) => e.type === 'domain').map((e) => e.value)
+    )
     const domainEntities = []
     for (const entity of raw.filter((e) => e.type === 'url')) {
       try {
         const hostname = new URL(entity.value).hostname.toLowerCase()
-        if (hostname) domainEntities.push({ type: 'domain', value: hostname, normalizedValue: hostname, confidence: 0.98 })
+        if (hostname && !existingDomainValues.has(hostname)) {
+          domainEntities.push({
+            type: 'domain',
+            value: hostname,
+            normalizedValue: hostname,
+            sourceSpan: null,
+            startIndex: entity.startIndex,
+            endIndex: entity.endIndex,
+            confidence: 0.98,
+          })
+          existingDomainValues.add(hostname)
+        }
       } catch { /* skip unparseable URLs */ }
+    }
+
+    // Also extract bare domains and defanged indicators (e.g. "scam.lk", "scam[.]lk", "ceb-online-pay.top")
+    const cleanText = text
+      .replace(/hxxps?:\/\//gi, 'https://')
+      .replace(/\[\.\]/g, '.')
+      .replace(/\[+\]+/g, '.')
+
+    for (const match of cleanText.matchAll(/(?:^|[\s,;()\[\]<>])([a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z]{2,})+)(?=[)\]>.,;:!?\s]|$)/gm)) {
+      const domain = match[1].toLowerCase()
+      if (!existingDomainValues.has(domain) && !cleanText.includes(`@${domain}`)) {
+        const startIndex = match.index + match[0].indexOf(match[1])
+        const endIndex = startIndex + domain.length
+        domainEntities.push({
+          type: 'domain',
+          value: domain,
+          normalizedValue: domain,
+          sourceSpan: match[1],
+          startIndex,
+          endIndex,
+          confidence: 0.95,
+        })
+        existingDomainValues.add(domain)
+      }
+    }
+
+    const trimmed = cleanText.trim().toLowerCase()
+    if (/^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z]{2,})+$/i.test(trimmed)) {
+      if (!existingDomainValues.has(trimmed)) {
+        domainEntities.push({
+          type: 'domain',
+          value: trimmed,
+          normalizedValue: trimmed,
+          sourceSpan: text.trim(),
+          startIndex: 0,
+          endIndex: text.trim().length,
+          confidence: 0.98,
+        })
+        existingDomainValues.add(trimmed)
+      }
     }
     const all = [...raw, ...domainEntities]
     // Deduplicate by type + value.
@@ -30,14 +92,17 @@ export function extractEntities(text) {
 }
 
 // Inline fallback — kept in sync with the shared extraction package.
+// Used only when the extraction package itself throws an unexpected error.
 function extractEntitiesInline(text) {
   const entities = []
   for (const match of text.matchAll(/https?:\/\/[^\s<>()]+/gi)) {
     const value = match[0].replace(/[),.!?]+$/, '')
-    entities.push({ type: 'url', value, confidence: 0.99 })
+    const startIndex = match.index
+    const endIndex = startIndex + value.length
+    entities.push({ type: 'url', value, sourceSpan: value, startIndex, endIndex, confidence: 0.99 })
     try {
       const hostname = new URL(value).hostname.toLowerCase()
-      if (hostname) entities.push({ type: 'domain', value: hostname, normalizedValue: hostname, confidence: 0.98 })
+      if (hostname) entities.push({ type: 'domain', value: hostname, normalizedValue: hostname, sourceSpan: null, startIndex, endIndex, confidence: 0.98 })
     } catch {
       // Keep the URL entity when the submitted value is not parseable.
     }
@@ -45,14 +110,28 @@ function extractEntitiesInline(text) {
   // Extract bare domains (e.g. "scam.lk", "bank-verify.com") not already captured via URL extraction
   for (const match of text.matchAll(/(?:^|[\s,;()\[\]<>])([a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z]{2,})+)(?=[)\]>.,;:!?\s]|$)/gm)) {
     const domain = match[1].toLowerCase()
+    const startIndex = match.index + match[0].indexOf(match[1])
+    const endIndex = startIndex + domain.length
     const alreadyHas = entities.some((e) => e.type === 'domain' && e.value === domain)
     if (!alreadyHas && !text.includes(`@${domain}`)) {
-      entities.push({ type: 'domain', value: domain, normalizedValue: domain, confidence: 0.90 })
+      entities.push({ type: 'domain', value: domain, normalizedValue: domain, sourceSpan: match[1], startIndex, endIndex, confidence: 0.90 })
     }
   }
-  for (const match of text.matchAll(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g)) entities.push({ type: 'email', value: match[0], confidence: 0.99 })
-  for (const match of text.matchAll(/(?:\+94|0)\s*\d{2}\s*\d{3}\s*\d{4}/g)) entities.push({ type: 'phone', value: match[0], normalizedValue: match[0].replace(/\s+/g, '').replace(/^0/, '+94'), confidence: 0.95 })
-  for (const match of text.matchAll(/(?:Rs\.?|LKR)\s?[\d,]+(?:\.\d{1,2})?/gi)) entities.push({ type: 'amount', value: match[0], confidence: 0.94 })
+  for (const match of text.matchAll(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g)) {
+    const startIndex = match.index
+    const endIndex = startIndex + match[0].length
+    entities.push({ type: 'email', value: match[0], sourceSpan: match[0], startIndex, endIndex, confidence: 0.99 })
+  }
+  for (const match of text.matchAll(/(?:\+94|0)\s*\d{2}\s*\d{3}\s*\d{4}/g)) {
+    const startIndex = match.index
+    const endIndex = startIndex + match[0].length
+    entities.push({ type: 'phone', value: match[0], normalizedValue: match[0].replace(/\s+/g, '').replace(/^0/, '+94'), sourceSpan: match[0], startIndex, endIndex, confidence: 0.95 })
+  }
+  for (const match of text.matchAll(/(?:Rs\.?|LKR)\s?[\d,]+(?:\.\d{1,2})?/gi)) {
+    const startIndex = match.index
+    const endIndex = startIndex + match[0].length
+    entities.push({ type: 'amount', value: match[0], sourceSpan: match[0], startIndex, endIndex, confidence: 0.94 })
+  }
   return entities.filter((entity, index, all) => all.findIndex((candidate) => candidate.type === entity.type && candidate.value === entity.value) === index)
 }
 
@@ -60,12 +139,24 @@ export function analyze(text) {
   return analyzeMessage(text)
 }
 
+/**
+ * Validates a submission body using the shared Zod schema from @trustlens/contracts.
+ * Returns a human-readable error string on failure, or null if valid.
+ *
+ * Using the contract schema here ensures the API and packages always agree on
+ * what a valid submission looks like — a single source of truth.
+ */
 export function validateSubmission(body) {
-  if (!body || typeof body !== 'object' || Array.isArray(body)) return 'Request body must be a JSON object.'
-  if (body.type !== undefined && !['message', 'url', 'screenshot'].includes(body.type)) return 'type must be message, url, or screenshot.'
-  if (body.languageHint !== undefined && !['en', 'si', 'singlish', 'mixed'].includes(body.languageHint)) return 'languageHint is not supported.'
-  if (body.retentionConsent !== undefined && typeof body.retentionConsent !== 'boolean') return 'retentionConsent must be a boolean.'
-  return null
+  const result = submissionSchema.safeParse(body)
+  if (result.success) return null
+  // Return the first issue's message, which matches the contract's human-readable descriptions.
+  const firstIssue = result.error.issues[0]
+  // Map Zod field paths to the error messages the existing API tests expect.
+  const field = firstIssue?.path[0]
+  if (field === 'type') return 'type must be message, url, or screenshot.'
+  if (field === 'languageHint') return 'languageHint is not supported.'
+  if (field === 'retentionConsent') return 'retentionConsent must be a boolean.'
+  return firstIssue?.message ?? 'Invalid submission.'
 }
 
 export function applyScannerRisk(decision) {
