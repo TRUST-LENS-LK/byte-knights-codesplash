@@ -71,13 +71,16 @@ Errors always follow this exact shape:
 | GET | `/api/moderation/stats` | moderator | Aggregate moderation queue stats |
 | GET | `/api/moderation/queue` | moderator | Paginated report queue; `status`, `page`, `limit` query params |
 | GET | `/api/moderation/domains` | moderator | List every domain directory entry, including retired ones, for the management screen |
+| GET | `/api/moderation/intelligence` | moderator | List verified threat intelligence indicators; `status`, `type`, `riskLevel`, `search`, `page`, `limit` query params |
 | POST | `/api/scanner/preview` | none, rate-limited | Structural URL safety check without fetching the page |
 | POST | `/api/reports` | none, rate-limited | Submit a report into the private moderation queue |
 | POST | `/api/moderation/login` | none | Exchange moderator email/password for a session token |
-| POST | `/api/moderation/review` | moderator | Approve, reject, or retire a report |
+| POST | `/api/moderation/review` | moderator | Approve, reject, or retire a report; approving one publishes it to verified intelligence |
 | POST | `/api/moderation/seed-demo` | moderator | Populate demo fixtures for a rehearsal |
 | POST | `/api/moderation/domains` | moderator | Add a new domain directory entry; requires `name` and `officialDomain` |
+| POST | `/api/moderation/intelligence` | moderator | Add a scam or verified-safe indicator directly, without a prior citizen report; requires `indicatorValue` |
 | PATCH | `/api/moderation/domains/:id` | moderator | Update a domain directory entry's `status`, `category`, `sourceUrl`, `reviewNotes`, or `active` |
+| PATCH | `/api/moderation/intelligence/:id` | moderator | Update an intelligence indicator's `active`, `notes`, or `category` |
 | POST | `/api/analyze` | none, rate-limited | Main pipeline: message or dedicated URL submission to a full decision |
 
 `/api/analyze` runs the full domain verification cascade for URL submissions: a
@@ -89,6 +92,14 @@ a domain age check via RDAP with a certificate-transparency-log fallback for TLD
 (such as `.lk`) that run neither RDAP nor WHOIS (Tier 5). Every external/live-network
 tier fails open: a timeout or missing upstream config degrades to an honest
 limitation rather than blocking analysis or fabricating a result.
+
+There are two ways an indicator reaches the `verified_intelligence` table (Tier 2,
+community intelligence): a citizen submits `POST /api/reports`, and a moderator later
+confirms it as `CONFIRMED_SCAM` (or `VERIFIED_SAFE`) via `POST /api/moderation/review`;
+or a moderator adds it directly via `POST /api/moderation/intelligence`, for a known
+threat that has not (yet) been reported by a citizen. Both paths write the same shape
+and are picked up identically by `checkVerifiedIntelligence` on the next `/api/analyze`
+call for that indicator.
 
 `/api/domain-directory*` and `/api/moderation/stats|queue` intentionally require no
 extra auth beyond what RLS already grants (see `docs/rls-access-matrix.md`): the
@@ -121,9 +132,12 @@ trust boundary; the moderation reads because `authorizeModerator` is the actual 
 | `DIRECTORY_FETCH_ERROR` | 502 | Domain directory list query failed |
 | `DIRECTORY_LOOKUP_ERROR` | 502 | Domain directory lookup query failed |
 | `DIRECTORY_CREATE_ERROR` | 502 | Creating a domain directory entry failed |
-| `INVALID_ID` | 400 | Domain directory update was missing its `:id` path segment |
-| `INVALID_PAYLOAD` | 400 | Domain directory update had no recognized fields, or an invalid `status` |
-| `UPDATE_FAILED` | 502 | Domain directory update failed for a reason other than not-found |
+| `INVALID_ID` | 400 | A domain directory or intelligence update was missing its `:id` path segment |
+| `INVALID_PAYLOAD` | 400 | A domain directory or intelligence update had no recognized fields, or an invalid `status` |
+| `UPDATE_FAILED` | 502 | A domain directory or intelligence update failed for a reason other than not-found |
+| `INTELLIGENCE_FETCH_ERROR` | 502 | Verified intelligence list query failed |
+| `DUPLICATE_INDICATOR` | 409 | A manually-added intelligence indicator already exists |
+| `INTELLIGENCE_CREATE_ERROR` | 502 | Creating a manual intelligence entry failed |
 | `PERSISTENCE_ERROR` | 502 | Analysis succeeded, but the Supabase write failed |
 
 ## What must never appear in a response or a log line

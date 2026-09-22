@@ -1171,6 +1171,102 @@ export async function updateIntelligenceStatus(id, { active, notes, category, ac
   return { ...existing, report_count: existing.report_count || 1 }
 }
 
+/**
+ * Lets a moderator add a known-scam (or known-safe) indicator directly to
+ * the verified intelligence feed, without waiting for a citizen report to
+ * arrive and be reviewed first. Writes to the same verified_intelligence
+ * table and shape that processModerationReview's approval path writes to,
+ * so both paths are picked up identically by checkVerifiedIntelligence.
+ */
+export async function createManualIntelligenceEntry(data, actorRole = 'moderator') {
+  const rawValue = (data.indicatorValue || '').toLowerCase().trim()
+  if (!rawValue) {
+    throw new Error('indicatorValue is required.')
+  }
+  const indicatorType = data.indicatorType || 'domain'
+  const riskLevel = data.riskLevel === 'VERIFIED_SAFE' ? 'VERIFIED_SAFE' : 'CONFIRMED_SCAM'
+  const confidence = typeof data.confidence === 'number' && data.confidence >= 0.1 && data.confidence <= 1.0
+    ? Number(data.confidence.toFixed(3))
+    : 1.0
+  const createdAt = new Date().toISOString()
+
+  const record = {
+    id: randomUUID(),
+    source_report_id: null,
+    indicator_type: indicatorType,
+    indicator_value: rawValue,
+    defanged_value: defang(rawValue),
+    risk_level: riskLevel,
+    category: data.category?.trim() || (riskLevel === 'CONFIRMED_SCAM' ? 'Moderator-Reported Scam' : 'Moderator-Verified Safe'),
+    confidence,
+    notes: data.notes?.trim() || 'Added directly by a moderator, not from a citizen report.',
+    report_count: 1,
+    active: true,
+    created_at: createdAt,
+  }
+
+  const auditLog = {
+    id: randomUUID(),
+    report_id: null,
+    actor_role: actorRole,
+    action: riskLevel === 'CONFIRMED_SCAM' ? 'MANUAL_ADD_SCAM_INTEL' : 'MANUAL_ADD_SAFE_INTEL',
+    notes: record.notes,
+    created_at: createdAt,
+  }
+
+  if (isSupabaseConfigured()) {
+    try {
+      const checkQuery = `${SUPABASE_URL}/rest/v1/verified_intelligence?indicator_value=eq.${encodeURIComponent(rawValue)}&limit=1`
+      const checkRes = await fetch(checkQuery, { headers: getHeaders(), signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) })
+      if (checkRes.ok) {
+        const [existing] = await checkRes.json().catch(() => [])
+        if (existing) {
+          throw new Error('DUPLICATE_INDICATOR')
+        }
+      }
+
+      const insertRes = await fetch(`${SUPABASE_URL}/rest/v1/verified_intelligence`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify(record),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      })
+      if (!insertRes.ok) {
+        const text = await insertRes.text().catch(() => '')
+        throw new Error(`Failed to create intelligence entry: ${text.slice(0, 300)}`)
+      }
+      const [saved] = await insertRes.json().catch(() => [])
+      const finalRecord = saved || record
+
+      try {
+        await fetch(`${SUPABASE_URL}/rest/v1/moderation_audit_logs`, {
+          method: 'POST',
+          headers: getHeaders(),
+          body: JSON.stringify(auditLog),
+          signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        })
+      } catch {
+        // Non-blocking if the audit table is still pending migration
+      }
+
+      return { ...finalRecord, report_count: finalRecord.report_count || 1 }
+    } catch (error) {
+      if (error.message === 'DUPLICATE_INDICATOR') throw error
+      // Fall through to in-memory on connection error, matching this file's other write paths
+    }
+  }
+
+  for (const item of inMemoryIntel.values()) {
+    if (item.indicator_value === rawValue) {
+      throw new Error('DUPLICATE_INDICATOR')
+    }
+  }
+  inMemoryIntel.set(record.id, record)
+  inMemoryAuditLogs.push(auditLog)
+
+  return { ...record }
+}
+
 export async function seedDemoQueue() {
   const seeded = []
   for (const demo of DEMO_REPORTS) {

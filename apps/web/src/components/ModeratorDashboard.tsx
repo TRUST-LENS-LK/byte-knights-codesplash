@@ -44,6 +44,7 @@ import {
   fetchVerifiedIntelligence,
   toggleIntelligenceStatus,
   updateIntelligenceItem,
+  createIntelligenceEntry,
   getStoredSession,
   reviewModerationItem,
   seedDemoReports,
@@ -512,6 +513,38 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
       void loadIntelligence(true)
     }
   }, [activeNav, token, loadIntelligence])
+
+  // ── Member 3: directly add a scam/safe indicator without a citizen report ──
+  const [isAddingIntel, setIsAddingIntel] = useState(false)
+  const [newIntelValue, setNewIntelValue] = useState('')
+  const [newIntelRiskLevel, setNewIntelRiskLevel] = useState<'CONFIRMED_SCAM' | 'VERIFIED_SAFE'>('CONFIRMED_SCAM')
+  const [newIntelCategory, setNewIntelCategory] = useState('')
+  const [newIntelNotes, setNewIntelNotes] = useState('')
+
+  const handleAddIntelEntry = async () => {
+    if (!token) return
+    if (!newIntelValue.trim()) {
+      showToast('An indicator value (domain, URL, phone, or hash) is required.')
+      return
+    }
+    setIsAddingIntel(true)
+    const res = await createIntelligenceEntry(token, {
+      indicatorValue: newIntelValue.trim(),
+      riskLevel: newIntelRiskLevel,
+      category: newIntelCategory.trim() || undefined,
+      notes: newIntelNotes.trim() || undefined,
+    })
+    setIsAddingIntel(false)
+    if (res.success) {
+      showToast(`Added "${newIntelValue.trim()}" as ${newIntelRiskLevel === 'CONFIRMED_SCAM' ? 'a confirmed threat' : 'verified safe'}.`)
+      setNewIntelValue('')
+      setNewIntelCategory('')
+      setNewIntelNotes('')
+      void loadIntelligence()
+    } else {
+      showToast(`Failed to add indicator: ${res.error}`)
+    }
+  }
 
   const handleToggleIntelStatus = async (item: VerifiedIntelligenceItem, newActive: boolean) => {
     if (!token) return
@@ -2360,6 +2393,65 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                     {intelligenceList.filter((i) => !i.active).length}
                   </div>
                   <span className="neo-intel-stat-sub">Archived / inactive</span>
+                </div>
+              </div>
+
+              <div className="neo-modern-panel" style={{ marginTop: '20px', marginBottom: '20px' }}>
+                <h3 style={{ margin: '0 0 12px', fontSize: '14px', color: '#0F172A' }}>Add a threat indicator directly</h3>
+                <p style={{ margin: '0 0 12px', fontSize: '12px', color: '#64748B' }}>
+                  For a known scam domain, URL, or phone number that has not been reported by a citizen yet. This
+                  publishes immediately, the same as approving a citizen report.
+                </p>
+                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                  <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#475569' }}>
+                    Indicator (domain, URL, or phone)
+                    <input
+                      type="text"
+                      value={newIntelValue}
+                      onChange={(e) => setNewIntelValue(e.target.value)}
+                      placeholder="e.g. fake-lottery-win.lk"
+                      style={{ padding: '8px 10px', borderRadius: '6px', border: '1px solid #CBD5E1', minWidth: '220px' }}
+                    />
+                  </label>
+                  <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#475569' }}>
+                    Verdict
+                    <select
+                      value={newIntelRiskLevel}
+                      onChange={(e) => setNewIntelRiskLevel(e.target.value as 'CONFIRMED_SCAM' | 'VERIFIED_SAFE')}
+                      style={{ padding: '8px 10px', borderRadius: '6px', border: '1px solid #CBD5E1', minWidth: '160px' }}
+                    >
+                      <option value="CONFIRMED_SCAM">Confirmed scam</option>
+                      <option value="VERIFIED_SAFE">Verified safe</option>
+                    </select>
+                  </label>
+                  <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#475569' }}>
+                    Category (optional)
+                    <input
+                      type="text"
+                      value={newIntelCategory}
+                      onChange={(e) => setNewIntelCategory(e.target.value)}
+                      placeholder="e.g. Fake Lottery"
+                      style={{ padding: '8px 10px', borderRadius: '6px', border: '1px solid #CBD5E1', minWidth: '140px' }}
+                    />
+                  </label>
+                  <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#475569' }}>
+                    Notes (optional)
+                    <input
+                      type="text"
+                      value={newIntelNotes}
+                      onChange={(e) => setNewIntelNotes(e.target.value)}
+                      placeholder="Why this was added"
+                      style={{ padding: '8px 10px', borderRadius: '6px', border: '1px solid #CBD5E1', minWidth: '200px' }}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    className="neo-btn-primary"
+                    onClick={() => void handleAddIntelEntry()}
+                    disabled={isAddingIntel}
+                  >
+                    {isAddingIntel ? 'Adding...' : 'Add indicator'}
+                  </button>
                 </div>
               </div>
 

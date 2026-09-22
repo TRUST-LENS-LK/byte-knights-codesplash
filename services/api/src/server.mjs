@@ -25,6 +25,7 @@ import {
   clearDemoQueue,
   getVerifiedIntelligenceList,
   updateIntelligenceStatus,
+  createManualIntelligenceEntry,
   getEngineSettings,
   updateEngineSettings,
   isVerifiedIntelEnabled,
@@ -195,6 +196,7 @@ const server = createServer(async (req, res) => {
     '/api/moderation/seed-demo',
     '/api/moderation/clear-demo',
     '/api/moderation/domains',
+    '/api/moderation/intelligence',
   ]
   const isPatchSettings = req.method === 'PATCH' && pathname === '/api/moderation/settings'
   const isPatchIntel = req.method === 'PATCH' && pathname.startsWith('/api/moderation/intelligence/')
@@ -341,6 +343,40 @@ const server = createServer(async (req, res) => {
     }
     const settings = updateEngineSettings(body, auth.email || auth.actorRole || 'moderator')
     return send(res, 200, { success: true, settings, requestId }, requestId)
+  }
+
+  // Route: POST /api/moderation/intelligence (Protected — add a scam/safe
+  // indicator directly, without requiring a prior citizen report)
+  if (pathname === '/api/moderation/intelligence' && req.method === 'POST') {
+    const auth = await authorizeModerator(req)
+    if (!auth.authorized) {
+      return send(res, 401, { code: 'UNAUTHORIZED', message: auth.error || 'Moderator access required.', requestId }, requestId)
+    }
+    if (typeof body.indicatorValue !== 'string' || !body.indicatorValue.trim()) {
+      return send(res, 400, { code: 'INVALID_SUBMISSION', message: 'indicatorValue is required.', requestId }, requestId)
+    }
+    if (body.riskLevel !== undefined && !['CONFIRMED_SCAM', 'VERIFIED_SAFE'].includes(body.riskLevel)) {
+      return send(res, 400, { code: 'INVALID_SUBMISSION', message: 'riskLevel must be CONFIRMED_SCAM or VERIFIED_SAFE.', requestId }, requestId)
+    }
+    try {
+      const entry = await createManualIntelligenceEntry(
+        {
+          indicatorValue: body.indicatorValue,
+          indicatorType: body.indicatorType,
+          riskLevel: body.riskLevel,
+          category: body.category,
+          notes: body.notes,
+          confidence: body.confidence,
+        },
+        auth.email || auth.actorRole || 'moderator',
+      )
+      return send(res, 201, { success: true, entry, requestId }, requestId)
+    } catch (error) {
+      if (error.message === 'DUPLICATE_INDICATOR') {
+        return send(res, 409, { code: 'DUPLICATE_INDICATOR', message: 'An intelligence entry for this indicator already exists.', requestId }, requestId)
+      }
+      return send(res, 502, { code: 'INTELLIGENCE_CREATE_ERROR', message: error.message, requestId }, requestId)
+    }
   }
 
   // Route: PATCH /api/moderation/intelligence/:id (Protected)

@@ -505,6 +505,35 @@ export async function toggleIntelligenceStatus(
   return updateIntelligenceItem(token, id, { active, notes })
 }
 
+export async function createIntelligenceEntry(
+  token: string,
+  data: {
+    indicatorValue: string
+    indicatorType?: 'domain' | 'content_hash' | 'phone' | 'url'
+    riskLevel?: 'CONFIRMED_SCAM' | 'VERIFIED_SAFE'
+    category?: string
+    notes?: string
+  }
+): Promise<{ success: boolean; entry?: VerifiedIntelligenceItem; error?: string }> {
+  try {
+    const res = await fetch(`${API_BASE}/api/moderation/intelligence`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(data),
+    })
+    const body = await res.json()
+    if (!res.ok) {
+      return { success: false, error: body.message || `Failed to add indicator (${res.status})` }
+    }
+    return { success: true, entry: body.entry }
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : 'Network error' }
+  }
+}
+
 
 
 
