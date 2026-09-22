@@ -356,7 +356,8 @@ export async function clearDemoReports(
 }
 
 export interface EngineSettings {
-  enableVerifiedIntel: boolean
+  enableVerifiedIntel?: boolean
+  auditRetentionDays?: number
   lastUpdated?: string
   updatedBy?: string
 }
@@ -382,7 +383,7 @@ export async function fetchEngineSettings(
 
 export async function updateEngineSettings(
   token: string,
-  settings: { enableVerifiedIntel: boolean }
+  settings: { enableVerifiedIntel?: boolean; auditRetentionDays?: number }
 ): Promise<{ success: boolean; settings?: EngineSettings; error?: string }> {
   try {
     const res = await fetch(`${API_BASE}/api/moderation/settings`, {
@@ -504,6 +505,167 @@ export async function toggleIntelligenceStatus(
 ): Promise<{ success: boolean; updated?: VerifiedIntelligenceItem; error?: string }> {
   return updateIntelligenceItem(token, id, { active, notes })
 }
+
+export interface ModerationAuditLogItem {
+  id: string | number
+  report_id: string | null
+  action: 'APPROVE' | 'REJECT' | 'RETIRE' | 'TOGGLE_STATUS' | 'UPDATE_SETTINGS' | 'PURGE_EXPIRED'
+  target_indicator: string | null
+  threat_category: string | null
+  actor_email: string | null
+  actor_role: string
+  confidence: number | null
+  moderator_notes: string | null
+  created_at: string
+  expires_at?: string
+}
+
+export interface AuditStorageStats {
+  totalRecords: number
+  retentionDays: number
+  oldestRecordAt: string | null
+  newestRecordAt: string | null
+  storageStatus: 'OPTIMAL' | 'WARNING' | 'CAPACITY_REACHED'
+  actionBreakdown?: {
+    approve: number
+    reject: number
+    retire: number
+    settings: number
+    toggle: number
+    purge: number
+  }
+  expiredRecordsCount?: number
+  expiringSoonCount?: number
+}
+
+export interface ModerationAuditLogsResponse {
+  success: boolean
+  auditLogs?: ModerationAuditLogItem[]
+  total?: number
+  page?: number
+  limit?: number
+  totalPages?: number
+  retentionDays?: number
+  error?: string
+}
+
+export async function fetchModerationAuditLogs(
+  token: string,
+  options: {
+    page?: number
+    limit?: number
+    action?: string
+    search?: string
+  } = {}
+): Promise<ModerationAuditLogsResponse> {
+  try {
+    const params = new URLSearchParams()
+    if (options.page) params.set('page', String(options.page))
+    if (options.limit) params.set('limit', String(options.limit))
+    if (options.action && options.action !== 'ALL') params.set('action', options.action)
+    if (options.search) params.set('search', options.search)
+
+    const res = await fetch(`${API_BASE}/api/moderation/audit-logs?${params.toString()}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    const data = await res.json()
+    if (!res.ok) {
+      return { success: false, error: data.message || `Failed to fetch audit logs (${res.status})` }
+    }
+    return {
+      success: true,
+      auditLogs: data.auditLogs || [],
+      total: data.total || 0,
+      page: data.page || 1,
+      limit: data.limit || 20,
+      totalPages: data.totalPages || 1,
+      retentionDays: data.retentionDays || 90,
+    }
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : 'Network error' }
+  }
+}
+
+export async function fetchAuditStorageStats(
+  token: string
+): Promise<{ success: boolean; stats?: AuditStorageStats; error?: string }> {
+  try {
+    const res = await fetch(`${API_BASE}/api/moderation/audit-logs/stats`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+    const data = await res.json()
+    if (!res.ok) {
+      return { success: false, error: data.message || `Failed to fetch audit stats (${res.status})` }
+    }
+    return { success: true, stats: data.stats }
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : 'Network error' }
+  }
+}
+
+export async function triggerAuditPurge(
+  token: string,
+  options: { retentionDays?: number; graceDays?: number } = {}
+): Promise<{ success: boolean; purgedCount?: number; remainingCount?: number; timestamp?: string; error?: string }> {
+  try {
+    const res = await fetch(`${API_BASE}/api/moderation/audit-logs/purge`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(options),
+    })
+    const data = await res.json()
+    if (!res.ok) {
+      return { success: false, error: data.message || `Failed to execute retention purge (${res.status})` }
+    }
+    return {
+      success: true,
+      purgedCount: data.purgedCount,
+      remainingCount: data.remainingCount,
+      timestamp: data.timestamp,
+    }
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : 'Network error' }
+  }
+}
+
+export function exportAuditLogsToCsv(logs: ModerationAuditLogItem[]): void {
+  if (!logs || !logs.length) return
+  const headers = ['ID', 'Action', 'Target Indicator', 'Threat Category', 'Actor Email', 'Actor Role', 'Confidence', 'Notes', 'Created At', 'Expires At']
+  const escapeCsv = (val: unknown) => {
+    if (val === null || val === undefined) return '""'
+    const str = String(val).replace(/"/g, '""')
+    return `"${str}"`
+  }
+  const rows = logs.map((log) => [
+    escapeCsv(log.id),
+    escapeCsv(log.action),
+    escapeCsv(log.target_indicator),
+    escapeCsv(log.threat_category),
+    escapeCsv(log.actor_email),
+    escapeCsv(log.actor_role),
+    escapeCsv(log.confidence !== null ? log.confidence : ''),
+    escapeCsv(log.moderator_notes),
+    escapeCsv(log.created_at),
+    escapeCsv(log.expires_at),
+  ])
+
+  const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\r\n')
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.setAttribute('href', url)
+  a.setAttribute('download', `trustlens_audit_trail_${new Date().toISOString().slice(0, 10)}.csv`)
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+}
+
 
 export async function createIntelligenceEntry(
   token: string,

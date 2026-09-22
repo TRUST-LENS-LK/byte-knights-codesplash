@@ -220,6 +220,7 @@ export const userReportStatusSchema = z.enum([
 
 export const createUserReportSchema = z.object({
   reportType: userReportTypeSchema,
+  threatCategory: z.string().max(100).optional().nullable(),
   contentSha256: z
     .string()
     .regex(/^[a-f0-9]{64}$/i, "contentSha256 must be a 64-character hex string"),
@@ -232,6 +233,7 @@ export const createUserReportSchema = z.object({
 export const userReportSchema = z.object({
   id: z.string().uuid(),
   reportType: userReportTypeSchema,
+  threatCategory: z.string().max(100).optional().nullable(),
   contentSha256: z.string(),
   reportedDomain: z.string().nullable().optional(),
   notes: z.string().nullable().optional(),
@@ -277,6 +279,49 @@ export const updateIntelligenceStatusSchema = z.object({
   notes: z.string().max(1000).optional().nullable(),
 });
 
+export const auditActionSchema = z.enum([
+  "APPROVE",
+  "REJECT",
+  "RETIRE",
+  "TOGGLE_STATUS",
+  "UPDATE_SETTINGS",
+  "PURGE_EXPIRED",
+]);
+
+export const moderationAuditLogSchema = z.object({
+  id: z.union([z.number(), z.string()]),
+  reportId: z.string().uuid().nullable().optional(),
+  action: auditActionSchema,
+  targetIndicator: z.string().nullable().optional(),
+  threatCategory: z.string().nullable().optional(),
+  actorEmail: z.string().nullable().optional(),
+  actorRole: z.string().default("moderator"),
+  confidence: z.number().min(0).max(1).nullable().optional(),
+  moderatorNotes: z.string().nullable().optional(),
+  createdAt: z.string(),
+  expiresAt: z.string().optional(),
+});
+
+export const auditQuerySchema = z.object({
+  action: z.enum(["APPROVE", "REJECT", "RETIRE", "TOGGLE_STATUS", "UPDATE_SETTINGS", "PURGE_EXPIRED", "ALL"]).default("ALL"),
+  search: z.string().optional(),
+  page: z.coerce.number().int().positive().default(1),
+  limit: z.coerce.number().int().positive().max(100).default(20),
+});
+
+export const auditStorageStatsSchema = z.object({
+  totalRecords: z.number().int().nonnegative(),
+  retentionDays: z.number().int().positive(),
+  oldestRecordAt: z.string().nullable(),
+  newestRecordAt: z.string().nullable(),
+  storageStatus: z.enum(["OPTIMAL", "WARNING", "CAPACITY_REACHED"]),
+});
+
+export const engineSettingsSchema = z.object({
+  enableVerifiedIntel: z.boolean().optional(),
+  auditRetentionDays: z.number().int().min(1).max(3650).optional(),
+});
+
 export type UserReportType = z.infer<typeof userReportTypeSchema>;
 export type UserReportStatus = z.infer<typeof userReportStatusSchema>;
 export type CreateUserReport = z.infer<typeof createUserReportSchema>;
@@ -285,3 +330,8 @@ export type ModerationAction = z.infer<typeof moderationActionSchema>;
 export type VerifiedIntelligence = z.infer<typeof verifiedIntelligenceSchema>;
 export type VerifiedIntelligenceQuery = z.infer<typeof verifiedIntelligenceQuerySchema>;
 export type UpdateIntelligenceStatus = z.infer<typeof updateIntelligenceStatusSchema>;
+export type AuditAction = z.infer<typeof auditActionSchema>;
+export type ModerationAuditLog = z.infer<typeof moderationAuditLogSchema>;
+export type AuditQuery = z.infer<typeof auditQuerySchema>;
+export type AuditStorageStats = z.infer<typeof auditStorageStatsSchema>;
+export type EngineSettings = z.infer<typeof engineSettingsSchema>;

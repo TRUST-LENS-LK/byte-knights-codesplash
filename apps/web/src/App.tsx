@@ -163,12 +163,17 @@ function App() {
   const actualDomain = entities.find((entity) => entity.type === 'domain')?.value ?? detectedDomain
 
   if (view === 'moderator') {
-    return <ModeratorDashboard onBackToScanner={handleBackToScanner} />
+    return (
+      <div key="page-moderator" className="trustlens-page-transition">
+        <ModeratorDashboard onBackToScanner={handleBackToScanner} />
+      </div>
+    )
   }
 
   return (
-    <main className="app-shell">
-      <nav className="nav">
+    <div key="page-checker" className="trustlens-page-transition">
+      <main className="app-shell">
+        <nav className="nav">
         <span className="brand-mark" style={{ cursor: 'pointer' }} onClick={handleBackToScanner} title="TrustLens LK">
           <img src="/TrustLens_Icon.png" alt="TrustLens LK" />
         </span>
@@ -273,10 +278,11 @@ function App() {
               </button>
             </div>
 
-            {inputMode === 'screenshot' ? (
-              <ScreenshotOcrUploader
-                onTextConfirmed={handleOcrConfirmed}
-                onCancel={() => setInputMode('text')}
+            <div key={inputMode} className="trustlens-tab-content-transition">
+              {inputMode === 'screenshot' ? (
+                <ScreenshotOcrUploader
+                  onTextConfirmed={handleOcrConfirmed}
+                  onCancel={() => setInputMode('text')}
               />
             ) : inputMode === 'url' ? (
               <>
@@ -348,7 +354,8 @@ function App() {
                   </button>
                 </div>
               </>
-            )}
+              )}
+            </div>
 
             <p className="privacy-note">Do not include passwords, OTPs, or unnecessary private information.</p>
             <small>
@@ -553,6 +560,7 @@ function App() {
         <span>Rules and verified checks guide the recommendation.</span>
       </footer>
     </main>
+  </div>
   )
 }
 
