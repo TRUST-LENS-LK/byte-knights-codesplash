@@ -4,6 +4,7 @@ export type ReportType = 'suspicious' | 'false_positive' | 'false_negative'
 
 export interface SubmitReportPayload {
   reportType: ReportType
+  threatCategory?: string | null
   contentSha256: string
   reportedDomain?: string | null
   notes?: string | null
@@ -14,6 +15,7 @@ export interface SubmitReportPayload {
 export interface CreatedReport {
   id: string
   report_type: ReportType
+  threat_category?: string | null
   content_sha256: string
   reported_domain: string | null
   notes: string | null
