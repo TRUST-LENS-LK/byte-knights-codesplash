@@ -1,5 +1,7 @@
 import type { DomainVerification, OfficialDomainRecord } from '@trustlens/contracts'
 
+export * from './extraction'
+
 // The fields needed to decide staleness, so callers don't have to build a
 // full OfficialDomainRecord just to check one entry.
 export type StalenessInput = Pick<OfficialDomainRecord, 'status' | 'nextReviewDate'>
