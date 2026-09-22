@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Shield, ShieldCheck, AlertOctagon, AlertTriangle, MessageSquare, Camera } from 'lucide-react'
+import { Shield, ShieldCheck, AlertOctagon, AlertTriangle, MessageSquare, Camera, Link2 } from 'lucide-react'
 import { analyzeSubmission, analyzeWithApi, detectSubmissionType } from './services/analysisService'
 import { CommunityReportBar } from './components/CommunityReportBar'
 import { ReportModal } from './components/ReportModal'
@@ -39,7 +39,7 @@ function App() {
     }
     return 'checker'
   })
-  const [inputMode, setInputMode] = useState<'text' | 'screenshot'>('text')
+  const [inputMode, setInputMode] = useState<'text' | 'url' | 'screenshot'>('text')
 
   // Sync view changes to sessionStorage and URL hash
   useEffect(() => {
@@ -230,6 +230,28 @@ function App() {
 
               <button
                 type="button"
+                className={`tab-btn ${inputMode === 'url' ? 'active' : ''}`}
+                onClick={() => { setInputMode('url'); setOcrConfidence(null) }}
+                style={{
+                  padding: '8px 14px',
+                  borderRadius: '6px',
+                  border: inputMode === 'url' ? '1px solid #38bdf8' : '1px solid #334155',
+                  background: inputMode === 'url' ? '#0369a1' : '#1e293b',
+                  color: '#fff',
+                  cursor: 'pointer',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                }}
+              >
+                <Link2 size={14} />
+                Check a URL
+              </button>
+
+              <button
+                type="button"
                 className={`tab-btn ${inputMode === 'screenshot' ? 'active' : ''}`}
                 onClick={() => setInputMode('screenshot')}
                 style={{
@@ -256,6 +278,50 @@ function App() {
                 onTextConfirmed={handleOcrConfirmed}
                 onCancel={() => setInputMode('text')}
               />
+            ) : inputMode === 'url' ? (
+              <>
+                <label htmlFor="url-input">Suspicious link</label>
+                <input
+                  id="url-input"
+                  type="text"
+                  inputMode="url"
+                  autoComplete="off"
+                  spellCheck={false}
+                  value={text}
+                  maxLength={2048}
+                  onChange={(event) => {
+                    setText(event.target.value)
+                    setChecked(false)
+                    setIntelligenceOverlay(null)
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' && text.trim() && !isAnalyzing) void checkMessage()
+                  }}
+                  placeholder="https://suspicious-link.example/claim-prize"
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    borderRadius: '6px',
+                    border: '1px solid #334155',
+                    background: '#0f172a',
+                    color: '#fff',
+                    fontSize: '14px',
+                  }}
+                />
+                <p className="privacy-note" style={{ marginTop: '8px' }}>
+                  Just the link, no need for the surrounding message. We check who actually owns this domain, not just what it claims to be.
+                </p>
+                <div className="card-footer">
+                  <span>{text.length}/2,048 characters</span>
+                  <button
+                    type="button"
+                    onClick={() => void checkMessage()}
+                    disabled={!text.trim() || isAnalyzing}
+                  >
+                    {isAnalyzing ? 'Checking...' : 'Check safely'}
+                  </button>
+                </div>
+              </>
             ) : (
               <>
                 <label htmlFor="message">Suspicious message or URL</label>
