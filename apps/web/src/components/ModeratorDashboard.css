@@ -3486,3 +3486,74 @@
     min-width: 100%;
   }
 }
+/* ========================================================================= */
+/* Member 3: Domain Directory Management                                    */
+/* ========================================================================= */
+
+.neo-modern-panel {
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 10px;
+  padding: 16px;
+}
+
+.neo-btn-primary {
+  background: #0066FF;
+  color: #FFFFFF;
+  border: none;
+  border-radius: 6px;
+  padding: 9px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.neo-btn-primary:hover:not(:disabled) {
+  background: #0052CC;
+}
+
+.neo-btn-primary:disabled {
+  background: #94A3B8;
+  cursor: not-allowed;
+}
+
+.neo-btn-secondary-sm {
+  background: #F1F5F9;
+  color: #334155;
+  border: 1px solid #CBD5E1;
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.neo-btn-secondary-sm:hover {
+  background: #E2E8F0;
+}
+
+.neo-status-badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+
+.neo-status-badge.green {
+  background: #ECFDF5;
+  color: #10B981;
+}
+
+.neo-status-badge.amber {
+  background: #FFFBEB;
+  color: #D97706;
+}
+
+.neo-status-badge.slate {
+  background: #F1F5F9;
+  color: #64748B;
+}

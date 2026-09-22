@@ -43,6 +43,18 @@ export function detectSubmissionType(rawText: string): 'message' | 'url' {
   }
 }
 
+// The URL entity extractor (and the `url` submission field itself) only
+// recognizes an absolute http(s) URL, so a bare domain like "boc.lk" typed
+// into a dedicated URL input would otherwise be silently invisible to the
+// whole domain-verification pipeline. Since a "check this URL" input's
+// entire context is unambiguous, prepend https:// rather than rejecting it
+// or requiring the user to remember to type a scheme.
+export function normalizeUrlInput(rawText: string): string {
+  const trimmed = rawText.trim()
+  if (!trimmed) return trimmed
+  return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`
+}
+
 export async function analyzeWithApi(
   text: string,
   type: 'message' | 'url' | 'screenshot' = 'message'

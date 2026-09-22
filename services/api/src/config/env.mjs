@@ -28,5 +28,6 @@ export const CORS_ORIGIN = process.env.CORS_ORIGIN || 'http://localhost:5173'
 export const SUPABASE_URL = process.env.SUPABASE_URL || ''
 export const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
 export const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || ''
+export const GOOGLE_SAFE_BROWSING_API_KEY = process.env.GOOGLE_SAFE_BROWSING_API_KEY || ''
 
 

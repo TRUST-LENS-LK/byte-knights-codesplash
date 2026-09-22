@@ -7,7 +7,10 @@ import { analyze, applyScannerRisk, extractEntities, validateSubmission } from '
 import { persistIfConsented, purgeExpiredSubmissions } from './services/persistence.mjs'
 import { consumeRateLimit } from './services/rateLimit.mjs'
 import { applyDomainMismatchRisk, checkClaimedOrganizationDomain, verifyApprovedDomains } from './services/domainVerification.mjs'
-import { listDomainDirectory, lookupDomainDirectory } from './services/domainDirectory.mjs'
+import { checkGlobalDomainTrust } from './services/globalDomains.mjs'
+import { checkDomainAge } from './services/domainAge.mjs'
+import { applyKnownMaliciousRisk, checkSafeBrowsing } from './services/safeBrowsing.mjs'
+import { createDomainDirectoryEntry, listAllDomainDirectoryEntries, listDomainDirectory, lookupDomainDirectory, updateDomainDirectoryEntry } from './services/domainDirectory.mjs'
 import { inspectScannerUrl, scannerFindings } from './services/urlSafety.mjs'
 import {
   checkVerifiedIntelligence,
@@ -22,6 +25,7 @@ import {
   clearDemoQueue,
   getVerifiedIntelligenceList,
   updateIntelligenceStatus,
+  createManualIntelligenceEntry,
   getEngineSettings,
   updateEngineSettings,
   isVerifiedIntelEnabled,
@@ -166,6 +170,22 @@ const server = createServer(async (req, res) => {
     }
   }
 
+  // Domain Directory Management List (Protected GET) — unlike the public
+  // /api/domain-directory, this shows every entry including retired ones,
+  // for the moderator management screen.
+  if (req.method === 'GET' && pathname === '/api/moderation/domains') {
+    const auth = await authorizeModerator(req)
+    if (!auth.authorized) {
+      return send(res, 401, { code: 'UNAUTHORIZED', message: auth.error || 'Moderator access required.', requestId }, requestId)
+    }
+    try {
+      const entries = await listAllDomainDirectoryEntries()
+      return send(res, 200, { success: true, entries, count: entries.length, requestId }, requestId)
+    } catch (error) {
+      return send(res, 502, { code: 'DIRECTORY_FETCH_ERROR', message: error.message, requestId }, requestId)
+    }
+  }
+
   // Routes below require POST or PATCH with a JSON body
   const validPostRoutes = [
     '/api/analyze',
@@ -175,12 +195,15 @@ const server = createServer(async (req, res) => {
     '/api/moderation/login',
     '/api/moderation/seed-demo',
     '/api/moderation/clear-demo',
+    '/api/moderation/domains',
+    '/api/moderation/intelligence',
   ]
   const isPatchSettings = req.method === 'PATCH' && pathname === '/api/moderation/settings'
   const isPatchIntel = req.method === 'PATCH' && pathname.startsWith('/api/moderation/intelligence/')
+  const isPatchDomains = req.method === 'PATCH' && pathname.startsWith('/api/moderation/domains/')
   const isValidPost = req.method === 'POST' && validPostRoutes.includes(pathname)
 
-  if (!isValidPost && !isPatchSettings && !isPatchIntel) {
+  if (!isValidPost && !isPatchSettings && !isPatchIntel && !isPatchDomains) {
     return send(res, 404, { code: 'NOT_FOUND', message: 'Route not found.', requestId }, requestId)
   }
 
@@ -318,8 +341,42 @@ const server = createServer(async (req, res) => {
     if (typeof body.enableVerifiedIntel !== 'boolean') {
       return send(res, 400, { code: 'INVALID_SETTINGS', message: 'enableVerifiedIntel must be a boolean.', requestId }, requestId)
     }
-    const settings = updateEngineSettings(body, auth.user?.email || auth.actorRole || 'moderator')
+    const settings = updateEngineSettings(body, auth.email || auth.actorRole || 'moderator')
     return send(res, 200, { success: true, settings, requestId }, requestId)
+  }
+
+  // Route: POST /api/moderation/intelligence (Protected — add a scam/safe
+  // indicator directly, without requiring a prior citizen report)
+  if (pathname === '/api/moderation/intelligence' && req.method === 'POST') {
+    const auth = await authorizeModerator(req)
+    if (!auth.authorized) {
+      return send(res, 401, { code: 'UNAUTHORIZED', message: auth.error || 'Moderator access required.', requestId }, requestId)
+    }
+    if (typeof body.indicatorValue !== 'string' || !body.indicatorValue.trim()) {
+      return send(res, 400, { code: 'INVALID_SUBMISSION', message: 'indicatorValue is required.', requestId }, requestId)
+    }
+    if (body.riskLevel !== undefined && !['CONFIRMED_SCAM', 'VERIFIED_SAFE'].includes(body.riskLevel)) {
+      return send(res, 400, { code: 'INVALID_SUBMISSION', message: 'riskLevel must be CONFIRMED_SCAM or VERIFIED_SAFE.', requestId }, requestId)
+    }
+    try {
+      const entry = await createManualIntelligenceEntry(
+        {
+          indicatorValue: body.indicatorValue,
+          indicatorType: body.indicatorType,
+          riskLevel: body.riskLevel,
+          category: body.category,
+          notes: body.notes,
+          confidence: body.confidence,
+        },
+        auth.email || auth.actorRole || 'moderator',
+      )
+      return send(res, 201, { success: true, entry, requestId }, requestId)
+    } catch (error) {
+      if (error.message === 'DUPLICATE_INDICATOR') {
+        return send(res, 409, { code: 'DUPLICATE_INDICATOR', message: 'An intelligence entry for this indicator already exists.', requestId }, requestId)
+      }
+      return send(res, 502, { code: 'INTELLIGENCE_CREATE_ERROR', message: error.message, requestId }, requestId)
+    }
   }
 
   // Route: PATCH /api/moderation/intelligence/:id (Protected)
@@ -352,8 +409,68 @@ const server = createServer(async (req, res) => {
     }
   }
 
+  // Route: POST /api/moderation/domains (Protected — add a directory entry)
+  if (pathname === '/api/moderation/domains' && req.method === 'POST') {
+    const auth = await authorizeModerator(req)
+    if (!auth.authorized) {
+      return send(res, 401, { code: 'UNAUTHORIZED', message: auth.error || 'Moderator access required.', requestId }, requestId)
+    }
+    if (typeof body.name !== 'string' || !body.name.trim() || typeof body.officialDomain !== 'string' || !body.officialDomain.trim()) {
+      return send(res, 400, { code: 'INVALID_SUBMISSION', message: 'name and officialDomain are required.', requestId }, requestId)
+    }
+    try {
+      const reviewer = auth.email || auth.actorRole || 'moderator'
+      const created = await createDomainDirectoryEntry(
+        { name: body.name.trim(), officialDomain: body.officialDomain.trim().toLowerCase(), category: body.category, sourceUrl: body.sourceUrl },
+        reviewer,
+      )
+      return send(res, 201, { success: true, entry: created, requestId }, requestId)
+    } catch (error) {
+      return send(res, 502, { code: 'DIRECTORY_CREATE_ERROR', message: error.message, requestId }, requestId)
+    }
+  }
+
+  // Route: PATCH /api/moderation/domains/:id (Protected — update a directory entry)
+  if (pathname.startsWith('/api/moderation/domains/') && req.method === 'PATCH') {
+    const auth = await authorizeModerator(req)
+    if (!auth.authorized) {
+      return send(res, 401, { code: 'UNAUTHORIZED', message: auth.error || 'Moderator access required.', requestId }, requestId)
+    }
+    const domainId = pathname.slice('/api/moderation/domains/'.length)
+    if (!domainId) {
+      return send(res, 400, { code: 'INVALID_ID', message: 'Domain directory ID is required.', requestId }, requestId)
+    }
+    const allowedKeys = ['status', 'category', 'sourceUrl', 'reviewNotes', 'active']
+    if (!allowedKeys.some((key) => body[key] !== undefined)) {
+      return send(res, 400, { code: 'INVALID_PAYLOAD', message: `At least one of ${allowedKeys.join(', ')} must be provided.`, requestId }, requestId)
+    }
+    if (body.status !== undefined && !['ACTIVE', 'STALE', 'RETIRED'].includes(body.status)) {
+      return send(res, 400, { code: 'INVALID_PAYLOAD', message: 'status must be ACTIVE, STALE, or RETIRED.', requestId }, requestId)
+    }
+    try {
+      const reviewer = auth.email || auth.actorRole || 'moderator'
+      const updated = await updateDomainDirectoryEntry(domainId, body, reviewer)
+      return send(res, 200, { success: true, updated, requestId }, requestId)
+    } catch (error) {
+      return send(res, error.message === 'Domain directory entry not found.' ? 404 : 502, {
+        code: error.message === 'Domain directory entry not found.' ? 'NOT_FOUND' : 'UPDATE_FAILED',
+        message: error.message,
+        requestId,
+      }, requestId)
+    }
+  }
+
   // Route: POST /api/analyze
   try {
+    // The `url` field (and the URL entity extractor downstream) only
+    // recognizes an absolute http(s) URL. A dedicated URL submission's type
+    // already tells us the whole value is meant as a link, so a bare domain
+    // like "boc.lk" is normalized here rather than rejected or silently
+    // producing zero entities.
+    if (body && body.type === 'url' && typeof body.url === 'string' && body.url.trim() && !/^https?:\/\//i.test(body.url.trim())) {
+      body.url = `https://${body.url.trim()}`
+    }
+
     const validationError = validateSubmission(body)
     if (validationError) return send(res, 400, { code: 'INVALID_SUBMISSION', message: validationError, requestId }, requestId)
 
@@ -430,10 +547,43 @@ const server = createServer(async (req, res) => {
     })
     if (approvedDomainFindings.length) decision.findings.push(...approvedDomainFindings)
 
+    // Tier 3: only check global popularity when the curated directory
+    // (Tier 1) did not already find a match, so the same domain never gets
+    // both an approved_domain and a known_global_domain finding at once.
+    if (!approvedDomainFindings.length) {
+      const globalDomainCheck = await checkGlobalDomainTrust(entities).catch(() => ({ findings: [] }))
+      if (globalDomainCheck.findings.length) decision.findings.push(...globalDomainCheck.findings)
+    }
+
+    // Tier 4: a single, fast live call to Google Safe Browsing, checked
+    // regardless of Tier 1/3 results, since it evaluates the URL's current
+    // live threat status, a genuinely independent signal from domain
+    // ownership (even a directory-matched domain could theoretically be
+    // compromised). Fails open silently when no API key is configured.
+    const safeBrowsingCheck = await checkSafeBrowsing(entities).catch(() => ({ findings: [] }))
+    if (safeBrowsingCheck.findings.length) decision.findings.push(...safeBrowsingCheck.findings)
+    applyKnownMaliciousRisk(decision)
+
     const organizationDomainCheck = await checkClaimedOrganizationDomain(entities).catch(() => ({ findings: [], limitations: [] }))
     if (organizationDomainCheck.findings.length) decision.findings.push(...organizationDomainCheck.findings)
     if (organizationDomainCheck.limitations.length) decision.limitations.push(...organizationDomainCheck.limitations)
     applyDomainMismatchRisk(decision)
+
+    // Tier 5 (domain age): the slowest tier, since it makes live external
+    // network calls (RDAP, then CT-log fallbacks). Only worth running when
+    // the domain is not already resolved by a faster, cheaper tier: skip it
+    // when Tier 1 already confirmed the domain (age adds nothing useful to
+    // a known-good match) or when a mismatch was already found (the verdict
+    // is already HIGH/STOP_AND_AVOID; waiting on slow external calls for
+    // evidence that cannot change that outcome would only hurt latency).
+    const alreadyResolved = approvedDomainFindings.length > 0
+      || organizationDomainCheck.findings.some((f) => f.canonicalSignal === 'domain_mismatch')
+      || safeBrowsingCheck.findings.some((f) => f.canonicalSignal === 'known_malicious_domain')
+    if (!alreadyResolved) {
+      const domainAgeCheck = await checkDomainAge(entities).catch(() => ({ findings: [], limitations: [] }))
+      if (domainAgeCheck.findings.length) decision.findings.push(...domainAgeCheck.findings)
+      if (domainAgeCheck.limitations.length) decision.limitations.push(...domainAgeCheck.limitations)
+    }
 
     // ── Intelligence Reconciliation Engine ─────────────────────────────
     let verifiedFindings = []
