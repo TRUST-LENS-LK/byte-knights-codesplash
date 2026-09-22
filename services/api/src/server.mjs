@@ -219,6 +219,7 @@ const server = createServer(async (req, res) => {
     // ── Remote URL Scanner ─────────────────────────────────────────────
     let finalScanText = text
     let scannerFailed = false
+    const scannerEvidence = []
     const urlEntities = entities.filter(e => e.type === 'url').slice(0, 3) // Scan up to 3 URLs max
     
     if (urlEntities.length > 0 && process.env.SCANNER_URL) {
@@ -227,7 +228,7 @@ const server = createServer(async (req, res) => {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ url: urlEntity.value }),
-          signal: AbortSignal.timeout(10000)
+          signal: AbortSignal.timeout(20000)
         })
         if (!scanRes.ok) throw new Error(`Scanner returned ${scanRes.status}`)
         return scanRes.json()
@@ -236,8 +237,17 @@ const server = createServer(async (req, res) => {
       const results = await Promise.allSettled(scanPromises)
 
       for (const result of results) {
-        if (result.status === 'fulfilled' && result.value.textContent) {
-          finalScanText += '\n\n' + result.value.textContent
+        if (result.status === 'fulfilled') {
+          if (result.value.textContent) {
+            finalScanText += '\n\n' + result.value.textContent
+          }
+          if (result.value.evidence) {
+            scannerEvidence.push({ url: result.value.requestedUrl, ...result.value.evidence })
+          }
+          if (result.value.limitations && result.value.limitations.length > 0) {
+            // We'll push these into decision.limitations after analyze()
+            result.value.limitations.forEach(l => urlEntities._pendingLimitations = (urlEntities._pendingLimitations || []).concat(l))
+          }
         } else if (result.status === 'rejected') {
           console.error('Remote scanner failed:', result.reason)
           scannerFailed = true
@@ -247,6 +257,10 @@ const server = createServer(async (req, res) => {
 
     const decision = analyze(finalScanText)
     
+    if (urlEntities._pendingLimitations) {
+      decision.limitations.push(...urlEntities._pendingLimitations)
+    }
+
     if (scannerFailed) {
       decision.limitations.push('The remote URL scanner was unavailable or timed out. The URL content could not be verified.')
     }
@@ -277,6 +291,7 @@ const server = createServer(async (req, res) => {
     return send(res, 200, {
       decision,
       entities,
+      scannerEvidence,
       inputType: body.type === 'url' || entities.some((item) => item.type === 'url') ? 'url' : 'message',
       requestId,
       ...(intelligenceOverlay ? { intelligenceOverlay } : {}),

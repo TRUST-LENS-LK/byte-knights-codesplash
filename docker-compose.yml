@@ -1,0 +1,12 @@
+version: '3.8'
+
+services:
+  scanner:
+    build:
+      context: ./services/scanner
+      dockerfile: Dockerfile
+    ports:
+      - "8788:8788"
+    environment:
+      - PORT=8788
+      - ALLOW_LOCAL_TEST=1

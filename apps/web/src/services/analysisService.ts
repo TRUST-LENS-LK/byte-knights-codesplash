@@ -7,6 +7,7 @@ const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8787'
 export type LocalAnalysis = {
   decision: RiskDecision
   entities: ExtractedEntity[]
+  scannerEvidence?: any[]
   inputType: 'message' | 'url'
   submissionId?: string
   requestId?: string

@@ -11,7 +11,7 @@
     "services/scanner"
   ],
   "scripts": {
-    "start": "concurrently \"npm --workspace services/scanner start\" \"npm --workspace services/api start\" \"npm --workspace apps/web run dev\"",
+    "start": "concurrently \"docker compose up --build scanner\" \"npm --workspace services/api start\" \"npm --workspace apps/web run dev\"",
     "dev:web": "npm --workspace apps/web run dev",
     "build:web": "npm --workspace apps/web run build",
     "lint:web": "npm --workspace apps/web run lint",

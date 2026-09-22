@@ -647,16 +647,16 @@
 
 /* ── Result Card Feedback Action Bar ──────────────────────────────── */
 .community-report-bar {
-  margin-top: 24px;
+  margin-top: 18px;
   padding: 16px 20px;
   border: 1px solid #e2e8f0;
   border-radius: 14px;
-  background: #ffffff;
+  background: #f8fafc;
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 16px;
-  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.03);
 }
 
 @media (max-width: 700px) {
@@ -674,22 +674,22 @@
   font-weight: 700;
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
 }
 
 .community-report-info p {
   margin: 0;
-  font-size: 12px;
+  font-size: 12.5px;
   color: #64748b;
-  line-height: 1.4;
+  line-height: 1.45;
 }
 
 .btn-report-trigger {
   background: #ffffff;
-  border: 1.5px solid #087f8c;
-  color: #087f8c;
+  border: 1px solid #cbd5e1;
+  color: #334155;
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
   border-radius: 9px;
   padding: 8px 16px;
   cursor: pointer;
@@ -697,13 +697,15 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  transition: all 0.15s ease;
+  transition: all 0.2s ease;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
   flex-shrink: 0;
 }
 
 .btn-report-trigger:hover {
-  background: #087f8c;
+  background: #7c3aed;
+  border-color: #7c3aed;
   color: #ffffff;
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(8, 127, 140, 0.25);
+  box-shadow: 0 4px 12px rgba(124, 58, 237, 0.25);
 }

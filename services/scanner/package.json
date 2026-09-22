@@ -4,9 +4,13 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node src/server.mjs"
+    "start": "node src/server.mjs",
+    "test": "node --test test/scanner.test.mjs"
   },
   "dependencies": {
     "playwright-core": "^1.40.0"
+  },
+  "devDependencies": {
+    "playwright": "^1.63.0"
   }
 }
