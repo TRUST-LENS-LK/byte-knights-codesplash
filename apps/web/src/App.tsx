@@ -163,12 +163,17 @@ function App() {
   const actualDomain = entities.find((entity) => entity.type === 'domain')?.value ?? detectedDomain
 
   if (view === 'moderator') {
-    return <ModeratorDashboard onBackToScanner={handleBackToScanner} />
+    return (
+      <div key="page-moderator" className="trustlens-page-transition">
+        <ModeratorDashboard onBackToScanner={handleBackToScanner} />
+      </div>
+    )
   }
 
   return (
-    <main className="app-shell">
-      <nav className="nav">
+    <div key="page-checker" className="trustlens-page-transition">
+      <main className="app-shell">
+        <nav className="nav">
         <span className="brand-mark" style={{ cursor: 'pointer' }} onClick={handleBackToScanner} title="TrustLens LK">
           <img src="/TrustLens_Icon.png" alt="TrustLens LK" />
         </span>
@@ -251,38 +256,40 @@ function App() {
               </button>
             </div>
 
-            {inputMode === 'screenshot' ? (
-              <ScreenshotOcrUploader
-                onTextConfirmed={handleOcrConfirmed}
-                onCancel={() => setInputMode('text')}
-              />
-            ) : (
-              <>
-                <label htmlFor="message">Suspicious message or URL</label>
-                <textarea
-                  id="message"
-                  value={text}
-                  maxLength={10000}
-                  onChange={(event) => {
-                    setText(event.target.value)
-                    setChecked(false)
-                    setIntelligenceOverlay(null)
-                    setOcrConfidence(null)
-                  }}
-                  placeholder="Example: Congratulations! You have been selected for a job. Pay Rs. 5,000 today and send your OTP..."
+            <div key={inputMode} className="trustlens-tab-content-transition">
+              {inputMode === 'screenshot' ? (
+                <ScreenshotOcrUploader
+                  onTextConfirmed={handleOcrConfirmed}
+                  onCancel={() => setInputMode('text')}
                 />
-                <div className="card-footer">
-                  <span>{text.length}/10,000 characters</span>
-                  <button
-                    type="button"
-                    onClick={() => void checkMessage()}
-                    disabled={!text.trim() || isAnalyzing}
-                  >
-                    {isAnalyzing ? 'Checking...' : 'Check safely'}
-                  </button>
-                </div>
-              </>
-            )}
+              ) : (
+                <>
+                  <label htmlFor="message">Suspicious message or URL</label>
+                  <textarea
+                    id="message"
+                    value={text}
+                    maxLength={10000}
+                    onChange={(event) => {
+                      setText(event.target.value)
+                      setChecked(false)
+                      setIntelligenceOverlay(null)
+                      setOcrConfidence(null)
+                    }}
+                    placeholder="Example: Congratulations! You have been selected for a job. Pay Rs. 5,000 today and send your OTP..."
+                  />
+                  <div className="card-footer">
+                    <span>{text.length}/10,000 characters</span>
+                    <button
+                      type="button"
+                      onClick={() => void checkMessage()}
+                      disabled={!text.trim() || isAnalyzing}
+                    >
+                      {isAnalyzing ? 'Checking...' : 'Check safely'}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
 
             <p className="privacy-note">Do not include passwords, OTPs, or unnecessary private information.</p>
             <small>
@@ -487,6 +494,7 @@ function App() {
         <span>Rules and verified checks guide the recommendation.</span>
       </footer>
     </main>
+  </div>
   )
 }
 

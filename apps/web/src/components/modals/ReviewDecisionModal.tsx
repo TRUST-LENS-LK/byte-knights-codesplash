@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
   ShieldAlert,
   ShieldCheck,
@@ -42,7 +43,22 @@ const CATEGORIES = [
   'False Alarm',
 ]
 
+function parseReportNotes(rawNotes: string | null) {
+  if (!rawNotes) return { threatCategory: null, excerpt: null, userNotes: null }
+  const threatCategoryMatch = rawNotes.match(/\[Threat Category\]:\s*([^\n\r]+)/)
+  const excerptMatch = rawNotes.match(/\[Reported Message Excerpt\]:\s*"([\s\S]*?)"(?:\n\n|$)/)
+  const userNotesMatch = rawNotes.match(/\[Submitter Context\]:\s*([\s\S]*)$/)
+
+  return {
+    threatCategory: threatCategoryMatch ? threatCategoryMatch[1].trim() : null,
+    excerpt: excerptMatch ? excerptMatch[1] : null,
+    userNotes: userNotesMatch ? userNotesMatch[1] : (threatCategoryMatch || excerptMatch ? null : rawNotes),
+  }
+}
+
 function classifyReportCategory(item: ModerationQueueItem): string {
+  const parsed = parseReportNotes(item.notes)
+  if (parsed.threatCategory) return parsed.threatCategory
   if (item.report_type === 'false_positive') return 'False Alarm'
   const text = `${item.reported_domain || ''} ${item.notes || ''} ${item.raw_excerpt || ''}`.toLowerCase()
   if (/boc|combank|bank|hnb|sampath|card|debit|credit|fund/.test(text)) return 'Banking Phishing'
@@ -52,20 +68,6 @@ function classifyReportCategory(item: ModerationQueueItem): string {
   if (/otp|code|pin|password|credential|security/.test(text)) return 'OTP Theft'
   if (/\.apk|download|install|app/.test(text)) return 'Malicious Link / APK'
   return 'Banking Phishing'
-}
-
-function parseReportNotes(rawNotes: string | null) {
-  if (!rawNotes) return { excerpt: null, userNotes: null }
-  const excerptMatch = rawNotes.match(/\[Reported Message Excerpt\]:\s*"([\s\S]*?)"(?:\n\n|$)/)
-  const userNotesMatch = rawNotes.match(/\[Submitter Context\]:\s*([\s\S]*)$/)
-
-  if (excerptMatch || userNotesMatch) {
-    return {
-      excerpt: excerptMatch ? excerptMatch[1] : null,
-      userNotes: userNotesMatch ? userNotesMatch[1] : null,
-    }
-  }
-  return { excerpt: null, userNotes: rawNotes }
 }
 
 export const ReviewDecisionModal: React.FC<ReviewDecisionModalProps> = ({
@@ -105,6 +107,17 @@ export const ReviewDecisionModal: React.FC<ReviewDecisionModalProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [isOpen, isProcessing, onClose])
 
+  // Prevent background page from scrolling when modal is open
+  useEffect(() => {
+    if (isOpen) {
+      const originalOverflow = document.body.style.overflow
+      document.body.style.overflow = 'hidden'
+      return () => {
+        document.body.style.overflow = originalOverflow
+      }
+    }
+  }, [isOpen])
+
   if (!isOpen || !report) return null
 
   const parsed = parseReportNotes(report.notes)
@@ -129,7 +142,7 @@ export const ReviewDecisionModal: React.FC<ReviewDecisionModalProps> = ({
     setTimeout(() => setCopiedHash(false), 2000)
   }
 
-  return (
+  return createPortal(
     <div className="neo-modal-backdrop" onClick={() => !isProcessing && onClose()} role="dialog" aria-modal="true">
       <div className="neo-modal-dialog decision-size" onClick={(e) => e.stopPropagation()}>
         {/* Modal Header */}
@@ -186,15 +199,20 @@ export const ReviewDecisionModal: React.FC<ReviewDecisionModalProps> = ({
             </div>
 
             <div className="neo-modal-meta-item">
-              <span className="neo-modal-meta-label">Citizen Classification</span>
-              <div className="neo-modal-meta-val">
+              <span className="neo-modal-meta-label">Citizen Intent & Classification</span>
+              <div className="neo-modal-meta-val" style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                 <span className={`neo-pill-badge ${report.report_type}`}>
                   {report.report_type === 'suspicious'
-                    ? 'Reported Threat'
+                    ? 'Unreported Threat'
                     : report.report_type === 'false_positive'
                       ? 'False Alarm'
-                      : 'Evaded Threat'}
+                      : 'Evaded Detection'}
                 </span>
+                {parsed.threatCategory && (
+                  <span style={{ background: '#EFF6FF', color: '#0066FF', border: '1px solid #BFDBFE', borderRadius: '5px', padding: '2px 7px', fontSize: '11px', fontWeight: 700 }}>
+                    {parsed.threatCategory}
+                  </span>
+                )}
               </div>
             </div>
 
@@ -414,7 +432,8 @@ export const ReviewDecisionModal: React.FC<ReviewDecisionModalProps> = ({
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }
 

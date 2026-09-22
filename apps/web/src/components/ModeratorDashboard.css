@@ -1785,18 +1785,23 @@
   font-weight: 600;
   color: #475569;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   white-space: nowrap;
 }
 
 .neo-seg-pill:hover:not(.active) {
   color: #0F172A;
+  background: rgba(255, 255, 255, 0.6);
 }
 
 .neo-seg-pill.active {
   background: #0066FF;
   color: #FFFFFF;
   box-shadow: 0 2px 8px rgba(0, 102, 255, 0.28);
+}
+
+.neo-seg-pill:active {
+  transform: scale(0.97);
 }
 
 .neo-modern-toolbar-actions {
@@ -1838,30 +1843,172 @@
   width: 260px;
 }
 
-.neo-filter-select-wrapper select.neo-modern-select {
+/* ── Custom Theme-Aligned Filter Dropdowns ────────────────────────────── */
+.neo-custom-filter-dropdown {
+  position: relative;
+  display: inline-flex;
+}
+
+.neo-btn-filter-trigger {
   height: 38px;
+  padding: 0 11px;
   border-radius: 12px;
   border: 1px solid #E2E8F0;
   background: #FFFFFF;
-  padding: 0 10px;
+  color: #475569;
   font-size: 12.5px;
   font-weight: 500;
-  color: #334155;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   cursor: pointer;
   outline: none;
-  transition: all 0.15s ease;
+  transition: all 0.16s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  user-select: none;
 }
 
-.neo-filter-select-wrapper select.neo-modern-select:focus {
+.neo-btn-filter-trigger:hover {
+  background: #F8FAFC;
+  border-color: #CBD5E1;
+  color: #0F172A;
+}
+
+.neo-btn-filter-trigger.is-open {
   border-color: #0066FF;
   box-shadow: 0 0 0 3px rgba(0, 102, 255, 0.12);
 }
 
-.neo-filter-select-wrapper select.neo-modern-select.has-filter {
+.neo-btn-filter-trigger.is-active {
   background: #EFF6FF;
   border-color: #93C5FD;
   color: #0066FF;
   font-weight: 600;
+}
+
+.neo-btn-filter-trigger.is-active:hover {
+  background: #DBEAFE;
+  border-color: #60A5FA;
+}
+
+.neo-filter-icon {
+  display: flex;
+  align-items: center;
+  color: inherit;
+  opacity: 0.8;
+}
+
+.neo-btn-filter-trigger.is-active .neo-filter-icon {
+  opacity: 1;
+  color: #0066FF;
+}
+
+.neo-filter-label {
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+.neo-filter-active-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: #0066FF;
+  flex-shrink: 0;
+}
+
+.neo-filter-chevron {
+  color: #94A3B8;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  flex-shrink: 0;
+}
+
+.neo-btn-filter-trigger.is-active .neo-filter-chevron {
+  color: #0066FF;
+}
+
+.neo-filter-chevron.rotate {
+  transform: rotate(180deg);
+}
+
+.neo-filter-popover-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 175px;
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 14px;
+  box-shadow:
+    0 12px 32px -4px rgba(15, 23, 42, 0.12),
+    0 4px 12px -2px rgba(15, 23, 42, 0.06);
+  padding: 5px;
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  animation: neoDropdownPop 0.16s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes neoDropdownPop {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.neo-filter-option-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 8px 11px;
+  border-radius: 9px;
+  border: none;
+  background: transparent;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.12s ease;
+}
+
+.neo-filter-option-item:hover {
+  background: #F1F5F9;
+  color: #0F172A;
+}
+
+.neo-filter-option-item.selected {
+  background: #EFF6FF;
+  color: #0066FF;
+  font-weight: 600;
+}
+
+.neo-filter-option-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.neo-filter-option-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.neo-filter-option-text {
+  white-space: nowrap;
+}
+
+.neo-filter-option-check {
+  color: #0066FF;
+  flex-shrink: 0;
+  margin-left: 8px;
 }
 
 .neo-btn-toolbar-reset {
@@ -2175,6 +2322,34 @@
   background: #F1F5F9;
 }
 
+.neo-report-type-pill {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3.5px 8.5px;
+  border-radius: 6px;
+  letter-spacing: 0.02em;
+  display: inline-block;
+  white-space: nowrap;
+}
+
+.neo-report-type-pill.pill-threat {
+  background: #FEF2F2;
+  color: #DC2626;
+  border: 1px solid #FECACA;
+}
+
+.neo-report-type-pill.pill-alarm {
+  background: #ECFDF5;
+  color: #059669;
+  border: 1px solid #A7F3D0;
+}
+
+.neo-report-type-pill.pill-evaded {
+  background: #EEF2FF;
+  color: #4F46E5;
+  border: 1px solid #C7D2FE;
+}
+
 .neo-status-pill-modern {
   font-size: 11px;
   font-weight: 700;
@@ -2475,6 +2650,12 @@
   background: #eff6ff;
   color: #1e40af;
   border: 1px solid #bfdbfe;
+}
+
+.neo-pill-badge.neutral {
+  background: #f1f5f9;
+  color: #475569;
+  border: 1px solid #cbd5e1;
 }
 
 .neo-status-pill {
@@ -3464,29 +3645,62 @@
 /* Toast Notification */
 .neo-toast {
   position: fixed;
-  bottom: 24px;
-  right: 24px;
-  background: var(--neo-navy);
-  color: var(--neo-white);
-  padding: 12px 20px;
+  bottom: 28px;
+  right: 28px;
+  background: #061733;
+  color: #FFFFFF;
+  padding: 12px 18px;
   border-radius: 12px;
   font-size: 13px;
   font-weight: 600;
-  box-shadow: 0 10px 30px rgba(6, 23, 51, 0.25);
-  z-index: 1000;
-  border-left: 4px solid var(--neo-primary);
-  animation: toastSlideUp 0.24s var(--neo-ease-bounce);
+  box-shadow: 0 12px 36px rgba(6, 23, 51, 0.35), 0 0 0 1px rgba(255, 255, 255, 0.12);
+  z-index: 99999;
+  border-left: 4px solid #0066FF;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 440px;
+  animation: toastSlideUp 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+  pointer-events: auto;
+}
+
+.neo-toast-icon {
+  flex-shrink: 0;
+  color: #10B981;
+}
+
+.neo-toast-text {
+  flex: 1;
+  line-height: 1.4;
+}
+
+.neo-toast-close {
+  background: transparent;
+  border: none;
+  color: #94A3B8;
+  cursor: pointer;
+  padding: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: color 0.15s ease, background 0.15s ease;
+  flex-shrink: 0;
+}
+
+.neo-toast-close:hover {
+  color: #FFFFFF;
+  background: rgba(255, 255, 255, 0.1);
 }
 
 @keyframes toastSlideUp {
   from {
     opacity: 0;
-    transform: translateY(12px);
+    transform: translateY(12px) scale(0.96);
   }
-
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: translateY(0) scale(1);
   }
 }
 
@@ -3581,3 +3795,315 @@
     min-width: 100%;
   }
 }
+
+/* ── Smooth View & Tab Change Transitions ─────────────────────────────── */
+.neo-dashboard-view-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  width: 100%;
+}
+
+.neo-view-transition {
+  animation: neoViewFade 0.22s cubic-bezier(0.16, 1, 0.3, 1) both;
+  will-change: opacity, transform;
+}
+
+@keyframes neoViewFade {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.neo-table-body-transition {
+  animation: neoTableBodyFade 0.18s cubic-bezier(0.16, 1, 0.3, 1) both;
+  will-change: opacity, transform;
+}
+
+@keyframes neoTableBodyFade {
+  from {
+    opacity: 0.45;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.neo-header-title-transition {
+  animation: neoTitleFade 0.2s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes neoTitleFade {
+  from {
+    opacity: 0.25;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ========================================================================= */
+/* AUDIT TRAIL & RETENTION GOVERNANCE STYLES (VIEW 3)                        */
+/* ========================================================================= */
+
+.neo-btn-audit-prune {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #FEF2F2;
+  color: #DC2626;
+  border: 1px solid #FECACA;
+  border-radius: 10px;
+  padding: 7px 14px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 1px 2px rgba(220, 38, 38, 0.05);
+}
+
+.neo-btn-audit-prune:hover:not(:disabled) {
+  background: #DC2626;
+  color: #FFFFFF;
+  border-color: #DC2626;
+  box-shadow: 0 4px 12px rgba(220, 38, 38, 0.25);
+  transform: translateY(-1px);
+}
+
+.neo-btn-audit-prune:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.neo-btn-audit-inspect {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: #EFF6FF;
+  color: #0066FF;
+  border: 1px solid #DBEAFE;
+  border-radius: 8px;
+  padding: 5px 11px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.neo-btn-audit-inspect:hover {
+  background: #0066FF;
+  color: #FFFFFF;
+  border-color: #0066FF;
+  box-shadow: 0 2px 8px rgba(0, 102, 255, 0.24);
+  transform: translateY(-1px);
+}
+
+.neo-audit-loading-spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid #E2E8F0;
+  border-top-color: #0066FF;
+  border-radius: 50%;
+  margin: 0 auto;
+  animation: neoSpin 0.75s linear infinite;
+}
+
+@keyframes neoSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ── Audit Action Pills ─────────────────────────────────────────────────── */
+.neo-audit-action-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.neo-audit-action-pill.audit-badge-approve {
+  background: #ECFDF5;
+  color: #059669;
+  border: 1px solid #A7F3D0;
+}
+
+.neo-audit-action-pill.audit-badge-reject {
+  background: #FEF2F2;
+  color: #DC2626;
+  border: 1px solid #FECACA;
+}
+
+.neo-audit-action-pill.audit-badge-retire {
+  background: #FFFBEB;
+  color: #D97706;
+  border: 1px solid #FDE68A;
+}
+
+.neo-audit-action-pill.audit-badge-toggle {
+  background: #F0FDF4;
+  color: #16A34A;
+  border: 1px solid #BBF7D0;
+}
+
+.neo-audit-action-pill.audit-badge-setting {
+  background: #F5F3FF;
+  color: #7C3AED;
+  border: 1px solid #DDD6FE;
+}
+
+.neo-audit-action-pill.audit-badge-purge {
+  background: #FFF1F2;
+  color: #E11D48;
+  border: 1px solid #FFE4E6;
+}
+
+.neo-audit-action-pill.audit-badge-default {
+  background: #F1F5F9;
+  color: #475569;
+  border: 1px solid #CBD5E1;
+}
+
+/* ── Audit Retention TTL Tag ────────────────────────────────────────────── */
+.neo-audit-ttl-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  background: #F8FAFC;
+  border: 1px solid #E2E8F0;
+  color: #64748B;
+  width: fit-content;
+  white-space: nowrap;
+}
+
+/* ── Actor Identity Formatting in Table ─────────────────────────────────── */
+.neo-actor-cell {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: flex-start !important;
+  gap: 3px !important;
+}
+
+.neo-actor-email {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #0F172A;
+  max-width: 170px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: block;
+}
+
+.neo-actor-role-pill {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: #EFF6FF;
+  color: #0066FF;
+  border: 1px solid #DBEAFE;
+  width: fit-content;
+  line-height: 1.3;
+}
+
+.neo-role-tag {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 6px;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: #EFF6FF;
+  color: #0066FF;
+  border: 1px solid #DBEAFE;
+}
+
+/* ── Retention Selector & Prune Button in Toolbar ──────────────────────── */
+.neo-retention-selector-wrapper {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #FFFFFF;
+  border: 1px solid #CBD5E1;
+  border-radius: 12px;
+  padding: 0 10px;
+  height: 38px;
+  box-sizing: border-box;
+  transition: all 0.15s ease;
+}
+
+.neo-retention-selector-wrapper:hover {
+  border-color: #0066FF;
+}
+
+.neo-retention-icon {
+  color: #64748B;
+  flex-shrink: 0;
+}
+
+.neo-retention-select {
+  border: none;
+  outline: none;
+  background: transparent;
+  color: #0F172A;
+  font-size: 12.5px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  padding-right: 4px;
+}
+
+.neo-btn-toolbar-prune {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #FEF2F2;
+  color: #DC2626;
+  border: 1px solid #FECACA;
+  border-radius: 12px;
+  padding: 0 14px;
+  height: 38px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  white-space: nowrap;
+}
+
+.neo-btn-toolbar-prune:hover:not(:disabled) {
+  background: #DC2626;
+  color: #FFFFFF;
+  border-color: #DC2626;
+  box-shadow: 0 3px 10px rgba(220, 38, 38, 0.22);
+  transform: translateY(-1px);
+}
+
+.neo-btn-toolbar-prune:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
