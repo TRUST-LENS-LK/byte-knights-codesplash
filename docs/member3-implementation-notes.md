@@ -74,7 +74,17 @@ And new for this expansion:
   `PATCH /api/moderation/domains/:id` (see `docs/api-conventions.md`).
 - **Customer-facing "Check a URL" tab** (`App.tsx`): a dedicated single-line URL input
   next to the existing "Text / URL" and "Upload Screenshot (OCR)" tabs, for a user who
-  just wants to paste a bare link rather than a full message.
+  just wants to paste a bare link rather than a full message. A bare domain typed
+  without a scheme (`boc.lk` rather than `https://boc.lk`) is normalized to `https://`
+  before submission, both client-side and server-side, since the URL entity extractor
+  otherwise only recognizes an absolute `http(s)` URL and would silently produce zero
+  entities for a schemeless input.
+- **Direct scam/safe indicator add** (`POST /api/moderation/intelligence`, Intelligence
+  tab in the dashboard): a moderator can publish a known-scam (or known-safe) domain,
+  URL, or phone number straight to `verified_intelligence` without waiting for a
+  citizen to report it first. Writes the same shape the report-approval path writes,
+  so both feed `checkVerifiedIntelligence` identically; a duplicate indicator is
+  rejected (`409 DUPLICATE_INDICATOR`) rather than silently overwritten.
 - **Frontend**: a "Domain identity check" evidence card showing the claimed
   organization, the actual (defanged) destination domain, and the evidence sentence,
   distinct from the generic findings list.
@@ -110,6 +120,14 @@ And new for this expansion:
    which have neither RDAP nor WHOIS).
 9. As a moderator, open the "Domains" tab in the dashboard to add, activate, mark
    stale, or retire a directory entry, demonstrating the management UI behind Tier 1.
+10. As a moderator, open the "Verified Intel" tab and use "Add a threat indicator
+    directly" to publish a scam domain that has not been reported by anyone yet, then
+    check that domain from the customer side to confirm it is immediately caught as
+    `verified_scam_intelligence` (Tier 2), demonstrating the direct-add path
+    end-to-end.
+11. In the "Check a URL" tab, paste a known indicator with no `https://` prefix (e.g.
+    just `boc.lk`, or a domain added in step 10): confirm it is still checked
+    correctly, demonstrating the bare-domain normalization fix.
 
 ## Known limitations
 
@@ -146,6 +164,17 @@ And new for this expansion:
   each `source_url` should be spot-checked before being relied on for a real
   deployment; it is adequate for a hackathon demo directory of about a dozen
   organizations, now supplemented by moderator-added entries via the management UI.
+- **A bare domain inside a free-text message is still not recognized.** The
+  scheme-normalization fix only applies to a dedicated URL submission
+  (`type: 'url'`, the "Check a URL" tab), because that is the one case where the
+  whole input is unambiguously meant as a link. `packages/extraction`'s URL entity
+  extractor still requires an `http(s)://` prefix to recognize a link embedded in a
+  message, so a message that mentions a domain without a scheme and without
+  surrounding whitespace-free URL shape (e.g. "check boc-secure-login.xyz before you
+  pay") will not currently produce a domain entity there. Fixing this needs a
+  bare-domain regex added to the shared extraction package, which is used by every
+  submission type, not just this slice, so it was left as a follow-up rather than
+  changed unilaterally.
 
 ## Setup
 
@@ -163,3 +192,10 @@ For the full five-tier cascade:
   enable Tier 4. Without it, Tier 4 is skipped, not treated as an error.
 - Tier 5 (domain age) needs no configuration; it calls RDAP and the public
   certificate-transparency-log APIs directly and fails open on any network issue.
+- Run `supabase/migrations/202609220002_verified_intelligence_report_count.sql`. The
+  original `verified_intelligence` migration never defined this column even though
+  the application code has always written it, so every insert (citizen-report
+  approval included, not just this slice's direct-add feature) was silently failing
+  against Supabase and falling back to an in-memory store that never actually
+  persisted. Without this migration, confirmed threats appear to save successfully
+  but disappear on the next server restart.
