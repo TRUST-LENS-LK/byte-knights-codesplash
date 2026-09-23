@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  scanner:
+    build:
+      context: ./services/scanner
+      dockerfile: Dockerfile
+    ports:
+      - "8788:8788"
+    environment:
+      - PORT=8788
+      - ALLOW_LOCAL_TEST=1
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+    ports:
+      - "8787:8787"
+    environment:
+      - PORT=8787
+      - SCANNER_URL=http://scanner:8788
+    depends_on:
+      - scanner
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.web
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_URL=http://localhost:8787
+    depends_on:
+      - api

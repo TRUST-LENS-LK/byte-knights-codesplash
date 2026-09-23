@@ -10,7 +10,7 @@ export const CommunityReportBar: React.FC<CommunityReportBarProps> = ({ onReport
     <div className="community-report-bar">
       <div className="community-report-info">
         <h4>
-          <ShieldAlert size={18} color="#087f8c" aria-hidden="true" />
+          <ShieldAlert size={18} color="#7c3aed" aria-hidden="true" />
           <span>Community Threat Shield</span>
         </h4>
         <p>
