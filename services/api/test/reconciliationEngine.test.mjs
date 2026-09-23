@@ -333,3 +333,47 @@ test('extractDomainVariants: Correctly resolves apex and stripped variants for S
   assert.ok(variants3.includes('cbsl.gov.lk'))
 })
 
+test('reconcileDecision: Scenario 13 — Known global platform (facebook.com) with crowd report yields GLOBAL_PLATFORM_WITH_CAUTION', () => {
+  const baseDecision = {
+    riskBand: 'LOW',
+    recommendation: 'PROCEED_CAUTIOUSLY',
+    findings: [
+      { canonicalSignal: 'known_global_domain', category: 'High-reputation global infrastructure', source: 'RULE', strength: 0.0, meta: { domain: 'facebook.com', trancoRank: 3 } }
+    ],
+    safeActions: ['Standard caution.'],
+  }
+  const verifiedFindings = [
+    { canonicalSignal: 'verified_scam_intelligence', confidence: 0.70, source: 'APPROVED_REPORT', strength: 1.0, reportCount: 1 }
+  ]
+
+  const { decision, intelligenceOverlay } = reconcileDecision(baseDecision, verifiedFindings)
+  assert.equal(decision.riskBand, 'LOW')
+  assert.equal(decision.recommendation, 'PROCEED_CAUTIOUSLY')
+  assert.equal(intelligenceOverlay.netVerdict, 'GLOBAL_PLATFORM_WITH_CAUTION')
+  assert.equal(intelligenceOverlay.globalDomain, 'facebook.com')
+  assert.ok(intelligenceOverlay.reconciliationTrace.some((line) => line.includes('Global Platform Protection')))
+})
+
+test('reconcileDecision: Scenario 14 — Global platform with critical behavioral credential theft overrides to HIGH risk', () => {
+  const baseDecision = {
+    riskBand: 'LOW',
+    recommendation: 'PROCEED_CAUTIOUSLY',
+    findings: [
+      { canonicalSignal: 'known_global_domain', category: 'High-reputation global infrastructure', source: 'RULE', strength: 0.0, meta: { domain: 'facebook.com' } },
+      { canonicalSignal: 'credential_harvesting_intent', category: 'Social engineering', source: 'RULE', strength: 0.95 }
+    ],
+    safeActions: ['Standard caution.'],
+  }
+  const verifiedFindings = [
+    { canonicalSignal: 'verified_scam_intelligence', confidence: 0.85, source: 'APPROVED_REPORT', strength: 1.0, reportCount: 1 }
+  ]
+
+  const { decision, intelligenceOverlay } = reconcileDecision(baseDecision, verifiedFindings, {
+    messageBody: 'Your account is suspended. Enter your OTP and debit card PIN immediately.'
+  })
+  assert.equal(decision.riskBand, 'HIGH')
+  assert.equal(decision.recommendation, 'STOP_AND_AVOID')
+  assert.ok(intelligenceOverlay.reconciliationTrace.some((line) => line.includes('Behavioral override active')))
+})
+
+

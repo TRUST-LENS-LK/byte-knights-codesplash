@@ -123,6 +123,7 @@ const server = createServer(async (req, res) => {
         res,
         200,
         {
+          success: true,
           reports,
           count: reports.length,
           total,
@@ -394,7 +395,13 @@ const server = createServer(async (req, res) => {
       )
       return send(res, 200, { result, requestId }, requestId)
     } catch (error) {
-      return send(res, error.message === 'Report not found.' ? 404 : 502, { code: error.message === 'Report not found.' ? 'REPORT_NOT_FOUND' : 'REVIEW_FAILED', message: error.message, requestId }, requestId)
+      const status = error.statusCode || (error.message === 'Report not found.' ? 404 : 502)
+      return send(res, status, {
+        code: error.code || (error.message === 'Report not found.' ? 'REPORT_NOT_FOUND' : 'REVIEW_FAILED'),
+        message: error.message,
+        protectedEntity: error.protectedEntity || null,
+        requestId,
+      }, requestId)
     }
   }
 

@@ -134,6 +134,29 @@ test.before(async () => {
       return res.end(JSON.stringify(deletedItems))
     }
 
+    if (req.method === 'GET' && req.url.startsWith('/rest/v1/approved_organizations')) {
+      const orgs = [
+        {
+          id: 1,
+          name: 'Sri Lanka Police',
+          official_domain: 'police.lk',
+          category: 'Government / Law Enforcement',
+          active: true,
+          status: 'ACTIVE',
+        },
+        {
+          id: 2,
+          name: 'Central Bank of Sri Lanka',
+          official_domain: 'cbsl.gov.lk',
+          category: 'Banking & Finance',
+          active: true,
+          status: 'ACTIVE',
+        },
+      ]
+      res.writeHead(200, { 'content-type': 'application/json' })
+      return res.end(JSON.stringify(orgs))
+    }
+
     // Default REST endpoints simulation
     res.writeHead(200, { 'content-type': 'application/json' })
     res.end(JSON.stringify([]))
@@ -647,4 +670,113 @@ test('POST /api/moderation/audit-logs/purge: executes retention purge and remove
   assert.ok(typeof body.purgedCount === 'number')
   assert.equal(body.retentionDays, 90)
 })
+
+test('GET /api/moderation/queue: enriches reports with protected_entity metadata dynamically', async () => {
+  // 1. Submit a report for official domain police.lk
+  const submitRes = await fetch(`http://localhost:${apiPort}/api/reports`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      reportType: 'suspicious',
+      contentSha256: 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2',
+      reportedDomain: 'police.lk',
+      rawExcerpt: 'Suspicious sms claiming to be Sri Lanka police traffic fine',
+    }),
+  })
+  assert.equal(submitRes.status, 201)
+
+  // 2. Fetch moderation queue as moderator
+  const queueRes = await fetch(`http://localhost:${apiPort}/api/moderation/queue`, {
+    headers: { Authorization: `Bearer ${validModeratorToken}` },
+  })
+  assert.equal(queueRes.status, 200)
+  const queueBody = await queueRes.json()
+  assert.equal(queueBody.success, true)
+
+  const policeReport = queueBody.reports.find((r) => r.reported_domain === 'police.lk')
+  assert.ok(policeReport, 'Report for police.lk should be in the queue')
+  assert.ok(policeReport.protected_entity, 'police.lk should have protected_entity metadata')
+  assert.equal(policeReport.protected_entity.isProtected, true)
+  assert.equal(policeReport.protected_entity.type, 'OFFICIAL_NATIONAL')
+  assert.equal(policeReport.protected_entity.name, 'Sri Lanka Police')
+  assert.equal(policeReport.protected_entity.recommendedAction, 'REJECT')
+})
+
+test('POST /api/moderation/review: Circuit Breaker blocks approval of protected entities without override (HTTP 422)', async () => {
+  // 1. Submit a report for global platform facebook.com
+  const submitRes = await fetch(`http://localhost:${apiPort}/api/reports`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      reportType: 'suspicious',
+      contentSha256: 'b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3',
+      reportedDomain: 'facebook.com',
+      rawExcerpt: 'Citizen reported seeing a scam advert on facebook',
+    }),
+  })
+  assert.equal(submitRes.status, 201)
+  const submitBody = await submitRes.json()
+  const reportId = submitBody.report.id
+
+  // 2. Try to APPROVE without overrideProtectedEntity -> HTTP 422 PROTECTED_ENTITY_OVERRIDE_REQUIRED
+  const reviewRes = await fetch(`http://localhost:${apiPort}/api/moderation/review`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      Authorization: `Bearer ${validModeratorToken}`,
+    },
+    body: JSON.stringify({
+      reportId,
+      action: 'APPROVE',
+      category: 'Phishing',
+      notes: 'Trying to approve facebook.com without circuit breaker override',
+    }),
+  })
+
+  assert.equal(reviewRes.status, 422)
+  const reviewBody = await reviewRes.json()
+  assert.equal(reviewBody.code, 'PROTECTED_ENTITY_OVERRIDE_REQUIRED')
+  assert.ok(reviewBody.protectedEntity)
+  assert.equal(reviewBody.protectedEntity.type, 'TOP_GLOBAL')
+})
+
+test('POST /api/moderation/review: Circuit Breaker permits approval when overrideProtectedEntity=true and incidentReason provided', async () => {
+  // 1. Submit a report for cbsl.gov.lk (Central Bank)
+  const submitRes = await fetch(`http://localhost:${apiPort}/api/reports`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      reportType: 'suspicious',
+      contentSha256: 'c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4',
+      reportedDomain: 'cbsl.gov.lk',
+      rawExcerpt: 'Severe defacement or incident',
+    }),
+  })
+  assert.equal(submitRes.status, 201)
+  const submitBody = await submitRes.json()
+  const reportId = submitBody.report.id
+
+  // 2. APPROVE with overrideProtectedEntity: true and incidentReason
+  const overrideRes = await fetch(`http://localhost:${apiPort}/api/moderation/review`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      Authorization: `Bearer ${validModeratorToken}`,
+    },
+    body: JSON.stringify({
+      reportId,
+      action: 'APPROVE',
+      category: 'Compromised Infrastructure',
+      notes: 'Confirmed by CERT emergency incident team',
+      overrideProtectedEntity: true,
+      incidentReason: 'CERT-INC-2026-999: Active DNS Hijack Incident',
+    }),
+  })
+
+  assert.equal(overrideRes.status, 200)
+  const overrideBody = await overrideRes.json()
+  assert.equal(overrideBody.result.success, true)
+  assert.equal(overrideBody.result.status, 'APPROVED')
+})
+
 

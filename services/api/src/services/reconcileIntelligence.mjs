@@ -43,7 +43,7 @@ function classifySignal(finding) {
 
 /**
  * @typedef {Object} IntelligenceOverlay
- * @property {'CONFIRMED_SCAM' | 'SUSPICIOUS_INDICATOR' | 'VERIFIED_SAFE' | 'CONFLICTED' | 'OFFICIAL_ENTITY' | 'OFFICIAL_ENTITY_WITH_CAUTION' | 'POSSIBLE_IMPERSONATION' | 'NO_INTEL'} netVerdict
+ * @property {'CONFIRMED_SCAM' | 'SUSPICIOUS_INDICATOR' | 'VERIFIED_SAFE' | 'CONFLICTED' | 'OFFICIAL_ENTITY' | 'OFFICIAL_ENTITY_WITH_CAUTION' | 'GLOBAL_PLATFORM_WITH_CAUTION' | 'POSSIBLE_IMPERSONATION' | 'NO_INTEL'} netVerdict
  * @property {number} scamConfidence    – Weighted scam signal confidence [0..1]
  * @property {number} safeConfidence    – Weighted safe signal confidence [0..1]
  * @property {number} signalCount       – Total verified signals analyzed
@@ -64,7 +64,7 @@ function classifySignal(finding) {
  * @param {Array}  verifiedFindings – Findings from `checkVerifiedIntelligence()`
  * @returns {{ decision: Object, intelligenceOverlay: IntelligenceOverlay }}
  */
-export function reconcileDecision(decision, verifiedFindings = []) {
+export function reconcileDecision(decision, verifiedFindings = [], context = {}) {
   const trace = []
   const approvedDomainFindings = (decision.findings || []).filter((f) => f.canonicalSignal === 'approved_domain')
   const hasDirectoryMatch = approvedDomainFindings.length > 0
@@ -99,8 +99,17 @@ export function reconcileDecision(decision, verifiedFindings = []) {
 
   // Check for critical rule-engine threat signals (credential theft or advance payments)
   const criticalRuleFinding = (decision.findings || []).find(
-    (f) => f.source === 'RULE' && (f.canonicalSignal === 'credential_request' || f.canonicalSignal === 'advance_payment')
-  )
+    (f) => f.canonicalSignal === 'credential_request' || 
+           f.canonicalSignal === 'advance_payment' || 
+           f.canonicalSignal === 'credential_harvesting_intent' ||
+           f.canonicalSignal === 'payment_demand' ||
+           f.canonicalSignal === 'otp_theft'
+  ) || (context?.messageBody && /otp|pin|password|credential|credit card|cvv|bank account/i.test(context.messageBody) ? {
+    canonicalSignal: 'credential_request',
+    category: 'Social engineering',
+    source: 'RULE',
+    strength: 1.0,
+  } : null)
   const hasCriticalRuleThreat = Boolean(criticalRuleFinding)
 
   // Initialize overlay
@@ -115,6 +124,7 @@ export function reconcileDecision(decision, verifiedFindings = []) {
     consensusSummary: 'No verified intelligence on file.',
     hasDirectoryMatch,
     officialOrganization: officialOrg,
+    globalDomain: null,
     behavioralOverride: false,
     reconciliationTrace: trace,
   }
@@ -181,6 +191,56 @@ export function reconcileDecision(decision, verifiedFindings = []) {
     )
     applyScamEscalation(decision, overlay, trace, scamFindings)
     return { decision, intelligenceOverlay: overlay }
+  }
+
+  // ── CASE 2B: Global Trusted Domain Match (Tranco Top-1M Global Platforms) ────
+  const globalDomainFindings = (decision.findings || []).filter((f) => f.canonicalSignal === 'known_global_domain')
+  const hasGlobalDomainMatch = globalDomainFindings.length > 0
+
+  if (hasGlobalDomainMatch) {
+    const globalDomainName = globalDomainFindings[0]?.meta?.domain || globalDomainFindings[0]?.domain || null
+    overlay.globalDomain = globalDomainName
+    trace.push(`🌐 Global Domain Match: Domain is verified as a top global service provider (Tranco Top-1M).`)
+
+    if (hasCriticalRuleThreat) {
+      applyBehavioralImpersonationOverride(decision, overlay, trace, criticalRuleFinding, globalDomainName || 'Global Service Provider')
+      overlay.consensusSummary = `Global Platform with Threat Override`
+      return { decision, intelligenceOverlay: overlay }
+    }
+
+    if (scamCount <= 1) {
+      // 0 or 1 crowd report against a top global domain (e.g. facebook.com, google.com)
+      overlay.netVerdict = 'GLOBAL_PLATFORM_WITH_CAUTION'
+      decision.riskBand = 'LOW'
+      decision.recommendation = 'PROCEED_CAUTIOUSLY'
+      decision.safeActions = [
+        `This domain is a verified top global service provider.`,
+        scamCount === 1
+          ? `1 citizen report was logged against this domain. Citizens often report legitimate platforms when encountering scam posts, phishing ads, or third-party impersonators hosted on them. The domain itself is legitimate.`
+          : `Always verify that you are interacting with authentic accounts or official pages on this platform.`,
+      ]
+      trace.push(
+        `🌐 Global Platform Protection: Domain possesses verified global reputation.`,
+        scamCount === 1
+          ? `⚠ 1 citizen report is on file. Disambiguation applied: Flagged as likely third-party platform abuse rather than core domain compromise. Risk maintained at LOW (PROCEED_CAUTIOUSLY).`
+          : `No threat reports or critical indicators detected. Global platform reputation preserved.`
+      )
+      overlay.consensusSummary = scamCount === 1 ? `Global Platform with 1 Caution Report` : `Global Platform (Verified)`
+      return { decision, intelligenceOverlay: overlay }
+    }
+
+    // scamCount >= 2 on a global domain
+    if (scamCount > 0 && safeCount > 0) {
+      overlay.netVerdict = 'CONFLICTED'
+      overlay.consensusSummary = `${scamCount} Scam vs ${safeCount} Safe on Global Platform`
+      trace.push(
+        `⚠ CONFLICTED THREAT INTELLIGENCE: Global platform has ${scamCount} scam reports and ${safeCount} safe reports.`,
+        `🛡️ Fail-Safe Defaults: Risk set to HIGH (VERIFY_INDEPENDENTLY).`
+      )
+      decision.riskBand = 'HIGH'
+      decision.recommendation = 'VERIFY_INDEPENDENTLY'
+      return { decision, intelligenceOverlay: overlay }
+    }
   }
 
   // ── CASE 3: Active Community Intelligence Reports Exist (No Directory Match) ───
@@ -318,8 +378,9 @@ function applyBehavioralImpersonationOverride(decision, overlay, trace, critical
   ]
 
   trace.push(
-    `⚠ CRITICAL IMPERSONATION ALERT: Although the domain belongs to or references "${entityLabel}", the message contains high-risk threat indicators (${criticalFinding.category}: ${criticalFinding.canonicalSignal}).`,
+    `⚠ CRITICAL IMPERSONATION ALERT: Although the domain belongs to or references "${entityLabel}", the message contains high-risk threat indicators (${criticalFinding.category || 'High-Risk Threat'}: ${criticalFinding.canonicalSignal}).`,
     `Even though community reports or directory entries exist for this indicator, safe intelligence CANNOT override active credential or payment harvesting.`,
+    `Behavioral override active: Safe intelligence cannot override active credential theft.`,
     `This pattern matches domain impersonation and credential phishing campaigns. Risk escalated to HIGH.`
   )
 }

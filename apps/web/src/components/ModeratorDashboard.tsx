@@ -167,8 +167,8 @@ function classifyReportCategory(item: ModerationQueueItem): string {
   if (parsed.threatCategory) return parsed.threatCategory
   if (item.report_type === 'false_positive') return 'False Alarm'
   const text = `${item.reported_domain || ''} ${item.notes || ''} ${item.raw_excerpt || ''}`.toLowerCase()
-  if (/boc|combank|bank|hnb|sampath|card|debit|credit|fund/.test(text)) return 'Banking Phishing'
-  if (/ceb|electricity|utility|water|bill|telecom|dialog|mobitel/.test(text)) return 'Utility Bill Scam'
+  if (/bank|banking|financial|account|card|debit|credit|fund/.test(text)) return 'Banking Phishing'
+  if (/electricity|utility|water|bill|telecom|carrier|provider/.test(text)) return 'Utility Bill Scam'
   if (/job|earn|part-time|salary|advance|bonus|hiring/.test(text)) return 'Job Scam'
   if (/lottery|prize|won|lucky|cash|gift|reward/.test(text)) return 'Lottery / Prize Fraud'
   if (/otp|code|pin|password|credential|security/.test(text)) return 'OTP Theft'
@@ -191,7 +191,7 @@ export function getReportRiskSignal(item: ModerationQueueItem): { level: 'HIGH' 
     return { level: 'HIGH', color: '#EF4444' }
   }
   const text = `${item.reported_domain || ''} ${item.notes || ''} ${item.raw_excerpt || ''}`.toLowerCase()
-  if (/otp|pin|password|credential|boc|combank|bank|hnb|sampath|\.apk/.test(text)) {
+  if (/otp|pin|password|credential|banking|account|\.apk/.test(text)) {
     return { level: 'HIGH', color: '#EF4444' }
   }
   return { level: 'MEDIUM', color: '#F59E0B' }
@@ -210,7 +210,7 @@ export function getThreatDetails(item: ModerationQueueItem): {
   if (item.threat) {
     // If backend mistakenly labeled a message-only report as Suspicious Domain, correct it
     if (!domain && item.threat.title === 'Suspicious Domain') {
-      if (/subscription|invoice|refund|renew|charge|geek squad|norton|mcafee|paypal|apple/.test(text)) {
+      if (/subscription|invoice|refund|renew|charge|antivirus|support|service/.test(text)) {
         return { title: 'Scam', subtitle: 'Subscription / Invoice Fraud', type: 'scam' }
       }
       return { title: 'Suspicious Message', subtitle: 'Citizen Submission', type: 'scam' }
@@ -229,13 +229,13 @@ export function getThreatDetails(item: ModerationQueueItem): {
   if (/\.apk|download|install|app|update|malware|trojan/.test(text)) {
     return { title: 'Malware', subtitle: 'Malicious Link / APK', type: 'malware' }
   }
-  if (/subscription|invoice|refund|renew|charge|geek squad|norton|mcafee|paypal|apple/.test(text)) {
+  if (/subscription|invoice|refund|renew|charge|antivirus|support|service/.test(text)) {
     return { title: 'Scam', subtitle: 'Subscription / Invoice Fraud', type: 'scam' }
   }
-  if (/ceb|electricity|utility|water|bill|telecom|dialog|mobitel|job|earn|salary|advance|bonus|hiring|lottery|prize|won|lucky|cash|gift|reward|offer/.test(text)) {
+  if (/electricity|utility|water|bill|telecom|carrier|provider|job|earn|salary|advance|bonus|hiring|lottery|prize|won|lucky|cash|gift|reward|offer/.test(text)) {
     return { title: 'Scam', subtitle: 'Financial & Utility Fraud', type: 'scam' }
   }
-  if (/boc|combank|bank|hnb|sampath|card|debit|credit|fund|login|verify|otp|pin|password|credential|security/.test(text)) {
+  if (/bank|banking|financial|account|card|debit|credit|fund|login|verify|otp|pin|password|credential|security/.test(text)) {
     return { title: 'Phishing', subtitle: 'Credential Harvesting', type: 'phishing' }
   }
 
@@ -1048,7 +1048,9 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
     category: string,
     indicatorType: 'domain' | 'content_hash' | 'url',
     notes: string,
-    confidence: number = 1.0
+    confidence: number = 1.0,
+    overrideProtectedEntity?: boolean,
+    incidentReason?: string
   ) => {
     if (!token) return
     setIsProcessingReview(true)
@@ -1059,6 +1061,8 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
       indicatorType: report.reported_domain ? indicatorType : 'content_hash',
       notes: notes.trim() || 'Approved by moderator and sanitized for threat intelligence.',
       confidence,
+      overrideProtectedEntity,
+      incidentReason,
     })
     setIsProcessingReview(false)
 
@@ -2442,9 +2446,24 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                                     <span className="neo-target-domain" title={item.reported_domain || 'Message-only'}>
                                       {formatCleanIndicator(item.reported_domain)}
                                     </span>
-                                    <span className="neo-target-type">
-                                      {item.reported_domain ? 'Domain' : 'Message'}
-                                    </span>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap', marginTop: '2px' }}>
+                                      <span className="neo-target-type">
+                                        {item.reported_domain ? 'Domain' : 'Message'}
+                                      </span>
+                                      {item.protected_entity?.isProtected && (
+                                        <span
+                                          className={`neo-protected-entity-pill ${item.protected_entity.type === 'OFFICIAL_NATIONAL' ? 'national' : 'global'}`}
+                                          title={item.protected_entity.warning}
+                                        >
+                                          {item.protected_entity.badge}
+                                        </span>
+                                      )}
+                                    </div>
+                                    {item.protected_entity?.isProtected && item.status === 'PENDING' && (
+                                      <span className="neo-protected-queue-recommendation" title="Guardrail recommendation">
+                                        {item.report_type === 'false_positive' ? '✓ Disputed Safe' : '⚡ Recom: REJECT'}
+                                      </span>
+                                    )}
                                   </div>
                                 </div>
                               </td>
@@ -3503,7 +3522,7 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                       type="text"
                       value={newDomainName}
                       onChange={(e) => setNewDomainName(e.target.value)}
-                      placeholder="e.g. Commercial Bank of Ceylon"
+                      placeholder="e.g. National Service Organization"
                       style={{ padding: '8px 10px', borderRadius: '6px', border: '1px solid #CBD5E1', minWidth: '220px' }}
                     />
                   </label>
@@ -3513,7 +3532,7 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                       type="text"
                       value={newDomainDomain}
                       onChange={(e) => setNewDomainDomain(e.target.value)}
-                      placeholder="e.g. combank.lk"
+                      placeholder="e.g. organization.gov.lk or domain.lk"
                       style={{ padding: '8px 10px', borderRadius: '6px', border: '1px solid #CBD5E1', minWidth: '180px' }}
                     />
                   </label>

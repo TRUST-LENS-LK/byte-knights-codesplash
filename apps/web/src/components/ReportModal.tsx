@@ -106,7 +106,7 @@ const THREAT_CATEGORIES: ThreatCategoryOption[] = [
   {
     id: 'impersonation',
     label: 'Impersonation',
-    sublabel: 'Spoofing Bank or CEB',
+    sublabel: 'Brand or Entity Spoofing',
     icon: UserX,
     color: '#EC4899',
   },
@@ -123,7 +123,7 @@ const FALSE_ALARM_CATEGORIES: ThreatCategoryOption[] = [
   {
     id: 'official_institution',
     label: 'Official Institution',
-    sublabel: 'Bank, Gov, CEB, Telecom',
+    sublabel: 'Official Organization or Utility',
     icon: Landmark,
     color: '#10B981',
   },
@@ -145,7 +145,7 @@ const FALSE_ALARM_CATEGORIES: ThreatCategoryOption[] = [
 
 function detectDefaultThreat(text: string, domain?: string | null): string {
   const t = `${domain || ''} ${text}`.toLowerCase()
-  if (/boc|combank|bank|hnb|sampath|login|verify|credential|pin|otp|password|security|card/.test(t)) {
+  if (/bank|banking|financial|account|card|debit|credit|login|verify|credential|pin|otp|password|security/.test(t)) {
     return 'phishing'
   }
   if (/job|earn|part-time|salary|hiring|advance|task|telegram/.test(t)) {
@@ -154,7 +154,7 @@ function detectDefaultThreat(text: string, domain?: string | null): string {
   if (/\.apk|download|install|app|update|trojan|malware/.test(t)) {
     return 'malware'
   }
-  if (/ceb|electricity|water|bill|telecom|dialog|mobitel|lottery|prize|won|lucky|cash|gift|reward|offer/.test(t)) {
+  if (/electricity|utility|water|bill|telecom|carrier|provider|payment|lottery|prize|won|lucky|cash|gift|reward|offer/.test(t)) {
     return 'financial_scam'
   }
   return 'phishing'
@@ -445,7 +445,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({
                       type="text"
                       value={targetIndicator}
                       onChange={(e) => setManualIndicator(e.target.value)}
-                      placeholder="e.g. ceb-online-payment.top"
+                      placeholder="e.g. suspicious-site.com or login-portal.top"
                       className="clean-target-input"
                     />
                   </div>

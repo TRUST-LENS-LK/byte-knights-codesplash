@@ -26,7 +26,9 @@ export interface ReviewDecisionModalProps {
     category: string,
     indicatorType: 'domain' | 'content_hash' | 'url',
     notes: string,
-    confidence?: number
+    confidence?: number,
+    overrideProtectedEntity?: boolean,
+    incidentReason?: string
   ) => Promise<void>
   onReject: (report: ModerationQueueItem) => Promise<void>
   isProcessing: boolean
@@ -61,8 +63,8 @@ function classifyReportCategory(item: ModerationQueueItem): string {
   if (parsed.threatCategory) return parsed.threatCategory
   if (item.report_type === 'false_positive') return 'False Alarm'
   const text = `${item.reported_domain || ''} ${item.notes || ''} ${item.raw_excerpt || ''}`.toLowerCase()
-  if (/boc|combank|bank|hnb|sampath|card|debit|credit|fund/.test(text)) return 'Banking Phishing'
-  if (/ceb|electricity|utility|water|bill|telecom|dialog|mobitel/.test(text)) return 'Telecom / Utility Bill Scam'
+  if (/bank|banking|financial|account|card|debit|credit|fund/.test(text)) return 'Banking Phishing'
+  if (/electricity|utility|water|bill|telecom|carrier|provider/.test(text)) return 'Telecom / Utility Bill Scam'
   if (/job|earn|part-time|salary|advance|bonus|hiring/.test(text)) return 'Job Scam'
   if (/lottery|prize|won|lucky|cash|gift|reward/.test(text)) return 'Lottery / Prize Fraud'
   if (/otp|code|pin|password|credential|security/.test(text)) return 'OTP Theft'
@@ -84,6 +86,9 @@ export const ReviewDecisionModal: React.FC<ReviewDecisionModalProps> = ({
   const [notes, setNotes] = useState('')
   const [copiedExcerpt, setCopiedExcerpt] = useState(false)
   const [copiedHash, setCopiedHash] = useState(false)
+  const [overrideProtectedEntity, setOverrideProtectedEntity] = useState(false)
+  const [incidentReason, setIncidentReason] = useState('')
+  const [guardrailError, setGuardrailError] = useState<string | null>(null)
 
   // Sync category with report classification when report changes
   useEffect(() => {
@@ -94,6 +99,9 @@ export const ReviewDecisionModal: React.FC<ReviewDecisionModalProps> = ({
       setNotes('')
       setCopiedExcerpt(false)
       setCopiedHash(false)
+      setOverrideProtectedEntity(false)
+      setIncidentReason('')
+      setGuardrailError(null)
     }
   }, [report])
 
@@ -236,6 +244,53 @@ export const ReviewDecisionModal: React.FC<ReviewDecisionModalProps> = ({
             </div>
           </div>
 
+          {/* Protected Entity Guardrail Banner */}
+          {report.protected_entity?.isProtected && (
+            <div className={`neo-protected-entity-banner ${report.protected_entity.type === 'OFFICIAL_NATIONAL' ? 'national' : 'global'}`}>
+              <div className="neo-protected-banner-header">
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span className="neo-protected-badge-lg">
+                    {report.protected_entity.badge}
+                  </span>
+                  <span className="neo-protected-entity-title">
+                    {report.protected_entity.name}
+                  </span>
+                </div>
+                <span style={{ fontSize: '11.5px', fontFamily: 'monospace', fontWeight: 600, color: '#64748B' }}>
+                  {report.protected_entity.domain}
+                </span>
+              </div>
+
+              <p className="neo-protected-warning-text">
+                {report.protected_entity.warning}
+              </p>
+
+              <div className="neo-protected-recommendation-box">
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span className="neo-recommendation-tag">
+                    {report.report_type === 'false_positive' ? 'SAFE ACTION' : 'RECOMMENDED'}
+                  </span>
+                  <span className="neo-recommendation-text">
+                    {report.report_type === 'false_positive'
+                      ? 'Approving this report will mark this entity as VERIFIED_SAFE and protect it from false alarms.'
+                      : 'Dismiss / Reject Report — Legitimate entity. Approving this domain as a malicious threat would cause widespread false positives.'}
+                  </span>
+                </div>
+                {isPending && report.report_type !== 'false_positive' && (
+                  <button
+                    type="button"
+                    className="neo-btn-dismiss-recommended"
+                    onClick={() => onReject(report)}
+                    disabled={isProcessing}
+                    title="Recommended action: Dismiss false report"
+                  >
+                    <span>Dismiss as Legitimate Entity</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Evidence Excerpt Box (Handles up to 10,000+ words gracefully) */}
           <div className="neo-modal-text-section">
             <div className="neo-modal-text-header">
@@ -297,6 +352,45 @@ export const ReviewDecisionModal: React.FC<ReviewDecisionModalProps> = ({
                 <span>Consensus & Intelligence Publication Parameters</span>
               </div>
 
+              {/* Circuit Breaker Controls for Protected Entities */}
+              {report.protected_entity?.isProtected && report.report_type !== 'false_positive' && (
+                <div className="neo-circuit-breaker-card">
+                  <div className="neo-circuit-breaker-header">
+                    <ShieldAlert size={16} color="#E11D48" aria-hidden="true" />
+                    <span>Protected Entity Circuit Breaker Active</span>
+                  </div>
+                  <p className="neo-circuit-breaker-desc">
+                    Direct approval is locked for official national entities and high-reputation global platforms. If this domain is genuinely compromised (e.g. sub-domain takeover, DNS hijacking, or active abuse), you must provide manual incident authorization:
+                  </p>
+                  <label className="neo-circuit-breaker-checkbox-label">
+                    <input
+                      type="checkbox"
+                      checked={overrideProtectedEntity}
+                      onChange={(e) => {
+                        setOverrideProtectedEntity(e.target.checked)
+                        setGuardrailError(null)
+                      }}
+                    />
+                    <span>I confirm an active, verified security compromise or critical incident on this domain</span>
+                  </label>
+                  {overrideProtectedEntity && (
+                    <div className="neo-form-field" style={{ marginTop: '8px' }}>
+                      <label className="neo-form-label">Incident Reason / CERT Ticket Ref *</label>
+                      <input
+                        type="text"
+                        value={incidentReason}
+                        onChange={(e) => {
+                          setIncidentReason(e.target.value)
+                          setGuardrailError(null)
+                        }}
+                        placeholder="e.g. SLCERT-INC-2026-089: Confirmed unauthorized DNS hijacking"
+                        className="neo-modal-input"
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="neo-modal-decision-grid">
                 <div className="neo-form-field">
                   <label className="neo-form-label">Threat Category</label>
@@ -355,6 +449,14 @@ export const ReviewDecisionModal: React.FC<ReviewDecisionModalProps> = ({
                 />
               </div>
 
+              {/* Guardrail error feedback */}
+              {guardrailError && (
+                <div className="neo-guardrail-error-banner" role="alert">
+                  <ShieldAlert size={15} color="#991B1B" aria-hidden="true" />
+                  <span>{guardrailError}</span>
+                </div>
+              )}
+
               {/* PII Stripping Guarantee */}
               <div className="neo-modal-pii-badge">
                 <ShieldCheck size={16} color="#059669" aria-hidden="true" />
@@ -401,7 +503,28 @@ export const ReviewDecisionModal: React.FC<ReviewDecisionModalProps> = ({
                 <button
                   type="button"
                   className="neo-modal-btn-action-lime"
-                  onClick={() => onApprove(report, category, indicatorType, notes, confidence)}
+                  onClick={() => {
+                    if (report.protected_entity?.isProtected && report.report_type !== 'false_positive') {
+                      if (!overrideProtectedEntity) {
+                        setGuardrailError('Circuit Breaker Active: Check the override confirmation box to proceed, or click Dismiss.')
+                        return
+                      }
+                      if (!incidentReason.trim()) {
+                        setGuardrailError('An incident reason or CERT ticket reference is required for protected entities.')
+                        return
+                      }
+                    }
+                    setGuardrailError(null)
+                    void onApprove(
+                      report,
+                      category,
+                      indicatorType,
+                      notes,
+                      confidence,
+                      overrideProtectedEntity,
+                      incidentReason.trim() || undefined
+                    )
+                  }}
                   disabled={isProcessing}
                 >
                   {isProcessing ? (

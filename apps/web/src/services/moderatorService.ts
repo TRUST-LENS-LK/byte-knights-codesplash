@@ -27,6 +27,15 @@ export interface ModerationQueueItem {
     color: string
   }
   detected_signals?: string[]
+  protected_entity?: {
+    isProtected: boolean
+    type: 'OFFICIAL_NATIONAL' | 'TOP_GLOBAL'
+    name: string
+    domain: string
+    badge: string
+    warning: string
+    recommendedAction: 'REJECT' | 'INVESTIGATE_CAREFULLY'
+  }
 }
 
 export interface ModerationReviewPayload {
@@ -36,6 +45,8 @@ export interface ModerationReviewPayload {
   indicatorType?: 'domain' | 'url' | 'content_hash'
   category?: string
   confidence?: number
+  overrideProtectedEntity?: boolean
+  incidentReason?: string
 }
 
 export interface ModerationReviewResult {
@@ -245,7 +256,13 @@ export async function fetchModerationStats(token: string): Promise<ModerationSta
 export async function reviewModerationItem(
   token: string,
   payload: ModerationReviewPayload
-): Promise<{ success: boolean; result?: ModerationReviewResult; error?: string }> {
+): Promise<{
+  success: boolean
+  result?: ModerationReviewResult
+  error?: string
+  code?: string
+  protectedEntity?: any
+}> {
   // Client-side contract validation
   const validation = moderationActionSchema.safeParse(payload)
   if (!validation.success) {
@@ -272,6 +289,8 @@ export async function reviewModerationItem(
       return {
         success: false,
         error: data.message || `Review action failed (${response.status})`,
+        code: data.code,
+        protectedEntity: data.protectedEntity,
       }
     }
 

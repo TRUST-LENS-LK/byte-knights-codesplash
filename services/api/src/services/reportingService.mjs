@@ -3,6 +3,63 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { SUPABASE_SERVICE_ROLE_KEY, SUPABASE_URL } from '../config/env.mjs'
 import { DEMO_REPORTS } from '../fixtures/demoReports.mjs'
 import { analyzeMessage } from '@trustlens/rules'
+import { isTopGlobalDomain } from '@trustlens/domain'
+import { lookupDomainDirectory } from './domainDirectory.mjs'
+
+/**
+ * Dynamically classifies whether a domain is a Protected Entity using Member 3's
+ * Official National Domain Directory and Global Domain Trust evaluation.
+ * Zero hardcoded domain lists — queries the authoritative directory and Tranco Top-1M dynamically.
+ */
+export async function classifyProtectedEntity(rawInputDomain) {
+  if (!rawInputDomain || typeof rawInputDomain !== 'string') return null
+  const cleanDomain = rawInputDomain.toLowerCase().trim()
+    .replace(/^https?:\/\//, '')
+    .split('/')[0]
+    .split(':')[0]
+    .replace(/\[\.\]/g, '.')
+    .replace(/\[@\]/g, '@')
+  if (!cleanDomain) return null
+
+  // 1. Dynamic Check: Official Sri Lankan National Domain Directory (Member 3's lookupDomainDirectory)
+  try {
+    const dirResult = await lookupDomainDirectory(cleanDomain)
+    if (dirResult?.outcome === 'MATCHED' && dirResult.matchedRecord) {
+      const rec = dirResult.matchedRecord
+      return {
+        isProtected: true,
+        type: 'OFFICIAL_NATIONAL',
+        name: rec.name || cleanDomain,
+        domain: rec.officialDomain || cleanDomain,
+        category: rec.category || 'Official Organization',
+        badge: '🏛️ Official National Entity',
+        warning: `"${cleanDomain}" is verified in the Official National Directory as ${rec.name}. Official entities have authoritative legal standing and must not be flagged as scams without confirmed infrastructure incident verification.`,
+        recommendedAction: 'REJECT',
+      }
+    }
+  } catch {
+    // Non-blocking fallback if directory query fails
+  }
+
+  // 2. Dynamic Check: Global Trusted Domains (Tranco Top-1M ranking via @trustlens/domain)
+  try {
+    if (isTopGlobalDomain(cleanDomain)) {
+      return {
+        isProtected: true,
+        type: 'TOP_GLOBAL',
+        name: cleanDomain,
+        domain: cleanDomain,
+        badge: '🌐 Top Global Platform',
+        warning: `"${cleanDomain}" is a globally verified high-traffic domain (Tranco Top-1M). Citizens often report legitimate platforms when encountering scam posts, phishing ads, or third-party impersonators. The root domain itself is not a scam.`,
+        recommendedAction: 'REJECT',
+      }
+    }
+  } catch {
+    // Non-blocking fallback
+  }
+
+  return null
+}
 
 const REQUEST_TIMEOUT_MS = 8_000
 
@@ -99,23 +156,36 @@ export function extractCleanTextForAnalysis(report) {
  * Automates deterministic threat triage and risk signal evaluation using @trustlens/rules
  * and verified threat intelligence matching.
  */
-export function enrichReportWithTriage(report) {
+export async function enrichReportWithTriage(report) {
   if (!report) return report
+
+  const rawDomain = report.reported_domain || ''
+  const domain = rawDomain.toLowerCase().replace(/hxxps?:\/\//i, '').replace(/\[\.\]/g, '.').replace(/\[@\]/g, '@').trim()
+  const protectedEntity = domain ? await classifyProtectedEntity(domain) : null
 
   // 1. False positive: Submitter reporting legitimate message incorrectly flagged
   if (report.report_type === 'false_positive') {
     return {
       ...report,
+      protected_entity: protectedEntity || null,
       threat: { title: 'False Alarm', subtitle: 'User Dispute', type: 'safe' },
       risk_signal: { level: 'LOW', color: '#10B981' },
       detected_signals: ['user_dispute'],
     }
   }
 
-  const rawDomain = report.reported_domain || ''
-  const domain = rawDomain.toLowerCase().replace(/hxxps?:\/\//i, '').replace(/\[\.\]/g, '.').replace(/\[@\]/g, '@').trim()
+  // 2. Protected Entity Guardrail: If domain is a known official national entity or top global platform
+  if (protectedEntity) {
+    return {
+      ...report,
+      protected_entity: protectedEntity,
+      threat: { title: 'Protected Entity', subtitle: protectedEntity.badge, type: 'safe' },
+      risk_signal: { level: 'LOW', color: '#10B981' },
+      detected_signals: ['protected_entity_guardrail'],
+    }
+  }
 
-  // 2. Check known verified intelligence
+  // 3. Check known verified intelligence
   if (domain) {
     const knownIntel = Array.from(inMemoryIntel.values()).find(
       (item) => item.active && item.indicator_value?.toLowerCase() === domain
@@ -249,7 +319,7 @@ export function enrichReportWithTriage(report) {
 
     riskLevel = decision.riskBand === 'HIGH' ? 'HIGH' : decision.riskBand === 'LOW' ? 'LOW' : 'MEDIUM'
   } else if (!domain) {
-    if (/subscription|invoice|refund|renew|charge|geek squad|norton|mcafee|paypal|apple/.test(lowerText)) {
+    if (/subscription|invoice|refund|renew|charge|antivirus|support|service/.test(lowerText)) {
       title = 'Scam'
       subtitle = 'Subscription / Invoice Fraud'
       type = 'scam'
@@ -261,7 +331,7 @@ export function enrichReportWithTriage(report) {
       title = 'Scam'
       subtitle = 'Lottery / Prize Fraud'
       type = 'scam'
-    } else if (/boc|combank|bank|hnb|sampath|card|debit|credit|fund|login|verify|otp|pin|password|credential|security/.test(lowerText)) {
+    } else if (/bank|banking|financial|account|card|debit|credit|fund|login|verify|otp|pin|password|credential|security/.test(lowerText)) {
       title = 'Phishing'
       subtitle = 'Credential Harvesting'
       type = 'phishing'
@@ -296,12 +366,12 @@ const initialDemoIntel = [
     id: 'intel-demo-001',
     source_report_id: 'report-demo-001',
     indicator_type: 'domain',
-    indicator_value: 'ceb-bill-pay.top',
-    defanged_value: 'hxxps://ceb-bill-pay[.]top',
+    indicator_value: 'utility-bill-pay.top',
+    defanged_value: 'hxxps://utility-bill-pay[.]top',
     risk_level: 'CONFIRMED_SCAM',
     category: 'Utility Phishing',
     confidence: 0.98,
-    notes: 'Impersonates Ceylon Electricity Board payment portal with fake bill settlement gateway.',
+    notes: 'Impersonates national utility payment portal with fake bill settlement gateway.',
     report_count: 3,
     active: true,
     created_at: new Date(Date.now() - 86400000 * 2).toISOString(),
@@ -695,7 +765,8 @@ export async function getModerationQueue(statusOrOptions = 'PENDING') {
     const contentRange = response.headers.get('content-range') || ''
     const match = contentRange.match(/\/(\d+|\*)$/)
     const total = match && match[1] !== '*' ? parseInt(match[1], 10) : reports.length
-    return { reports: reports.map(enrichReportWithTriage), total }
+    const enriched = await Promise.all(reports.map(enrichReportWithTriage))
+    return { reports: enriched, total }
   }
 
   const list = Array.from(inMemoryReports.values()).sort(
@@ -704,7 +775,8 @@ export async function getModerationQueue(statusOrOptions = 'PENDING') {
   const filtered = status && status !== 'ALL' ? list.filter((r) => r.status === status) : list
   const total = filtered.length
   const reports = limit !== null && limit > 0 ? filtered.slice(offset, offset + limit) : filtered
-  return { reports: reports.map(enrichReportWithTriage), total }
+  const enriched = await Promise.all(reports.map(enrichReportWithTriage))
+  return { reports: enriched, total }
 }
 
 function computeStatsFromReports(reports) {
@@ -773,9 +845,9 @@ function computeStatsFromReports(reports) {
       categoryCounts.set('False Alarm', (categoryCounts.get('False Alarm') || 0) + 1)
     } else {
       const text = `${report.reported_domain || ''} ${report.notes || ''} ${report.raw_excerpt || ''}`.toLowerCase()
-      if (/boc|combank|bank|hnb|sampath|card|debit|credit|fund/.test(text)) {
+      if (/bank|banking|financial|account|card|debit|credit|fund/.test(text)) {
         categoryCounts.set('Banking Phishing', (categoryCounts.get('Banking Phishing') || 0) + 1)
-      } else if (/ceb|electricity|utility|water|bill|telecom|dialog|mobitel/.test(text)) {
+      } else if (/electricity|utility|water|bill|telecom|carrier|provider/.test(text)) {
         categoryCounts.set('Telecom / Utility Scam', (categoryCounts.get('Telecom / Utility Scam') || 0) + 1)
       } else if (/job|earn|part-time|salary|advance|bonus|hiring/.test(text)) {
         categoryCounts.set('Job Scam', (categoryCounts.get('Job Scam') || 0) + 1)
@@ -896,6 +968,24 @@ export async function processModerationReview(
     throw new Error('Report not found.')
   }
 
+  const storedDomain = report.reported_domain || ''
+  const rawDomain = rehydrate(storedDomain)
+  const primaryVal = rawDomain || report.content_sha256
+
+  // ── Protected Entity Approval Circuit Breaker ────────────────────────
+  const protectedEntity = rawDomain ? await classifyProtectedEntity(rawDomain) : null
+  if (action === 'APPROVE' && protectedEntity && report.report_type !== 'false_positive') {
+    if (!reviewPayload.overrideProtectedEntity) {
+      const err = new Error(
+        `Protected Entity Guardrail: "${protectedEntity.name}" (${protectedEntity.domain}) is a verified ${protectedEntity.badge}. Approving this domain as a threat requires explicit incident confirmation (overrideProtectedEntity: true).`
+      )
+      err.code = 'PROTECTED_ENTITY_OVERRIDE_REQUIRED'
+      err.statusCode = 422
+      err.protectedEntity = protectedEntity
+      throw err
+    }
+  }
+
   const updatedStatus = action === 'APPROVE' ? 'APPROVED' : action === 'REJECT' ? 'REJECTED' : 'RETIRED'
 
   // 1. Update report status
@@ -912,23 +1002,26 @@ export async function processModerationReview(
     inMemoryReports.set(reportId, report)
   }
 
-  const storedDomain = report.reported_domain || ''
-  const rawDomain = rehydrate(storedDomain)
-  const primaryVal = rawDomain || report.content_sha256
   const chosenConfidence = typeof confidence === 'number' && confidence >= 0.1 && confidence <= 1.0
     ? Number(confidence.toFixed(3))
     : 1.0
 
   // 2. Add enriched audit log with 90-day retention and cryptographic hash chaining
+  const isProtectedOverride = action === 'APPROVE' && Boolean(protectedEntity) && report.report_type !== 'false_positive'
+  const auditCategory = isProtectedOverride ? 'Protected Entity Override' : (category || (report.report_type === 'false_positive' ? 'False Alarm' : 'Reported Scam'))
+  const auditNotes = isProtectedOverride
+    ? `[PROTECTED ENTITY OVERRIDE]: Confirmed incident against ${rawDomain}. Reason: ${reviewPayload.incidentReason || notes || 'Incident override verified'}`
+    : (notes || (action === 'APPROVE' ? 'Approved by moderator and sanitized for threat intelligence.' : 'Dismissed by moderator.'))
+
   await recordAuditLog({
     reportId,
     action,
     targetIndicator: defang(primaryVal),
-    threatCategory: category || (report.report_type === 'false_positive' ? 'False Alarm' : 'Reported Scam'),
+    threatCategory: auditCategory,
     actorEmail,
     actorRole,
     confidence: chosenConfidence,
-    moderatorNotes: notes || (action === 'APPROVE' ? 'Approved by moderator and sanitized for threat intelligence.' : 'Dismissed by moderator.'),
+    moderatorNotes: auditNotes,
     clientIp,
     userAgent,
   })
@@ -1360,11 +1453,11 @@ export async function getModerationAuditLogs({
             const combinedText = `${rep?.reported_domain || ''} ${rep?.notes || ''} ${row.moderator_notes || ''}`.toLowerCase()
             if (rep?.report_type === 'false_positive' || combinedText.includes('false alarm') || combinedText.includes('official') || combinedText.includes('legitimate')) {
               category = 'False Alarm'
-            } else if (combinedText.includes('ceb') || combinedText.includes('electricity') || combinedText.includes('utility') || combinedText.includes('bill')) {
+            } else if (combinedText.includes('electricity') || combinedText.includes('utility') || combinedText.includes('bill') || combinedText.includes('water')) {
               category = 'Utility Bill Scam'
-            } else if (combinedText.includes('bank') || combinedText.includes('boc') || combinedText.includes('combank') || combinedText.includes('otp')) {
+            } else if (combinedText.includes('bank') || combinedText.includes('banking') || combinedText.includes('finance') || combinedText.includes('card') || combinedText.includes('otp')) {
               category = 'Banking Phishing'
-            } else if (combinedText.includes('telecom') || combinedText.includes('dialog') || combinedText.includes('mobitel')) {
+            } else if (combinedText.includes('telecom') || combinedText.includes('mobile') || combinedText.includes('sms') || combinedText.includes('carrier')) {
               category = 'Telecom Scam'
             } else if (combinedText.includes('job') || combinedText.includes('salary') || combinedText.includes('hiring')) {
               category = 'Fake Job Scam'
@@ -2219,22 +2312,7 @@ export async function seedDemoQueue() {
 }
 
 export async function clearDemoQueue() {
-  const demoDomains = [
-    'ceb-billpay-portal.xyz',
-    'combank-secure-update.online',
-    'mohe.gov.lk',
-    'phishing-scam.lk',
-    'srilanka-telecom-rewards.xyz',
-    'fake-prize.lk',
-    'news-alert.lk',
-    'bank-login.lk',
-    'lottery-win.lk',
-    'update-security.lk',
-    'election-result.lk',
-    'health-offer.lk',
-    'boc-ebank-login.info',
-    'dialog-mega-cash-win.top',
-  ]
+  const demoDomains = DEMO_REPORTS.map((r) => r.reported_domain).filter(Boolean)
 
   let deletedCount = 0
 
