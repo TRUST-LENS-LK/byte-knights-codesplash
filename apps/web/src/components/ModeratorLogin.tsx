@@ -66,21 +66,20 @@ export const ModeratorLogin: React.FC<ModeratorLoginProps> = ({
 
   return (
     <div className="neo-login-viewport">
+      {/* Top Left Page Back Button */}
+      <button
+        type="button"
+        className="neo-login-page-back-btn"
+        onClick={onBackToScanner}
+        title="Return to Citizen Scanner"
+        aria-label="Return to Citizen Scanner"
+      >
+        <ArrowLeft size={18} aria-hidden="true" />
+      </button>
+
       <div className="neo-login-container">
         <div className="neo-login-card" ref={cardRef}>
           <div className="neo-login-card-content">
-            {/* Top Bar: Circular Back Button only */}
-            <div className="neo-login-top-bar" style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '7px' }}>
-              <button
-                type="button"
-                className="neo-login-close-btn"
-                onClick={onBackToScanner}
-                title="Return to Citizen Scanner"
-                aria-label="Return to Citizen Scanner"
-              >
-                <ArrowLeft size={16} aria-hidden="true" />
-              </button>
-            </div>
 
             {/* Header & Brand: Balanced Logo + Prominent TrustLensLK */}
             <div className="neo-login-header" style={{ textAlign: 'center', marginBottom: '20px' }}>

@@ -242,6 +242,22 @@ export const userReportSchema = z.object({
   reviewedAt: z.string().nullable().optional(),
 });
 
+export const protectedEntityTypeSchema = z.enum([
+  "OFFICIAL_NATIONAL",
+  "TOP_GLOBAL",
+]);
+
+export const protectedEntitySchema = z.object({
+  isProtected: z.boolean(),
+  type: protectedEntityTypeSchema,
+  name: z.string(),
+  badge: z.string(),
+  warning: z.string(),
+  recommendedAction: z.enum(["REJECT", "APPROVE"]),
+});
+
+export type ProtectedEntity = z.infer<typeof protectedEntitySchema>;
+
 export const moderationActionSchema = z.object({
   reportId: z.string().uuid(),
   action: z.enum(["APPROVE", "REJECT", "RETIRE"]),
@@ -249,6 +265,8 @@ export const moderationActionSchema = z.object({
   indicatorType: z.enum(["domain", "content_hash", "phone", "url"]).optional(),
   category: z.string().max(100).optional().nullable(),
   confidence: z.number().min(0.1).max(1.0).optional().nullable(),
+  overrideProtectedEntity: z.boolean().optional().nullable(),
+  incidentReason: z.string().max(500).optional().nullable(),
 });
 
 export const verifiedIntelligenceSchema = z.object({
@@ -286,6 +304,12 @@ export const auditActionSchema = z.enum([
   "TOGGLE_STATUS",
   "UPDATE_SETTINGS",
   "PURGE_EXPIRED",
+  "AUTH_LOGIN",
+  "AUTH_FAILED",
+  "DOMAIN_CREATE",
+  "DOMAIN_UPDATE",
+  "DOMAIN_DELETE",
+  "MANUAL_INTEL",
 ]);
 
 export const moderationAuditLogSchema = z.object({
@@ -298,13 +322,36 @@ export const moderationAuditLogSchema = z.object({
   actorRole: z.string().default("moderator"),
   confidence: z.number().min(0).max(1).nullable().optional(),
   moderatorNotes: z.string().nullable().optional(),
+  entryHash: z.string().optional(),
+  prevHash: z.string().nullable().optional(),
+  clientIp: z.string().nullable().optional(),
+  userAgent: z.string().nullable().optional(),
   createdAt: z.string(),
   expiresAt: z.string().optional(),
 });
 
 export const auditQuerySchema = z.object({
-  action: z.enum(["APPROVE", "REJECT", "RETIRE", "TOGGLE_STATUS", "UPDATE_SETTINGS", "PURGE_EXPIRED", "ALL"]).default("ALL"),
+  action: z.enum([
+    "APPROVE",
+    "REJECT",
+    "RETIRE",
+    "TOGGLE_STATUS",
+    "UPDATE_SETTINGS",
+    "PURGE_EXPIRED",
+    "AUTH_LOGIN",
+    "AUTH_FAILED",
+    "DOMAIN_CREATE",
+    "DOMAIN_UPDATE",
+    "DOMAIN_DELETE",
+    "MANUAL_INTEL",
+    "REVIEWS",
+    "QUEUE_REVIEWS",
+    "ALL",
+  ]).default("ALL"),
   search: z.string().optional(),
+  actor: z.string().optional(),
+  fromDate: z.string().optional(),
+  toDate: z.string().optional(),
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().positive().max(100).default(20),
 });

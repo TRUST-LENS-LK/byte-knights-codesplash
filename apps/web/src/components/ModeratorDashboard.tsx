@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   LayoutDashboard,
   ShieldCheck,
-  ShieldAlert,
   Clock,
   CheckCircle2,
   RefreshCw,
@@ -22,13 +21,8 @@ import {
   Check,
   ChevronDown,
   RotateCcw,
-  XCircle,
-  Menu,
+  PanelLeft,
   Search,
-  CreditCard,
-  Layers,
-  PieChart,
-  AlertTriangle,
   X,
   History,
   Trash2,
@@ -43,6 +37,7 @@ import {
   type ModerationAuditLogItem,
   type AuditStorageStats,
   type DomainDirectoryEntry,
+  type AuditChainVerifyResult,
   clearSession,
   fetchModerationQueue,
   fetchModerationStats,
@@ -60,6 +55,7 @@ import {
   fetchAuditStorageStats,
   triggerAuditPurge,
   exportAuditLogsToCsv,
+  verifyAuditChainIntegrity,
   fetchDomainDirectoryEntries,
   createDomainDirectoryEntry,
   updateDomainDirectoryEntry,
@@ -124,6 +120,18 @@ export function getAuditActionBadge(action: ModerationAuditLogItem['action']) {
       return { label: 'ENGINE POLICY', badgeClass: 'audit-badge-setting' }
     case 'PURGE_EXPIRED':
       return { label: 'RETENTION PURGE', badgeClass: 'audit-badge-purge' }
+    case 'AUTH_LOGIN':
+      return { label: 'AUTH LOGIN', badgeClass: 'audit-badge-auth-login' }
+    case 'AUTH_FAILED':
+      return { label: 'AUTH FAILED', badgeClass: 'audit-badge-auth-failed' }
+    case 'DOMAIN_CREATE':
+      return { label: 'DOMAIN ADD', badgeClass: 'audit-badge-domain' }
+    case 'DOMAIN_UPDATE':
+      return { label: 'DOMAIN EDIT', badgeClass: 'audit-badge-domain' }
+    case 'DOMAIN_DELETE':
+      return { label: 'DOMAIN DEL', badgeClass: 'audit-badge-domain' }
+    case 'MANUAL_INTEL':
+      return { label: 'MANUAL INTEL', badgeClass: 'audit-badge-intel' }
     default:
       return { label: action, badgeClass: 'audit-badge-default' }
   }
@@ -159,8 +167,8 @@ function classifyReportCategory(item: ModerationQueueItem): string {
   if (parsed.threatCategory) return parsed.threatCategory
   if (item.report_type === 'false_positive') return 'False Alarm'
   const text = `${item.reported_domain || ''} ${item.notes || ''} ${item.raw_excerpt || ''}`.toLowerCase()
-  if (/boc|combank|bank|hnb|sampath|card|debit|credit|fund/.test(text)) return 'Banking Phishing'
-  if (/ceb|electricity|utility|water|bill|telecom|dialog|mobitel/.test(text)) return 'Utility Bill Scam'
+  if (/bank|banking|financial|account|card|debit|credit|fund/.test(text)) return 'Banking Phishing'
+  if (/electricity|utility|water|bill|telecom|carrier|provider/.test(text)) return 'Utility Bill Scam'
   if (/job|earn|part-time|salary|advance|bonus|hiring/.test(text)) return 'Job Scam'
   if (/lottery|prize|won|lucky|cash|gift|reward/.test(text)) return 'Lottery / Prize Fraud'
   if (/otp|code|pin|password|credential|security/.test(text)) return 'OTP Theft'
@@ -183,7 +191,7 @@ export function getReportRiskSignal(item: ModerationQueueItem): { level: 'HIGH' 
     return { level: 'HIGH', color: '#EF4444' }
   }
   const text = `${item.reported_domain || ''} ${item.notes || ''} ${item.raw_excerpt || ''}`.toLowerCase()
-  if (/otp|pin|password|credential|boc|combank|bank|hnb|sampath|\.apk/.test(text)) {
+  if (/otp|pin|password|credential|banking|account|\.apk/.test(text)) {
     return { level: 'HIGH', color: '#EF4444' }
   }
   return { level: 'MEDIUM', color: '#F59E0B' }
@@ -202,7 +210,7 @@ export function getThreatDetails(item: ModerationQueueItem): {
   if (item.threat) {
     // If backend mistakenly labeled a message-only report as Suspicious Domain, correct it
     if (!domain && item.threat.title === 'Suspicious Domain') {
-      if (/subscription|invoice|refund|renew|charge|geek squad|norton|mcafee|paypal|apple/.test(text)) {
+      if (/subscription|invoice|refund|renew|charge|antivirus|support|service/.test(text)) {
         return { title: 'Scam', subtitle: 'Subscription / Invoice Fraud', type: 'scam' }
       }
       return { title: 'Suspicious Message', subtitle: 'Citizen Submission', type: 'scam' }
@@ -221,13 +229,13 @@ export function getThreatDetails(item: ModerationQueueItem): {
   if (/\.apk|download|install|app|update|malware|trojan/.test(text)) {
     return { title: 'Malware', subtitle: 'Malicious Link / APK', type: 'malware' }
   }
-  if (/subscription|invoice|refund|renew|charge|geek squad|norton|mcafee|paypal|apple/.test(text)) {
+  if (/subscription|invoice|refund|renew|charge|antivirus|support|service/.test(text)) {
     return { title: 'Scam', subtitle: 'Subscription / Invoice Fraud', type: 'scam' }
   }
-  if (/ceb|electricity|utility|water|bill|telecom|dialog|mobitel|job|earn|salary|advance|bonus|hiring|lottery|prize|won|lucky|cash|gift|reward|offer/.test(text)) {
+  if (/electricity|utility|water|bill|telecom|carrier|provider|job|earn|salary|advance|bonus|hiring|lottery|prize|won|lucky|cash|gift|reward|offer/.test(text)) {
     return { title: 'Scam', subtitle: 'Financial & Utility Fraud', type: 'scam' }
   }
-  if (/boc|combank|bank|hnb|sampath|card|debit|credit|fund|login|verify|otp|pin|password|credential|security/.test(text)) {
+  if (/bank|banking|financial|account|card|debit|credit|fund|login|verify|otp|pin|password|credential|security/.test(text)) {
     return { title: 'Phishing', subtitle: 'Credential Harvesting', type: 'phishing' }
   }
 
@@ -352,7 +360,6 @@ interface DropdownOption<T extends string> {
 
 interface NeoFilterDropdownProps<T extends string> {
   label: string
-  icon?: React.ReactNode
   value: T
   options: DropdownOption<T>[]
   onChange: (val: T) => void
@@ -361,7 +368,6 @@ interface NeoFilterDropdownProps<T extends string> {
 
 function NeoFilterDropdown<T extends string>({
   label,
-  icon,
   value,
   options,
   onChange,
@@ -400,7 +406,6 @@ function NeoFilterDropdown<T extends string>({
         title={title || `Filter by ${label}`}
         aria-expanded={isOpen}
       >
-        {icon && <span className="neo-filter-icon">{icon}</span>}
         <span className="neo-filter-label">
           {isFiltered ? selectedOption?.label || label : label}
         </span>
@@ -487,7 +492,7 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
   const [filterThreat, setFilterThreat] = useState<'ALL' | 'phishing' | 'scam' | 'malware' | 'safe'>('ALL')
   const [filterDate, setFilterDate] = useState<'ALL' | 'today' | '7days' | '30days'>('ALL')
   const [showDemoMenu, setShowDemoMenu] = useState(false)
-  const [isLoadingQueue, setIsLoadingQueue] = useState(false)
+  const [isLoadingQueue, setIsLoadingQueue] = useState(true)
   const [queueError, setQueueError] = useState<string | null>(null)
 
   // Verified Intelligence State
@@ -511,7 +516,23 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
   // Dedicated Real Audit Logs State & Retention Governance
   const [auditLogsList, setAuditLogsList] = useState<ModerationAuditLogItem[]>([])
   const [auditStorageStats, setAuditStorageStats] = useState<AuditStorageStats | null>(null)
-  const [auditActionFilter, setAuditActionFilter] = useState<'ALL' | 'APPROVE' | 'REJECT' | 'RETIRE' | 'TOGGLE_STATUS' | 'UPDATE_SETTINGS' | 'PURGE_EXPIRED'>('ALL')
+  const [auditActionFilter, setAuditActionFilter] = useState<
+    | 'ALL'
+    | 'REVIEWS'
+    | 'APPROVE'
+    | 'REJECT'
+    | 'RETIRE'
+    | 'AUTH_LOGIN'
+    | 'AUTH_FAILED'
+    | 'DOMAIN_CREATE'
+    | 'MANUAL_INTEL'
+    | 'TOGGLE_STATUS'
+    | 'UPDATE_SETTINGS'
+    | 'PURGE_EXPIRED'
+  >('ALL')
+  const [auditDateFilter, setAuditDateFilter] = useState<'ALL' | 'TODAY' | '7DAYS' | '30DAYS'>('ALL')
+  const [chainVerificationResult, setChainVerificationResult] = useState<AuditChainVerifyResult | null>(null)
+  const [isVerifyingChain, setIsVerifyingChain] = useState<boolean>(false)
   const [auditSearchQuery, setAuditSearchQuery] = useState('')
   const [auditPage, setAuditPage] = useState(1)
   const [auditPageSize, setAuditPageSize] = useState<number>(10)
@@ -572,15 +593,20 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
       if (!token) return
       if (showSpinner) setIsLoadingQueue(true)
       setQueueError(null)
-      const res = await fetchModerationQueue(token, 'ALL', 1, 100)
-      setIsLoadingQueue(false)
-      if (res.success && res.reports) {
-        setAllReports(res.reports)
-      } else {
-        setQueueError(res.error || 'Could not load moderation reports.')
-        if (res.error?.includes('expired') || res.error?.includes('Unauthorized')) {
-          handleSignOut()
+      try {
+        const res = await fetchModerationQueue(token, 'ALL', 1, 100)
+        if (res.success && res.reports) {
+          setAllReports(res.reports)
+        } else {
+          setQueueError(res.error || 'Could not load moderation reports.')
+          if (res.error?.includes('expired') || res.error?.includes('Unauthorized')) {
+            handleSignOut()
+          }
         }
+      } catch (err) {
+        setQueueError(err instanceof Error ? err.message : 'Network error connecting to moderation registry.')
+      } finally {
+        if (showSpinner) setIsLoadingQueue(false)
       }
       void loadStats()
     },
@@ -589,8 +615,12 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
 
   useEffect(() => {
     let active = true
-    if (!token) return
+    if (!token) {
+      setIsLoadingQueue(false)
+      return
+    }
 
+    setIsLoadingQueue(true)
     fetchModerationStats(token).then((res) => {
       if (active && res.success && res.stats) {
         setStats(res.stats)
@@ -613,11 +643,20 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
         if (!active) return
         setQueueError(err instanceof Error ? err.message : 'Network error connecting to moderation registry.')
       })
+      .finally(() => {
+        if (active) setIsLoadingQueue(false)
+      })
 
     return () => {
       active = false
     }
   }, [token, handleSignOut])
+
+  useEffect(() => {
+    if (activeNav === 'QUEUE' && token) {
+      void loadReports(true)
+    }
+  }, [activeNav, token, loadReports])
 
   // Automatically reset queue page to 1 whenever tab or any filter changes
   useEffect(() => {
@@ -704,9 +743,22 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
       if (!token) return
       if (showSpinner) setIsLoadingAudit(true)
       setAuditError(null)
+
+      let fromDate: string | undefined = undefined
+      if (auditDateFilter === 'TODAY') {
+        const d = new Date()
+        d.setHours(0, 0, 0, 0)
+        fromDate = d.toISOString()
+      } else if (auditDateFilter === '7DAYS') {
+        fromDate = new Date(Date.now() - 7 * 86400000).toISOString()
+      } else if (auditDateFilter === '30DAYS') {
+        fromDate = new Date(Date.now() - 30 * 86400000).toISOString()
+      }
+
       const res = await fetchModerationAuditLogs(token, {
         action: auditActionFilter,
         search: auditSearchQuery,
+        fromDate,
         page: auditPage,
         limit: auditPageSize,
       })
@@ -719,8 +771,21 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
         setAuditError(res.error || 'Could not load audit logs.')
       }
     },
-    [token, auditActionFilter, auditSearchQuery, auditPage, auditPageSize]
+    [token, auditActionFilter, auditSearchQuery, auditDateFilter, auditPage, auditPageSize]
   )
+
+  const handleVerifyChain = async () => {
+    if (!token || isVerifyingChain) return
+    setIsVerifyingChain(true)
+    const res = await verifyAuditChainIntegrity(token)
+    setIsVerifyingChain(false)
+    setChainVerificationResult(res)
+    if (res.success && res.verified) {
+      showToast(`✓ Cryptographic Chain Verified: ${res.totalEntriesChecked} entries intact.`)
+    } else {
+      showToast(`⚠ Chain verification issue: ${res.reason || res.error || 'Validation failed'}`)
+    }
+  }
 
   const loadAuditStats = useCallback(async () => {
     if (!token) return
@@ -983,7 +1048,9 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
     category: string,
     indicatorType: 'domain' | 'content_hash' | 'url',
     notes: string,
-    confidence: number = 1.0
+    confidence: number = 1.0,
+    overrideProtectedEntity?: boolean,
+    incidentReason?: string
   ) => {
     if (!token) return
     setIsProcessingReview(true)
@@ -994,6 +1061,8 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
       indicatorType: report.reported_domain ? indicatorType : 'content_hash',
       notes: notes.trim() || 'Approved by moderator and sanitized for threat intelligence.',
       confidence,
+      overrideProtectedEntity,
+      incidentReason,
     })
     setIsProcessingReview(false)
 
@@ -1362,9 +1431,6 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
         title="Click to view pending reports in queue"
       >
         <div className="neo-kpi-content">
-          <div className="neo-kpi-icon-circle red">
-            <Clock size={16} aria-hidden="true" />
-          </div>
           <div className="neo-kpi-body">
             <div className="neo-kpi-metric-row">
               <span className="neo-kpi-value">{pendingCount}</span>
@@ -1399,9 +1465,6 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
         title={`Click to view approved reports (${confirmedThreatCount} confirmed threats, ${clearedSafeCount} false alarms verified safe)`}
       >
         <div className="neo-kpi-content">
-          <div className="neo-kpi-icon-circle green">
-            <CheckCircle2 size={16} aria-hidden="true" />
-          </div>
           <div className="neo-kpi-body">
             <div className="neo-kpi-metric-row">
               <span className="neo-kpi-value">{String(approvedReports.length).padStart(2, '0')}</span>
@@ -1436,9 +1499,6 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
         title="Click to view rejected reports in queue"
       >
         <div className="neo-kpi-content">
-          <div className="neo-kpi-icon-circle orange">
-            <XCircle size={16} aria-hidden="true" />
-          </div>
           <div className="neo-kpi-body">
             <div className="neo-kpi-metric-row">
               <span className="neo-kpi-value">{String(rejectedReports.length).padStart(2, '0')}</span>
@@ -1473,9 +1533,6 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
         title="Click to view all reports in queue"
       >
         <div className="neo-kpi-content">
-          <div className="neo-kpi-icon-circle blue">
-            <FileText size={16} aria-hidden="true" />
-          </div>
           <div className="neo-kpi-body">
             <div className="neo-kpi-metric-row">
               <span className="neo-kpi-value">{allReports.length}</span>
@@ -1502,6 +1559,123 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
     </section>
   )
 
+  // ── SKELETON PLACEHOLDER FOR DASHBOARD VIEW ─────────────────────────────
+  const renderDashboardSkeleton = () => (
+    <div key="DASHBOARD-SKELETON" className="neo-view-transition neo-dashboard-view-layout neo-dashboard-skeleton" aria-busy="true" aria-label="Loading dashboard metrics">
+      {/* Row 1: 4 Skeleton KPI Cards */}
+      <section className="neo-kpi-grid" aria-hidden="true">
+        {[1, 2, 3, 4].map((i) => (
+          <div key={i} className="neo-kpi-card neo-kpi-skeleton">
+            <div className="neo-kpi-content">
+              <div className="neo-kpi-body">
+                <div className="neo-skeleton-bone" style={{ width: '48px', height: '30px', marginBottom: '8px' }} />
+                <div className="neo-skeleton-bone" style={{ width: '70px', height: '14px', marginBottom: '10px' }} />
+                <div className="neo-skeleton-bone" style={{ width: '90px', height: '18px', borderRadius: '99px' }} />
+              </div>
+            </div>
+            <div className="neo-kpi-sparkline" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <div className="neo-skeleton-bone" style={{ width: '70px', height: '24px', borderRadius: '4px' }} />
+            </div>
+          </div>
+        ))}
+      </section>
+
+      {/* Row 2: Skeleton Velocity Chart */}
+      <section className="neo-velocity-row" aria-hidden="true">
+        <div className="neo-card">
+          <div className="neo-card-header">
+            <div>
+              <div className="neo-skeleton-bone" style={{ width: '180px', height: '20px', marginBottom: '6px' }} />
+              <div className="neo-skeleton-bone" style={{ width: '260px', height: '12px' }} />
+            </div>
+            <div className="neo-skeleton-bone" style={{ width: '90px', height: '28px', borderRadius: '99px' }} />
+          </div>
+
+          <div className="neo-chart-container full-width">
+            <div style={{ height: '180px', display: 'flex', alignItems: 'flex-end', gap: '20px', padding: '0 20px 20px', borderBottom: '1px solid #E2E8F0' }}>
+              {[40, 75, 50, 95, 65, 30, 85].map((h, idx) => (
+                <div key={idx} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', height: '100%', justifyContent: 'flex-end' }}>
+                  <div style={{ display: 'flex', gap: '6px', alignItems: 'flex-end', width: '100%', justifyContent: 'center', height: `${h}%` }}>
+                    <div className="neo-skeleton-bone" style={{ width: '14px', height: '100%', borderRadius: '4px 4px 0 0' }} />
+                    <div className="neo-skeleton-bone" style={{ width: '14px', height: `${Math.max(20, h - 15)}%`, borderRadius: '4px 4px 0 0' }} />
+                  </div>
+                  <div className="neo-skeleton-bone" style={{ width: '28px', height: '12px' }} />
+                </div>
+              ))}
+            </div>
+            <div className="neo-chart-legend" style={{ marginTop: '12px' }}>
+              <div className="neo-skeleton-bone" style={{ width: '140px', height: '14px' }} />
+              <div className="neo-skeleton-bone" style={{ width: '140px', height: '14px' }} />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Row 3: 3 Bottom Cards */}
+      <section className="neo-bottom-cards-row" aria-hidden="true">
+        {/* 1. Recent Verified Intel Skeleton */}
+        <div className="neo-card neo-bottom-modern-card">
+          <div className="neo-card-header">
+            <div className="neo-skeleton-bone" style={{ width: '150px', height: '18px' }} />
+            <div className="neo-skeleton-bone" style={{ width: '80px', height: '26px', borderRadius: '6px' }} />
+          </div>
+          <div className="neo-snapshot-list" style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="neo-snapshot-item">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', flex: 1 }}>
+                  <div className="neo-skeleton-bone" style={{ width: '130px', height: '16px' }} />
+                  <div className="neo-skeleton-bone" style={{ width: '80px', height: '12px' }} />
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px' }}>
+                  <div className="neo-skeleton-bone" style={{ width: '55px', height: '18px', borderRadius: '4px' }} />
+                  <div className="neo-skeleton-bone" style={{ width: '45px', height: '10px' }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* 2. Threat Classification Skeleton */}
+        <div className="neo-card neo-bottom-modern-card">
+          <div className="neo-card-header">
+            <div className="neo-skeleton-bone" style={{ width: '160px', height: '18px' }} />
+          </div>
+          <div className="neo-category-list" style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="neo-category-row">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div className="neo-skeleton-bone" style={{ width: '120px', height: '14px' }} />
+                  <div className="neo-skeleton-bone" style={{ width: '50px', height: '16px', borderRadius: '4px' }} />
+                </div>
+                <div className="neo-skeleton-bone" style={{ width: '100%', height: '4px', borderRadius: '2px', marginTop: '6px' }} />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* 3. Priority Incident Skeleton */}
+        <div className="neo-card neo-bottom-modern-card neo-spotlight-card">
+          <div className="neo-spotlight-content" style={{ gap: '12px' }}>
+            <div className="neo-skeleton-bone" style={{ width: '160px', height: '20px', borderRadius: '4px' }} />
+            <div className="neo-spotlight-target-box">
+              <div className="neo-skeleton-bone" style={{ width: '150px', height: '18px' }} />
+              <div className="neo-skeleton-bone" style={{ width: '65px', height: '18px', borderRadius: '4px' }} />
+            </div>
+            <div className="neo-spotlight-quote-box" style={{ padding: '12px' }}>
+              <div className="neo-skeleton-bone" style={{ width: '90%', height: '12px', marginBottom: '6px' }} />
+              <div className="neo-skeleton-bone" style={{ width: '70%', height: '12px' }} />
+            </div>
+            <div style={{ display: 'flex', gap: '8px', marginTop: 'auto' }}>
+              <div className="neo-skeleton-bone" style={{ width: '100px', height: '18px', borderRadius: '4px' }} />
+              <div className="neo-skeleton-bone" style={{ width: '80px', height: '18px', borderRadius: '4px' }} />
+            </div>
+            <div className="neo-skeleton-bone" style={{ width: '100%', height: '36px', borderRadius: '6px', marginTop: '6px' }} />
+          </div>
+        </div>
+      </section>
+    </div>
+  )
+
   return (
     <div key="page-moderator-dashboard" className="neo-dashboard-wrapper trustlens-page-transition">
       {/* Toast Notification */}
@@ -1525,23 +1699,50 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
         <aside className={`neo-sidebar ${isSidebarCollapsed ? 'collapsed' : ''}`}>
           <div>
             <div className="neo-brand-header">
-              <div className="neo-brand-mark" title="TrustLens LK">
-                <img src="/TrustLens_Icon.png" alt="TrustLens LK" />
-              </div>
-              {!isSidebarCollapsed && (
-                <div className="neo-brand-title">
-                  TrustLens<span>LK</span>
+              {isSidebarCollapsed ? (
+                <div
+                  className="neo-brand-mark-collapsed-wrapper"
+                  onClick={() => setIsSidebarCollapsed(false)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      setIsSidebarCollapsed(false)
+                    }
+                  }}
+                  title="Open sidebar"
+                  aria-label="Open sidebar"
+                >
+                  <div className="neo-brand-mark-logo">
+                    <img src="/TrustLens_Icon.png" alt="TrustLens LK" />
+                  </div>
+                  <div className="neo-brand-mark-open-btn" aria-hidden="true">
+                    <PanelLeft size={18} />
+                  </div>
+                  <span className="neo-sidebar-floating-tooltip">Open sidebar</span>
                 </div>
+              ) : (
+                <>
+                  <div className="neo-brand-header-left">
+                    <div className="neo-brand-mark" title="TrustLens LK">
+                      <img src="/TrustLens_Icon.png" alt="TrustLens LK" />
+                    </div>
+                    <div className="neo-brand-title">
+                      TrustLens<span>LK</span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="neo-btn-toggle-sidebar"
+                    onClick={() => setIsSidebarCollapsed(true)}
+                    title="Close sidebar"
+                    aria-label="Close sidebar"
+                  >
+                    <PanelLeft size={18} aria-hidden="true" />
+                  </button>
+                </>
               )}
-              <button
-                type="button"
-                className="neo-btn-toggle-sidebar"
-                onClick={() => setIsSidebarCollapsed((prev) => !prev)}
-                title={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-                aria-label={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-              >
-                <Menu size={16} aria-hidden="true" />
-              </button>
             </div>
 
             <ul className="neo-nav-group">
@@ -1699,6 +1900,9 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
           {/* VIEW 1: DASHBOARD (Executive Overview & Intelligence Velocity)           */}
           {/* ========================================================================= */}
           {activeNav === 'DASHBOARD' && (
+            isLoadingQueue ? (
+              renderDashboardSkeleton()
+            ) : (
             <div key="DASHBOARD" className="neo-view-transition neo-dashboard-view-layout">
               {/* ── Row 1: Four Modern KPI Metric Cards Matching Mockup ──── */}
               {renderKPICards()}
@@ -1792,9 +1996,6 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                 <div className="neo-card neo-bottom-modern-card">
                   <div className="neo-card-header">
                     <div className="neo-card-header-left">
-                      <div className="neo-card-icon-circle green">
-                        <ShieldCheck size={18} aria-hidden="true" />
-                      </div>
                       <h3 className="neo-card-title">Recent Verified Intel</h3>
                     </div>
                     <button
@@ -1814,20 +2015,15 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                   <div className="neo-snapshot-list">
                     {approvedReports.length === 0 ? (
                       <div className="neo-empty-snapshot">
-                        <ShieldCheck size={28} color="#94A3B8" aria-hidden="true" />
                         <p>No verified threat intelligence published yet.</p>
                       </div>
                     ) : (
                       approvedReports.slice(0, 3).map((item) => {
-                        const isDomain = Boolean(item.reported_domain)
                         const indicatorText = formatCleanIndicator(item.reported_domain || item.content_sha256.slice(0, 14))
                         const isThreat = item.report_type === 'suspicious' || item.report_type === 'false_negative'
                         return (
                           <div key={item.id} className="neo-snapshot-item">
                             <div className="neo-snapshot-item-left">
-                              <div className="neo-snapshot-icon-circle">
-                                {isDomain ? <Globe size={13} aria-hidden="true" /> : <Hash size={13} aria-hidden="true" />}
-                              </div>
                               <div className="neo-snapshot-target-col">
                                 <div className="neo-snapshot-target-row">
                                   <span className="neo-indicator-badge" title={item.reported_domain || item.content_sha256}>
@@ -1855,7 +2051,6 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                                 {isThreat ? 'CONFIRMED' : 'SAFE'}
                               </span>
                               <span className="neo-snapshot-time">
-                                <Clock size={11} aria-hidden="true" />
                                 {formatRelativeTime(item.updated_at || item.created_at)}
                               </span>
                             </div>
@@ -1870,9 +2065,6 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                 <div className="neo-card neo-bottom-modern-card">
                   <div className="neo-card-header">
                     <div className="neo-card-header-left">
-                      <div className="neo-card-icon-circle blue">
-                        <Layers size={18} aria-hidden="true" />
-                      </div>
                       <h3 className="neo-card-title">Threat Classification</h3>
                     </div>
                   </div>
@@ -1880,24 +2072,11 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                   <div className="neo-category-list">
                     {categoryStats.length === 0 ? (
                       <div className="neo-empty-snapshot">
-                        <PieChart size={28} color="#94A3B8" aria-hidden="true" />
                         <p>No categorized reports recorded yet.</p>
                       </div>
                     ) : (
                       categoryStats.map((cat) => {
-                        const catLower = cat.category.toLowerCase()
-                        let CatIcon = AlertTriangle
-                        let barColor = '#0066FF'
-                        if (catLower.includes('bank') || catLower.includes('phish')) {
-                          CatIcon = CreditCard
-                          barColor = '#6366F1'
-                        } else if (catLower.includes('telecom') || catLower.includes('utility')) {
-                          CatIcon = Phone
-                          barColor = '#F59E0B'
-                        } else if (catLower.includes('false') || catLower.includes('alarm')) {
-                          CatIcon = ShieldCheck
-                          barColor = '#10B981'
-                        }
+                        const barColor = '#0066FF'
 
                         return (
                           <div
@@ -1911,9 +2090,6 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                           >
                             <div className="neo-category-row-top">
                               <div className="neo-category-label-group">
-                                <div className="neo-cat-icon-badge" style={{ color: barColor, background: `${barColor}15` }}>
-                                  <CatIcon size={13} aria-hidden="true" />
-                                </div>
                                 <span className="neo-category-name">{cat.category}</span>
                               </div>
                               <div className="neo-category-meta">
@@ -1947,9 +2123,6 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
 
                         <div className="neo-spotlight-target-box">
                           <div className="neo-spotlight-target-left">
-                            <div className="neo-spotlight-icon-circle">
-                              <ShieldAlert size={18} aria-hidden="true" />
-                            </div>
                             <div className="neo-spotlight-title-row">
                               <h4 className="neo-spotlight-title">
                                 {priorityIncident.reported_domain
@@ -1989,7 +2162,6 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                       <div className="neo-spotlight-bottom">
                         <div className="neo-spotlight-chips">
                           <div className="neo-spotlight-chip">
-                            <Clock size={11} aria-hidden="true" />
                             <span>Submitted {formatRelativeTime(priorityIncident.created_at)}</span>
                           </div>
                           <div className="neo-spotlight-chip">
@@ -2014,9 +2186,6 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                     </div>
                   ) : (
                     <div className="neo-spotlight-all-clear">
-                      <div className="neo-all-clear-icon">
-                        <CheckCircle2 size={36} color="#10B981" aria-hidden="true" />
-                      </div>
                       <span className="neo-priority-badge-live all-clear">
                         <span>✓ ZERO BACKLOG • ALL CLEAR</span>
                       </span>
@@ -2037,6 +2206,7 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                 </div>
               </section>
             </div>
+            )
           )}
 
           {/* ========================================================================= */}
@@ -2088,7 +2258,6 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                     {/* Type Filter Dropdown (Unreported Threat, False Alarm, Evaded Detection) */}
                     <NeoFilterDropdown
                       label="Type"
-                      icon={<Layers size={13} aria-hidden="true" />}
                       value={filterType}
                       onChange={(val) => {
                         setFilterType(val)
@@ -2106,7 +2275,6 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                     {/* Threat Filter Dropdown */}
                     <NeoFilterDropdown
                       label="Threat"
-                      icon={<ShieldAlert size={13} aria-hidden="true" />}
                       value={filterThreat}
                       onChange={(val) => {
                         setFilterThreat(val)
@@ -2125,7 +2293,6 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                     {/* Date Filter Dropdown */}
                     <NeoFilterDropdown
                       label="Date"
-                      icon={<Clock size={13} aria-hidden="true" />}
                       value={filterDate}
                       onChange={(val) => {
                         setFilterDate(val)
@@ -2152,6 +2319,18 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                     >
                       <RotateCcw size={12} aria-hidden="true" />
                       <span>Reset</span>
+                    </button>
+
+                    {/* Refresh Button */}
+                    <button
+                      type="button"
+                      className="neo-btn-toolbar-reset"
+                      onClick={() => void loadReports(true)}
+                      title="Refresh moderation queue"
+                      disabled={isLoadingQueue}
+                    >
+                      <RefreshCw size={12} className={isLoadingQueue ? 'neo-spin' : ''} aria-hidden="true" />
+                      <span>Refresh</span>
                     </button>
 
                     {/* Demo Tools Dropdown Popup Menu */}
@@ -2225,8 +2404,8 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                       {isLoadingQueue ? (
                         <tr>
                           <td colSpan={7} style={{ textAlign: 'center', padding: '48px 20px', color: '#64748B' }}>
-                            <RefreshCw size={24} className="neo-spin" style={{ margin: '0 auto 8px', display: 'block', color: '#0066FF' }} />
-                            <strong style={{ color: '#0F172A', fontSize: '14px' }}>Loading queue reports...</strong>
+                            <div className="neo-audit-loading-spinner" />
+                            <p style={{ margin: '10px 0 0', fontSize: '13px' }}>Loading queue reports...</p>
                           </td>
                         </tr>
                       ) : displayedReports.length === 0 ? (
@@ -2258,18 +2437,33 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                                 <div className="neo-target-cell">
                                   <div className="neo-target-icon-circle">
                                     {item.reported_domain ? (
-                                      <Globe size={14} color="#64748b" aria-hidden="true" />
+                                      <Globe size={14} color="#0066FF" aria-hidden="true" />
                                     ) : (
-                                      <FileText size={14} color="#64748b" aria-hidden="true" />
+                                      <FileText size={14} color="#0066FF" aria-hidden="true" />
                                     )}
                                   </div>
                                   <div className="neo-target-info">
                                     <span className="neo-target-domain" title={item.reported_domain || 'Message-only'}>
                                       {formatCleanIndicator(item.reported_domain)}
                                     </span>
-                                    <span className="neo-target-type">
-                                      {item.reported_domain ? 'Domain' : 'Message'}
-                                    </span>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap', marginTop: '2px' }}>
+                                      <span className="neo-target-type">
+                                        {item.reported_domain ? 'Domain' : 'Message'}
+                                      </span>
+                                      {item.protected_entity?.isProtected && (
+                                        <span
+                                          className={`neo-protected-entity-pill ${item.protected_entity.type === 'OFFICIAL_NATIONAL' ? 'national' : 'global'}`}
+                                          title={item.protected_entity.warning}
+                                        >
+                                          {item.protected_entity.badge}
+                                        </span>
+                                      )}
+                                    </div>
+                                    {item.protected_entity?.isProtected && item.status === 'PENDING' && (
+                                      <span className="neo-protected-queue-recommendation" title="Guardrail recommendation">
+                                        {item.report_type === 'false_positive' ? '✓ Disputed Safe' : '⚡ Recom: REJECT'}
+                                      </span>
+                                    )}
                                   </div>
                                 </div>
                               </td>
@@ -2283,13 +2477,7 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
 
                               {/* THREAT */}
                               <td>
-                                <div className="neo-threat-cell">
-                                  <div className={`neo-threat-dot ${threat.type}`} />
-                                  <div className="neo-threat-info">
-                                    <span className="neo-threat-title">{specificCategory}</span>
-                                    <span className="neo-threat-sub">{threat.subtitle}</span>
-                                  </div>
-                                </div>
+                                <span className="neo-threat-title">{specificCategory}</span>
                               </td>
 
                               {/* EXCERPT */}
@@ -2447,9 +2635,13 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                   <div className="neo-segmented-filter-group">
                     {[
                       { id: 'ALL', label: `All (${auditTotal})` },
-                      { id: 'APPROVE', label: `Approved (${auditStorageStats?.actionBreakdown?.approve || 0})` },
-                      { id: 'REJECT', label: `Rejected (${auditStorageStats?.actionBreakdown?.reject || 0})` },
-                      { id: 'RETIRE', label: `Retired (${auditStorageStats?.actionBreakdown?.retire || 0})` },
+                      {
+                        id: 'REVIEWS',
+                        label: `Queue Reviews (${(auditStorageStats?.actionBreakdown?.approve || 0) + (auditStorageStats?.actionBreakdown?.reject || 0) + (auditStorageStats?.actionBreakdown?.retire || 0)})`,
+                      },
+                      { id: 'AUTH_LOGIN', label: 'Auth Logs' },
+                      { id: 'DOMAIN_CREATE', label: 'Domains' },
+                      { id: 'MANUAL_INTEL', label: 'Manual Intel' },
                       ...((auditStorageStats?.actionBreakdown?.settings || 0) + (auditStorageStats?.actionBreakdown?.toggle || 0) > 0
                         ? [
                             {
@@ -2473,7 +2665,7 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                     ))}
                   </div>
 
-                  {/* Right: Search, Retention Selector, Export and Prune Actions */}
+                  {/* Right: Search, Date Filter, Retention Selector, Export and Prune Actions */}
                   <div className="neo-modern-toolbar-actions">
                     <div className="neo-toolbar-search-box">
                       <Search size={14} className="neo-search-icon-inside" aria-hidden="true" />
@@ -2489,9 +2681,26 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                       />
                     </div>
 
+                    {/* Date Range Selector Dropdown */}
+                    <div className="neo-retention-selector-wrapper" title="Filter audit events by timeframe">
+                      <select
+                        className="neo-retention-select"
+                        value={auditDateFilter}
+                        onChange={(e) => {
+                          setAuditDateFilter(e.target.value as any)
+                          setAuditPage(1)
+                        }}
+                        title="Filter audit trail by time period"
+                      >
+                        <option value="ALL">All Dates</option>
+                        <option value="TODAY">Today (24h)</option>
+                        <option value="7DAYS">Last 7 Days</option>
+                        <option value="30DAYS">Last 30 Days</option>
+                      </select>
+                    </div>
+
                     {/* Retention Setting Selector Dropdown */}
                     <div className="neo-retention-selector-wrapper" title="Manually configure data retention TTL policy">
-                      <Clock size={13} className="neo-retention-icon" aria-hidden="true" />
                       <select
                         className="neo-retention-select"
                         value={retentionDays}
@@ -2506,6 +2715,29 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                         <option value={365}>TTL: 365 Days (1 Yr)</option>
                       </select>
                     </div>
+
+                  </div>
+
+                  {/* Right-aligned audit action buttons */}
+                  <div className="neo-audit-action-buttons">
+                    <button
+                      type="button"
+                      className={`neo-btn-toolbar-verify ${chainVerificationResult ? (chainVerificationResult.verified ? 'verified-active' : 'tampered-active') : ''}`}
+                      onClick={handleVerifyChain}
+                      disabled={isVerifyingChain}
+                      title="Cryptographically verify SHA-256 hash chaining across all audit records"
+                    >
+                      <ShieldCheck size={13} aria-hidden="true" />
+                      <span>
+                        {isVerifyingChain
+                          ? 'Verifying Chain...'
+                          : chainVerificationResult
+                            ? (chainVerificationResult.verified
+                                ? `✓ Intact (${chainVerificationResult.totalEntriesChecked})`
+                                : '⚠ Tampered!')
+                            : 'Verify Chain Integrity'}
+                      </span>
+                    </button>
 
                     <button
                       type="button"
@@ -2539,6 +2771,31 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                     </button>
                   </div>
                 </div>
+
+                {/* Live Cryptographic Verification Alert Banner */}
+                {chainVerificationResult && (
+                  <div
+                    className={`neo-chain-banner ${chainVerificationResult.verified ? 'success' : 'error'}`}
+                    style={{ margin: '0 20px 14px' }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      {chainVerificationResult.verified ? <ShieldCheck size={16} /> : <AlertCircle size={16} />}
+                      <span>
+                        {chainVerificationResult.verified
+                          ? `Cryptographic Chain Integrity Confirmed: All ${chainVerificationResult.totalEntriesChecked} sequential SHA-256 blocks validated with immutability guarantees.`
+                          : `Cryptographic Chain Violation Detected: ${chainVerificationResult.reason || chainVerificationResult.error || (chainVerificationResult.brokenAtId ? `Discrepancy at Record #${chainVerificationResult.brokenAtId}` : 'Chain integrity discrepancy detected.')}`}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'inherit', fontSize: '12px', fontWeight: 700 }}
+                      onClick={() => setChainVerificationResult(null)}
+                      title="Dismiss banner"
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                )}
 
                 <div className="neo-modern-table-wrapper">
                   <table className="neo-modern-table">
@@ -2598,7 +2855,7 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                               <td>
                                 <div className="neo-target-cell">
                                   <div className="neo-target-icon-circle">
-                                    <Globe size={14} color="#64748b" aria-hidden="true" />
+                                    <Globe size={14} color="#0066FF" aria-hidden="true" />
                                   </div>
                                   <div className="neo-target-info">
                                     <span
@@ -2657,9 +2914,11 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                                     <Clock size={12} aria-hidden="true" />
                                     <span>{formatRelativeTime(item.created_at)}</span>
                                   </div>
-                                  <span className="neo-audit-ttl-tag" title={`Auto-purges based on ${retentionDays}-day retention policy (${item.expires_at ? new Date(item.expires_at).toLocaleDateString() : 'Active'})`}>
-                                    {ttlStr}
-                                  </span>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
+                                    <span className="neo-audit-ttl-tag" title={`Auto-purges based on ${retentionDays}-day retention policy (${item.expires_at ? new Date(item.expires_at).toLocaleDateString() : 'Active'})`}>
+                                      {ttlStr}
+                                    </span>
+                                  </div>
                                 </div>
                               </td>
                               <td>
@@ -2763,9 +3022,6 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
               <div className="neo-intel-metrics-row">
                 <div className="neo-intel-stat-card">
                   <div className="neo-intel-stat-top">
-                    <div className="neo-intel-icon-circle blue">
-                      <ShieldCheck size={18} aria-hidden="true" />
-                    </div>
                     <span className="neo-intel-stat-label">Total Indicators</span>
                   </div>
                   <div className="neo-intel-stat-value">{intelTotal}</div>
@@ -2774,9 +3030,6 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
 
                 <div className="neo-intel-stat-card">
                   <div className="neo-intel-stat-top">
-                    <div className="neo-intel-icon-circle red">
-                      <ShieldAlert size={18} aria-hidden="true" />
-                    </div>
                     <span className="neo-intel-stat-label">Confirmed Threats</span>
                   </div>
                   <div className="neo-intel-stat-value">
@@ -2787,9 +3040,6 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
 
                 <div className="neo-intel-stat-card">
                   <div className="neo-intel-stat-top">
-                    <div className="neo-intel-icon-circle green">
-                      <CheckCircle2 size={18} aria-hidden="true" />
-                    </div>
                     <span className="neo-intel-stat-label">Verified Safe</span>
                   </div>
                   <div className="neo-intel-stat-value">
@@ -2800,9 +3050,6 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
 
                 <div className="neo-intel-stat-card">
                   <div className="neo-intel-stat-top">
-                    <div className="neo-intel-icon-circle slate">
-                      <Power size={18} aria-hidden="true" />
-                    </div>
                     <span className="neo-intel-stat-label">Retired Indicators</span>
                   </div>
                   <div className="neo-intel-stat-value">
@@ -2894,7 +3141,6 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                     {/* Status Filter */}
                     <NeoFilterDropdown
                       label="Status"
-                      icon={<Power size={13} aria-hidden="true" />}
                       value={intelStatusFilter}
                       onChange={(val) => {
                         setIntelStatusFilter(val)
@@ -2911,7 +3157,6 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                     {/* Indicator Type Filter */}
                     <NeoFilterDropdown
                       label="Type"
-                      icon={<Layers size={13} aria-hidden="true" />}
                       value={intelTypeFilter}
                       onChange={(val) => {
                         setIntelTypeFilter(val)
@@ -2930,7 +3175,6 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                     {/* Risk Filter */}
                     <NeoFilterDropdown
                       label="Risk"
-                      icon={<ShieldCheck size={13} aria-hidden="true" />}
                       value={intelRiskFilter}
                       onChange={(val) => {
                         setIntelRiskFilter(val)
@@ -2982,8 +3226,8 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                       {isLoadingIntel ? (
                         <tr>
                           <td colSpan={7} style={{ textAlign: 'center', padding: '48px 20px', color: '#64748B' }}>
-                            <RefreshCw size={24} className="neo-spin" style={{ margin: '0 auto 8px', display: 'block', color: '#0066FF' }} />
-                            <strong style={{ color: '#0F172A', fontSize: '14px' }}>Loading verified threat intelligence...</strong>
+                            <div className="neo-audit-loading-spinner" />
+                            <p style={{ margin: '10px 0 0', fontSize: '13px' }}>Loading verified threat intelligence...</p>
                           </td>
                         </tr>
                       ) : intelligenceList.length === 0 ? (
@@ -3241,9 +3485,6 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
               <div className="neo-intel-metrics-row">
                 <div className="neo-intel-stat-card">
                   <div className="neo-intel-stat-top">
-                    <div className="neo-intel-icon-circle blue">
-                      <Globe size={18} aria-hidden="true" />
-                    </div>
                     <span className="neo-intel-stat-label">Total Entries</span>
                   </div>
                   <div className="neo-intel-stat-value">{domainEntries.length}</div>
@@ -3251,9 +3492,6 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                 </div>
                 <div className="neo-intel-stat-card">
                   <div className="neo-intel-stat-top">
-                    <div className="neo-intel-icon-circle green">
-                      <CheckCircle2 size={18} aria-hidden="true" />
-                    </div>
                     <span className="neo-intel-stat-label">Active</span>
                   </div>
                   <div className="neo-intel-stat-value">{domainEntries.filter((entry) => entry.status === 'ACTIVE').length}</div>
@@ -3261,9 +3499,6 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                 </div>
                 <div className="neo-intel-stat-card">
                   <div className="neo-intel-stat-top">
-                    <div className="neo-intel-icon-circle slate">
-                      <AlertTriangle size={18} aria-hidden="true" />
-                    </div>
                     <span className="neo-intel-stat-label">Stale</span>
                   </div>
                   <div className="neo-intel-stat-value">{domainEntries.filter((entry) => entry.status === 'STALE').length}</div>
@@ -3271,9 +3506,6 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                 </div>
                 <div className="neo-intel-stat-card">
                   <div className="neo-intel-stat-top">
-                    <div className="neo-intel-icon-circle slate">
-                      <Power size={18} aria-hidden="true" />
-                    </div>
                     <span className="neo-intel-stat-label">Retired</span>
                   </div>
                   <div className="neo-intel-stat-value">{domainEntries.filter((entry) => entry.status === 'RETIRED').length}</div>
@@ -3290,7 +3522,7 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                       type="text"
                       value={newDomainName}
                       onChange={(e) => setNewDomainName(e.target.value)}
-                      placeholder="e.g. Commercial Bank of Ceylon"
+                      placeholder="e.g. National Service Organization"
                       style={{ padding: '8px 10px', borderRadius: '6px', border: '1px solid #CBD5E1', minWidth: '220px' }}
                     />
                   </label>
@@ -3300,7 +3532,7 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                       type="text"
                       value={newDomainDomain}
                       onChange={(e) => setNewDomainDomain(e.target.value)}
-                      placeholder="e.g. combank.lk"
+                      placeholder="e.g. organization.gov.lk or domain.lk"
                       style={{ padding: '8px 10px', borderRadius: '6px', border: '1px solid #CBD5E1', minWidth: '180px' }}
                     />
                   </label>
@@ -3359,8 +3591,8 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                     {isLoadingDomains ? (
                       <tr>
                         <td colSpan={7} style={{ textAlign: 'center', padding: '48px 20px', color: '#64748B' }}>
-                          <RefreshCw size={24} className="neo-spin" style={{ margin: '0 auto 8px', display: 'block', color: '#0066FF' }} />
-                          <strong style={{ color: '#0F172A', fontSize: '14px' }}>Loading the domain directory...</strong>
+                          <div className="neo-audit-loading-spinner" />
+                          <p style={{ margin: '10px 0 0', fontSize: '13px' }}>Loading the domain directory...</p>
                         </td>
                       </tr>
                     ) : domainEntries.length === 0 ? (

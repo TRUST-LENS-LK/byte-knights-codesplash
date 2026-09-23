@@ -97,6 +97,36 @@
   font-weight: 500;
 }
 
+.entities { margin: 24px 0; }
+.section-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .1em; color: #627d98; margin-bottom: 10px; }
+.entity-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.entity { border: 1px solid #d9e2ec; border-radius: 8px; padding: 8px 10px; background: #f7fbfa; color: #486581; font-size: 12px; }
+.entity strong { color: #087f8c; text-transform: uppercase; font-size: 10px; margin-right: 5px; }
+.upload-label { display: block; margin-top: 1rem; font-size: .8rem; color: #55706c; }
+input[type='file'] { width: 100%; margin-top: .4rem; font-size: .8rem; }
+.checker-card small { display: block; margin-top: .45rem; color: #55706c; }
+
+/* ── Verified Safe Result State ───────────────────────────────── */
+.result.verified-safe {
+  border-color: #6ee7b7;
+  background: linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 50%, #f7fdfb 100%);
+  box-shadow: 0 18px 45px rgba(5, 122, 85, 0.08);
+}
+
+.verified-safe .result-action {
+  background: #d1fae5;
+  color: #057a55;
+  border: 1px solid #a7f3d0;
+}
+
+.verified-safe h2 {
+  color: #057a55;
+}
+
+.verified-safe .result-summary {
+  color: #065f46;
+}
+
 .nav-status-pill {
   display: inline-flex;
   align-items: center;
@@ -121,9 +151,9 @@
   animation: pulseBeacon 2s infinite ease-in-out;
 }
 
-@keyframes pulseBeacon {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.4; transform: scale(0.85); }
+@keyframes overlaySlideIn {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
 .nav-actions {
@@ -1026,80 +1056,82 @@
 }
 
 .tab-counter {
-  padding: 2px 8px;
-  border-radius: 99px;
+  padding: 2px 7px;
+  border-radius: 6px;
   font-size: 11px;
-  font-weight: 800;
-  background: rgba(0, 0, 0, 0.06);
+  font-weight: 750;
+  background: rgba(0, 0, 0, 0.05);
   color: inherit;
+  border: none;
+  white-space: nowrap;
   transition: all 0.2s ease;
+  line-height: 1.2;
 }
 
 .tab-counter.clean {
   background: #dcfce7;
   color: #047857;
-  border: 1px solid #86efac;
+  border: none;
 }
 
 .tab-counter.danger {
   background: #fee2e2;
-  color: #be123c;
-  border: 1px solid #fca5a5;
-  box-shadow: 0 0 8px rgba(239, 68, 68, 0.25);
+  color: #b91c1c;
+  border: none;
 }
 
 .tab-counter.info {
   background: #eff6ff;
   color: #0066FF;
-  border: 1px solid rgba(0, 102, 255, 0.2);
+  border: none;
 }
 
 .tab-btn.active .tab-counter {
   background: rgba(255, 255, 255, 0.25);
   color: #ffffff;
-  border-color: transparent;
 }
 
 .tab-badge-pill {
-  padding: 2px 8px;
-  border-radius: 99px;
-  font-size: 10.5px;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  padding: 2.5px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 0.01em;
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  white-space: nowrap;
+  border: none;
+  line-height: 1.2;
 }
 
 .tab-badge-pill.green {
   background: #dcfce7;
   color: #047857;
-  border: 1px solid #86efac;
+  border: none;
 }
 
 .tab-badge-pill.red {
   background: #fee2e2;
-  color: #be123c;
-  border: 1px solid #fca5a5;
+  color: #b91c1c;
+  border: none;
 }
 
 .tab-badge-pill.official {
-  background: #dbeafe;
+  background: #eff6ff;
   color: #1d4ed8;
-  border: 1px solid #93c5fd;
+  border: none;
 }
 
 .tab-badge-pill.neutral {
   background: #f1f5f9;
   color: #475569;
-  border: 1px solid #cbd5e1;
+  border: none;
 }
 
 .tab-btn.active .tab-badge-pill {
   background: rgba(255, 255, 255, 0.25);
   color: #ffffff;
-  border-color: transparent;
 }
 
 /* ── 3. Tab Contents Layout ────────────────────────────────── */
@@ -2301,5 +2333,36 @@
     flex-direction: column;
     gap: 8px;
     text-align: center;
+  }
+}
+
+/* ── Smooth & Subtle Page and Tab Transitions ───────────────────────── */
+.trustlens-page-transition {
+  animation: trustlensPageFadeIn 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  width: 100%;
+  min-height: 100vh;
+}
+
+@keyframes trustlensPageFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.trustlens-tab-content-transition {
+  animation: trustlensTabFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes trustlensTabFadeIn {
+  from {
+    opacity: 0.35;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
   }
 }
