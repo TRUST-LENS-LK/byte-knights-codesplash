@@ -33,6 +33,8 @@ import {
   getModerationAuditLogs,
   purgeExpiredAuditLogs,
   getAuditStorageStats,
+  verifyAuditChainIntegrity,
+  recordAuditLog,
 } from './services/reportingService.mjs'
 import { reconcileDecision } from './services/reconcileIntelligence.mjs'
 import { getOpenApiSpec, getSwaggerHtml } from './http/swagger.mjs'
@@ -42,6 +44,8 @@ const server = createServer(async (req, res) => {
   const requestId = randomUUID()
   const parsedUrl = new URL(req.url, 'http://localhost')
   const pathname = parsedUrl.pathname
+  const clientIp = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket?.remoteAddress || null
+  const userAgent = req.headers['user-agent'] || null
 
   if (req.method === 'OPTIONS') return send(res, 204, {}, requestId)
   if (req.method === 'GET' && pathname === '/health') return send(res, 200, { status: 'ok', service: 'trustlens-api', requestId }, requestId)
@@ -183,12 +187,39 @@ const server = createServer(async (req, res) => {
     try {
       const action = parsedUrl.searchParams.get('action') || 'ALL'
       const search = parsedUrl.searchParams.get('search') || ''
+      const actor = parsedUrl.searchParams.get('actor') || ''
+      const fromDate = parsedUrl.searchParams.get('fromDate') || ''
+      const toDate = parsedUrl.searchParams.get('toDate') || ''
       const page = parseInt(parsedUrl.searchParams.get('page') || '1', 10)
       const limit = parseInt(parsedUrl.searchParams.get('limit') || '20', 10)
-      const result = await getModerationAuditLogs({ action, search, page, limit })
+      const result = await getModerationAuditLogs({ action, search, actor, fromDate, toDate, page, limit })
       return send(res, 200, { success: true, ...result, requestId }, requestId)
     } catch (error) {
       return send(res, 502, { code: 'AUDIT_FETCH_ERROR', message: error.message, requestId }, requestId)
+    }
+  }
+
+  // Moderation Audit Chain Integrity Verification (Protected GET)
+  if (req.method === 'GET' && pathname === '/api/moderation/audit-logs/verify') {
+    const auth = await authorizeModerator(req)
+    if (!auth.authorized) {
+      return send(res, 401, { code: 'UNAUTHORIZED', message: auth.error || 'Moderator access required.', requestId }, requestId)
+    }
+    try {
+      const verification = await verifyAuditChainIntegrity()
+      return send(res, 200, {
+        success: true,
+        verified: Boolean(verification.isValid),
+        totalEntriesChecked: verification.verifiedCount || 0,
+        brokenAtId: verification.brokenAtId || null,
+        reason: verification.reason || null,
+        message: verification.message,
+        latestHash: verification.latestHash || null,
+        verification,
+        requestId,
+      }, requestId)
+    } catch (error) {
+      return send(res, 502, { code: 'AUDIT_VERIFY_ERROR', message: error.message, requestId }, requestId)
     }
   }
 
@@ -316,8 +347,30 @@ const server = createServer(async (req, res) => {
     const { email, password } = body || {}
     const result = await loginModeratorWithPassword(email, password)
     if (!result.success) {
+      void recordAuditLog({
+        action: 'AUTH_FAILED',
+        actorEmail: email || null,
+        actorRole: 'anonymous',
+        targetIndicator: 'auth.login',
+        threatCategory: 'Authentication',
+        moderatorNotes: `Failed login attempt: ${result.error || 'Invalid credentials'}.`,
+        clientIp,
+        userAgent,
+      })
       return send(res, result.status || 401, { code: 'AUTH_FAILED', message: result.error, requestId }, requestId)
     }
+
+    void recordAuditLog({
+      action: 'AUTH_LOGIN',
+      actorEmail: result.user?.email || email,
+      actorRole: result.user?.role || 'moderator',
+      targetIndicator: 'auth.login',
+      threatCategory: 'Authentication',
+      moderatorNotes: `Moderator session established successfully. Role: ${result.user?.role || 'moderator'}.`,
+      clientIp,
+      userAgent,
+    })
+
     return send(res, 200, { accessToken: result.accessToken, user: result.user, requestId }, requestId)
   }
 
@@ -332,7 +385,13 @@ const server = createServer(async (req, res) => {
       return send(res, 400, { code: 'INVALID_ACTION', message: validationError, requestId }, requestId)
     }
     try {
-      const result = await processModerationReview(body, auth.actorRole, auth.userEmail || auth.user?.email)
+      const result = await processModerationReview(
+        body,
+        auth.actorRole,
+        auth.userEmail || auth.user?.email,
+        clientIp,
+        userAgent,
+      )
       return send(res, 200, { result, requestId }, requestId)
     } catch (error) {
       return send(res, error.message === 'Report not found.' ? 404 : 502, { code: error.message === 'Report not found.' ? 'REPORT_NOT_FOUND' : 'REVIEW_FAILED', message: error.message, requestId }, requestId)
@@ -418,7 +477,10 @@ const server = createServer(async (req, res) => {
           notes: body.notes,
           confidence: body.confidence,
         },
-        auth.email || auth.actorRole || 'moderator',
+        auth.actorRole || 'moderator',
+        auth.userEmail || auth.user?.email || auth.email,
+        clientIp,
+        userAgent,
       )
       return send(res, 201, { success: true, entry, requestId }, requestId)
     } catch (error) {
@@ -449,6 +511,8 @@ const server = createServer(async (req, res) => {
         category: body.category,
         actorRole: auth.actorRole,
         actorEmail: auth.userEmail || auth.user?.email,
+        clientIp,
+        userAgent,
       })
       return send(res, 200, { success: true, updated, requestId }, requestId)
     } catch (error) {
@@ -475,6 +539,17 @@ const server = createServer(async (req, res) => {
         { name: body.name.trim(), officialDomain: body.officialDomain.trim().toLowerCase(), category: body.category, sourceUrl: body.sourceUrl },
         reviewer,
       )
+      void recordAuditLog({
+        action: 'DOMAIN_CREATE',
+        targetIndicator: created.officialDomain,
+        threatCategory: 'Official Whitelist',
+        actorEmail: auth.userEmail || auth.user?.email || (reviewer.includes('@') ? reviewer : 'moderator@trustlens.lk'),
+        actorRole: auth.actorRole || 'moderator',
+        confidence: 1.0,
+        moderatorNotes: `Added official directory entry: "${created.name}" (${created.officialDomain}) under category: ${created.category || 'General'}.`,
+        clientIp,
+        userAgent,
+      })
       return send(res, 201, { success: true, entry: created, requestId }, requestId)
     } catch (error) {
       return send(res, 502, { code: 'DIRECTORY_CREATE_ERROR', message: error.message, requestId }, requestId)
@@ -501,6 +576,17 @@ const server = createServer(async (req, res) => {
     try {
       const reviewer = auth.email || auth.actorRole || 'moderator'
       const updated = await updateDomainDirectoryEntry(domainId, body, reviewer)
+      void recordAuditLog({
+        action: 'DOMAIN_UPDATE',
+        targetIndicator: updated.officialDomain,
+        threatCategory: 'Official Whitelist',
+        actorEmail: auth.userEmail || auth.user?.email || (reviewer.includes('@') ? reviewer : 'moderator@trustlens.lk'),
+        actorRole: auth.actorRole || 'moderator',
+        confidence: 1.0,
+        moderatorNotes: `Updated directory record for "${updated.name}" (${updated.officialDomain}). Status: ${updated.status}. Active: ${updated.active}.`,
+        clientIp,
+        userAgent,
+      })
       return send(res, 200, { success: true, updated, requestId }, requestId)
     } catch (error) {
       return send(res, error.message === 'Domain directory entry not found.' ? 404 : 502, {
@@ -691,7 +777,7 @@ server.on('error', (error) => {
 // Retention enforcement: this project has no separate cron infrastructure,
 // so the running API process itself purges submissions past their
 // expires_at once a day, plus once shortly after startup. A failure here is
-// logged, not thrown, since a missed purge should never take the API down.
+// Retention enforcement for citizen submissions:
 const PURGE_INTERVAL_MS = 24 * 60 * 60 * 1000
 async function runRetentionPurge() {
   try {
@@ -700,18 +786,9 @@ async function runRetentionPurge() {
   } catch (error) {
     console.error('Retention purge failed:', error.message)
   }
-  try {
-    const auditPurged = await purgeExpiredAuditLogs()
-    if (auditPurged?.purgedCount) {
-      console.log(`Audit retention purge removed ${auditPurged.purgedCount} expired log entry(ies).`)
-    }
-  } catch (error) {
-    console.error('Audit retention purge failed:', error.message)
-  }
 }
 const purgeTimer = setInterval(runRetentionPurge, PURGE_INTERVAL_MS)
 purgeTimer.unref?.()
-setTimeout(runRetentionPurge, 5_000).unref?.()
 
 function shutdown(signal) {
   console.log(`${signal} received; shutting down TrustLens API.`)

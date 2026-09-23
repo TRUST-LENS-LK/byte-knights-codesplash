@@ -37,6 +37,7 @@ import {
   type ModerationAuditLogItem,
   type AuditStorageStats,
   type DomainDirectoryEntry,
+  type AuditChainVerifyResult,
   clearSession,
   fetchModerationQueue,
   fetchModerationStats,
@@ -54,6 +55,7 @@ import {
   fetchAuditStorageStats,
   triggerAuditPurge,
   exportAuditLogsToCsv,
+  verifyAuditChainIntegrity,
   fetchDomainDirectoryEntries,
   createDomainDirectoryEntry,
   updateDomainDirectoryEntry,
@@ -118,6 +120,18 @@ export function getAuditActionBadge(action: ModerationAuditLogItem['action']) {
       return { label: 'ENGINE POLICY', badgeClass: 'audit-badge-setting' }
     case 'PURGE_EXPIRED':
       return { label: 'RETENTION PURGE', badgeClass: 'audit-badge-purge' }
+    case 'AUTH_LOGIN':
+      return { label: 'AUTH LOGIN', badgeClass: 'audit-badge-auth-login' }
+    case 'AUTH_FAILED':
+      return { label: 'AUTH FAILED', badgeClass: 'audit-badge-auth-failed' }
+    case 'DOMAIN_CREATE':
+      return { label: 'DOMAIN ADD', badgeClass: 'audit-badge-domain' }
+    case 'DOMAIN_UPDATE':
+      return { label: 'DOMAIN EDIT', badgeClass: 'audit-badge-domain' }
+    case 'DOMAIN_DELETE':
+      return { label: 'DOMAIN DEL', badgeClass: 'audit-badge-domain' }
+    case 'MANUAL_INTEL':
+      return { label: 'MANUAL INTEL', badgeClass: 'audit-badge-intel' }
     default:
       return { label: action, badgeClass: 'audit-badge-default' }
   }
@@ -502,7 +516,23 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
   // Dedicated Real Audit Logs State & Retention Governance
   const [auditLogsList, setAuditLogsList] = useState<ModerationAuditLogItem[]>([])
   const [auditStorageStats, setAuditStorageStats] = useState<AuditStorageStats | null>(null)
-  const [auditActionFilter, setAuditActionFilter] = useState<'ALL' | 'APPROVE' | 'REJECT' | 'RETIRE' | 'TOGGLE_STATUS' | 'UPDATE_SETTINGS' | 'PURGE_EXPIRED'>('ALL')
+  const [auditActionFilter, setAuditActionFilter] = useState<
+    | 'ALL'
+    | 'REVIEWS'
+    | 'APPROVE'
+    | 'REJECT'
+    | 'RETIRE'
+    | 'AUTH_LOGIN'
+    | 'AUTH_FAILED'
+    | 'DOMAIN_CREATE'
+    | 'MANUAL_INTEL'
+    | 'TOGGLE_STATUS'
+    | 'UPDATE_SETTINGS'
+    | 'PURGE_EXPIRED'
+  >('ALL')
+  const [auditDateFilter, setAuditDateFilter] = useState<'ALL' | 'TODAY' | '7DAYS' | '30DAYS'>('ALL')
+  const [chainVerificationResult, setChainVerificationResult] = useState<AuditChainVerifyResult | null>(null)
+  const [isVerifyingChain, setIsVerifyingChain] = useState<boolean>(false)
   const [auditSearchQuery, setAuditSearchQuery] = useState('')
   const [auditPage, setAuditPage] = useState(1)
   const [auditPageSize, setAuditPageSize] = useState<number>(10)
@@ -713,9 +743,22 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
       if (!token) return
       if (showSpinner) setIsLoadingAudit(true)
       setAuditError(null)
+
+      let fromDate: string | undefined = undefined
+      if (auditDateFilter === 'TODAY') {
+        const d = new Date()
+        d.setHours(0, 0, 0, 0)
+        fromDate = d.toISOString()
+      } else if (auditDateFilter === '7DAYS') {
+        fromDate = new Date(Date.now() - 7 * 86400000).toISOString()
+      } else if (auditDateFilter === '30DAYS') {
+        fromDate = new Date(Date.now() - 30 * 86400000).toISOString()
+      }
+
       const res = await fetchModerationAuditLogs(token, {
         action: auditActionFilter,
         search: auditSearchQuery,
+        fromDate,
         page: auditPage,
         limit: auditPageSize,
       })
@@ -728,8 +771,21 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
         setAuditError(res.error || 'Could not load audit logs.')
       }
     },
-    [token, auditActionFilter, auditSearchQuery, auditPage, auditPageSize]
+    [token, auditActionFilter, auditSearchQuery, auditDateFilter, auditPage, auditPageSize]
   )
+
+  const handleVerifyChain = async () => {
+    if (!token || isVerifyingChain) return
+    setIsVerifyingChain(true)
+    const res = await verifyAuditChainIntegrity(token)
+    setIsVerifyingChain(false)
+    setChainVerificationResult(res)
+    if (res.success && res.verified) {
+      showToast(`✓ Cryptographic Chain Verified: ${res.totalEntriesChecked} entries intact.`)
+    } else {
+      showToast(`⚠ Chain verification issue: ${res.reason || res.error || 'Validation failed'}`)
+    }
+  }
 
   const loadAuditStats = useCallback(async () => {
     if (!token) return
@@ -2560,9 +2616,13 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                   <div className="neo-segmented-filter-group">
                     {[
                       { id: 'ALL', label: `All (${auditTotal})` },
-                      { id: 'APPROVE', label: `Approved (${auditStorageStats?.actionBreakdown?.approve || 0})` },
-                      { id: 'REJECT', label: `Rejected (${auditStorageStats?.actionBreakdown?.reject || 0})` },
-                      { id: 'RETIRE', label: `Retired (${auditStorageStats?.actionBreakdown?.retire || 0})` },
+                      {
+                        id: 'REVIEWS',
+                        label: `Queue Reviews (${(auditStorageStats?.actionBreakdown?.approve || 0) + (auditStorageStats?.actionBreakdown?.reject || 0) + (auditStorageStats?.actionBreakdown?.retire || 0)})`,
+                      },
+                      { id: 'AUTH_LOGIN', label: 'Auth Logs' },
+                      { id: 'DOMAIN_CREATE', label: 'Domains' },
+                      { id: 'MANUAL_INTEL', label: 'Manual Intel' },
                       ...((auditStorageStats?.actionBreakdown?.settings || 0) + (auditStorageStats?.actionBreakdown?.toggle || 0) > 0
                         ? [
                             {
@@ -2586,7 +2646,7 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                     ))}
                   </div>
 
-                  {/* Right: Search, Retention Selector, Export and Prune Actions */}
+                  {/* Right: Search, Date Filter, Retention Selector, Export and Prune Actions */}
                   <div className="neo-modern-toolbar-actions">
                     <div className="neo-toolbar-search-box">
                       <Search size={14} className="neo-search-icon-inside" aria-hidden="true" />
@@ -2600,6 +2660,24 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                         }}
                         className="neo-modern-search-input"
                       />
+                    </div>
+
+                    {/* Date Range Selector Dropdown */}
+                    <div className="neo-retention-selector-wrapper" title="Filter audit events by timeframe">
+                      <select
+                        className="neo-retention-select"
+                        value={auditDateFilter}
+                        onChange={(e) => {
+                          setAuditDateFilter(e.target.value as any)
+                          setAuditPage(1)
+                        }}
+                        title="Filter audit trail by time period"
+                      >
+                        <option value="ALL">All Dates</option>
+                        <option value="TODAY">Today (24h)</option>
+                        <option value="7DAYS">Last 7 Days</option>
+                        <option value="30DAYS">Last 30 Days</option>
+                      </select>
                     </div>
 
                     {/* Retention Setting Selector Dropdown */}
@@ -2623,6 +2701,25 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
 
                   {/* Right-aligned audit action buttons */}
                   <div className="neo-audit-action-buttons">
+                    <button
+                      type="button"
+                      className={`neo-btn-toolbar-verify ${chainVerificationResult ? (chainVerificationResult.verified ? 'verified-active' : 'tampered-active') : ''}`}
+                      onClick={handleVerifyChain}
+                      disabled={isVerifyingChain}
+                      title="Cryptographically verify SHA-256 hash chaining across all audit records"
+                    >
+                      <ShieldCheck size={13} aria-hidden="true" />
+                      <span>
+                        {isVerifyingChain
+                          ? 'Verifying Chain...'
+                          : chainVerificationResult
+                            ? (chainVerificationResult.verified
+                                ? `✓ Intact (${chainVerificationResult.totalEntriesChecked})`
+                                : '⚠ Tampered!')
+                            : 'Verify Chain Integrity'}
+                      </span>
+                    </button>
+
                     <button
                       type="button"
                       className="neo-btn-toolbar-reset has-active-filters"
@@ -2655,6 +2752,31 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                     </button>
                   </div>
                 </div>
+
+                {/* Live Cryptographic Verification Alert Banner */}
+                {chainVerificationResult && (
+                  <div
+                    className={`neo-chain-banner ${chainVerificationResult.verified ? 'success' : 'error'}`}
+                    style={{ margin: '0 20px 14px' }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      {chainVerificationResult.verified ? <ShieldCheck size={16} /> : <AlertCircle size={16} />}
+                      <span>
+                        {chainVerificationResult.verified
+                          ? `Cryptographic Chain Integrity Confirmed: All ${chainVerificationResult.totalEntriesChecked} sequential SHA-256 blocks validated with immutability guarantees.`
+                          : `Cryptographic Chain Violation Detected: ${chainVerificationResult.reason || chainVerificationResult.error || (chainVerificationResult.brokenAtId ? `Discrepancy at Record #${chainVerificationResult.brokenAtId}` : 'Chain integrity discrepancy detected.')}`}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'inherit', fontSize: '12px', fontWeight: 700 }}
+                      onClick={() => setChainVerificationResult(null)}
+                      title="Dismiss banner"
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                )}
 
                 <div className="neo-modern-table-wrapper">
                   <table className="neo-modern-table">
@@ -2773,9 +2895,11 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                                     <Clock size={12} aria-hidden="true" />
                                     <span>{formatRelativeTime(item.created_at)}</span>
                                   </div>
-                                  <span className="neo-audit-ttl-tag" title={`Auto-purges based on ${retentionDays}-day retention policy (${item.expires_at ? new Date(item.expires_at).toLocaleDateString() : 'Active'})`}>
-                                    {ttlStr}
-                                  </span>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
+                                    <span className="neo-audit-ttl-tag" title={`Auto-purges based on ${retentionDays}-day retention policy (${item.expires_at ? new Date(item.expires_at).toLocaleDateString() : 'Active'})`}>
+                                      {ttlStr}
+                                    </span>
+                                  </div>
                                 </div>
                               </td>
                               <td>

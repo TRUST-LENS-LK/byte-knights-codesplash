@@ -15,6 +15,12 @@ import {
   X,
   Download,
   Calendar,
+  Lock,
+  Network,
+  Globe,
+  Database,
+  LogIn,
+  AlertTriangle,
 } from 'lucide-react'
 import type { ModerationAuditLogItem } from '../../services/moderatorService'
 import { formatRelativeTime } from '../../utils/formatTime'
@@ -40,6 +46,16 @@ function getActionIcon(action: string) {
       return <Sliders size={14} aria-hidden="true" />
     case 'PURGE_EXPIRED':
       return <Trash2 size={14} aria-hidden="true" />
+    case 'AUTH_LOGIN':
+      return <LogIn size={14} aria-hidden="true" />
+    case 'AUTH_FAILED':
+      return <AlertTriangle size={14} aria-hidden="true" />
+    case 'DOMAIN_CREATE':
+    case 'DOMAIN_UPDATE':
+    case 'DOMAIN_DELETE':
+      return <Globe size={14} aria-hidden="true" />
+    case 'MANUAL_INTEL':
+      return <Database size={14} aria-hidden="true" />
     default:
       return <FileSearch size={14} aria-hidden="true" />
   }
@@ -59,6 +75,16 @@ function getActionBadgeClass(action: string): string {
       return 'audit-badge-setting'
     case 'PURGE_EXPIRED':
       return 'audit-badge-purge'
+    case 'AUTH_LOGIN':
+      return 'audit-badge-auth-login'
+    case 'AUTH_FAILED':
+      return 'audit-badge-auth-failed'
+    case 'DOMAIN_CREATE':
+    case 'DOMAIN_UPDATE':
+    case 'DOMAIN_DELETE':
+      return 'audit-badge-domain'
+    case 'MANUAL_INTEL':
+      return 'audit-badge-intel'
     default:
       return 'audit-badge-default'
   }
@@ -71,6 +97,8 @@ export const AuditDetailModal: React.FC<AuditDetailModalProps> = ({
 }) => {
   const [copiedIndicator, setCopiedIndicator] = useState(false)
   const [copiedId, setCopiedId] = useState(false)
+  const [copiedHash, setCopiedHash] = useState(false)
+  const [copiedPrevHash, setCopiedPrevHash] = useState(false)
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -105,6 +133,20 @@ export const AuditDetailModal: React.FC<AuditDetailModalProps> = ({
     navigator.clipboard.writeText(String(auditLog.id))
     setCopiedId(true)
     setTimeout(() => setCopiedId(false), 2000)
+  }
+
+  const handleCopyHash = () => {
+    if (!auditLog.entry_hash) return
+    navigator.clipboard.writeText(auditLog.entry_hash)
+    setCopiedHash(true)
+    setTimeout(() => setCopiedHash(false), 2000)
+  }
+
+  const handleCopyPrevHash = () => {
+    if (!auditLog.prev_hash) return
+    navigator.clipboard.writeText(auditLog.prev_hash)
+    setCopiedPrevHash(true)
+    setTimeout(() => setCopiedPrevHash(false), 2000)
   }
 
   const handleExportJson = () => {
@@ -203,12 +245,31 @@ export const AuditDetailModal: React.FC<AuditDetailModalProps> = ({
             </div>
 
             <div className="neo-modal-meta-item">
-              <span className="neo-modal-meta-label">Data Retention (90-Day Policy)</span>
+              <span className="neo-modal-meta-label">Data Retention Policy</span>
               <div className="neo-modal-meta-val">
                 <span className="neo-audit-ttl-tag">
                   <Clock size={12} aria-hidden="true" />
                   <span>{remainingTtlText}</span>
                 </span>
+              </div>
+            </div>
+
+            <div className="neo-modal-meta-item">
+              <span className="neo-modal-meta-label">Client Network IP</span>
+              <div className="neo-modal-meta-val" style={{ fontFamily: 'ui-monospace, monospace', fontSize: '12.5px' }}>
+                <Network size={13} style={{ color: '#64748B' }} aria-hidden="true" />
+                <span>{auditLog.client_ip || '127.0.0.1 (Local/Loopback)'}</span>
+              </div>
+            </div>
+
+            <div className="neo-modal-meta-item">
+              <span className="neo-modal-meta-label">Client User-Agent</span>
+              <div
+                className="neo-modal-meta-val"
+                style={{ fontSize: '11.5px', color: '#475569', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                title={auditLog.user_agent || 'TrustLens Moderator Console'}
+              >
+                <span>{auditLog.user_agent ? (auditLog.user_agent.length > 35 ? `${auditLog.user_agent.slice(0, 35)}…` : auditLog.user_agent) : 'TrustLens Console'}</span>
               </div>
             </div>
 
@@ -264,6 +325,113 @@ export const AuditDetailModal: React.FC<AuditDetailModalProps> = ({
                 </div>
               </div>
             )}
+          </div>
+
+          {/* Cryptographic Tamper-Evidence & Integrity Card */}
+          <div
+            style={{
+              background: '#F8FAFC',
+              border: '1px solid #E2E8F0',
+              borderRadius: '16px',
+              padding: '16px 20px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '12px',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Lock size={15} style={{ color: '#0066FF' }} aria-hidden="true" />
+                <span style={{ fontSize: '12px', fontWeight: 700, color: '#0F172A', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  Cryptographic Integrity & Chain Proof
+                </span>
+              </div>
+              <span
+                style={{
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  color: '#059669',
+                  background: '#ECFDF5',
+                  border: '1px solid #A7F3D0',
+                  padding: '2px 8px',
+                  borderRadius: '12px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                }}
+              >
+                <Check size={11} />
+                <span>SHA-256 Tamper-Evident</span>
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div>
+                <span className="neo-modal-meta-label" style={{ marginBottom: '4px', display: 'block' }}>
+                  Record SHA-256 Digest (Entry Hash)
+                </span>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                  <code
+                    style={{
+                      background: '#0F172A',
+                      color: '#38BDF8',
+                      padding: '6px 10px',
+                      borderRadius: '8px',
+                      fontSize: '11.5px',
+                      fontFamily: 'ui-monospace, monospace',
+                      wordBreak: 'break-all',
+                      flex: 1,
+                    }}
+                  >
+                    {auditLog.entry_hash || 'Legacy record (computed upon verification)'}
+                  </code>
+                  {auditLog.entry_hash && (
+                    <button
+                      type="button"
+                      className="neo-modal-btn-copy"
+                      onClick={handleCopyHash}
+                      title="Copy SHA-256 Entry Hash"
+                    >
+                      {copiedHash ? <Check size={12} color="#10B981" /> : <Copy size={12} />}
+                      <span>{copiedHash ? 'Copied' : 'Copy'}</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <span className="neo-modal-meta-label" style={{ marginBottom: '4px', display: 'block' }}>
+                  Previous Record SHA-256 Pointer (prev_hash)
+                </span>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                  <code
+                    style={{
+                      background: '#F1F5F9',
+                      color: '#475569',
+                      padding: '6px 10px',
+                      borderRadius: '8px',
+                      fontSize: '11.5px',
+                      fontFamily: 'ui-monospace, monospace',
+                      wordBreak: 'break-all',
+                      flex: 1,
+                    }}
+                  >
+                    {auditLog.prev_hash || '0000000000000000000000000000000000000000000000000000000000000000 (Genesis Anchor)'}
+                  </code>
+                  {auditLog.prev_hash && (
+                    <button
+                      type="button"
+                      className="neo-modal-btn-copy"
+                      onClick={handleCopyPrevHash}
+                      title="Copy Previous Hash"
+                    >
+                      {copiedPrevHash ? <Check size={12} color="#10B981" /> : <Copy size={12} />}
+                      <span>{copiedPrevHash ? 'Copied' : 'Copy'}</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* Notes & Justification */}

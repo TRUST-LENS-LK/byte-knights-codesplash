@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node src/server.mjs",
     "check": "node --check src/server.mjs",
-    "test": "node --test test/api.test.mjs test/reportingApi.test.mjs test/reconciliationEngine.test.mjs test/domainDirectoryRls.test.mjs test/domainMismatch.test.mjs test/retentionPurge.test.mjs test/globalDomains.test.mjs test/domainAge.test.mjs test/safeBrowsing.test.mjs test/domainDirectoryManagement.test.mjs test/manualIntelligence.test.mjs"
+    "test": "node --test test/api.test.mjs test/reportingApi.test.mjs test/reconciliationEngine.test.mjs test/domainDirectoryRls.test.mjs test/domainMismatch.test.mjs test/retentionPurge.test.mjs test/globalDomains.test.mjs test/domainAge.test.mjs test/safeBrowsing.test.mjs test/domainDirectoryManagement.test.mjs test/manualIntelligence.test.mjs test/auditChainAndIntegrity.test.mjs"
   },
   "dependencies": {
     "adm-zip": "^0.6.1"
