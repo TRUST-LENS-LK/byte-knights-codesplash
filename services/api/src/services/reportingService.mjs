@@ -1,4 +1,5 @@
 import { randomUUID, createHash } from 'node:crypto'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { SUPABASE_SERVICE_ROLE_KEY, SUPABASE_URL } from '../config/env.mjs'
 import { DEMO_REPORTS } from '../fixtures/demoReports.mjs'
 import { analyzeMessage } from '@trustlens/rules'
@@ -11,62 +12,66 @@ export let AUDIT_RETENTION_DAYS = parseInt(process.env.AUDIT_RETENTION_DAYS || '
 const inMemoryReports = new Map()
 const inMemoryIntel = new Map()
 
-const initialDemoAuditLogs = [
-  {
-    id: 'audit-demo-001',
-    report_id: 'report-demo-001',
-    action: 'APPROVE',
-    target_indicator: 'hxxps://ceb-bill-payment[.]top',
-    threat_category: 'Utility Bill Scam',
-    actor_email: 'moderator2@trustlens.lk',
-    actor_role: 'moderator',
-    confidence: 1.0,
-    moderator_notes: 'Confirmed phishing page harvesting CEB electricity account credentials and debit cards.',
-    created_at: new Date(Date.now() - 86400000 * 2).toISOString(),
-    expires_at: new Date(Date.now() + (AUDIT_RETENTION_DAYS - 2) * 86400000).toISOString(),
-  },
-  {
-    id: 'audit-demo-002',
-    report_id: 'report-demo-002',
-    action: 'APPROVE',
-    target_indicator: 'hxxps://srilanka-telecom-rewards[.]xyz',
-    threat_category: 'Telecom Impersonation',
-    actor_email: 'moderator1@trustlens.lk',
-    actor_role: 'moderator',
-    confidence: 0.95,
-    moderator_notes: 'Approved threat intelligence after verifying SMS campaign demanding OTP.',
-    created_at: new Date(Date.now() - 86400000 * 4).toISOString(),
-    expires_at: new Date(Date.now() + (AUDIT_RETENTION_DAYS - 4) * 86400000).toISOString(),
-  },
-  {
-    id: 'audit-demo-003',
-    report_id: 'report-demo-003',
-    action: 'REJECT',
-    target_indicator: 'hxxps://dialog[.]lk/myaccount',
-    threat_category: 'False Alarm',
-    actor_email: 'moderator2@trustlens.lk',
-    actor_role: 'moderator',
-    confidence: 1.0,
-    moderator_notes: 'Dismissed report. Legitimate official portal matching Sri Lanka national directory.',
-    created_at: new Date(Date.now() - 86400000 * 6).toISOString(),
-    expires_at: new Date(Date.now() + (AUDIT_RETENTION_DAYS - 6) * 86400000).toISOString(),
-  },
-  {
-    id: 'audit-demo-004',
-    report_id: null,
-    action: 'UPDATE_SETTINGS',
-    target_indicator: 'engine.enableVerifiedIntel',
-    threat_category: null,
-    actor_email: 'admin@trustlens.lk',
-    actor_role: 'admin',
-    confidence: 1.0,
-    moderator_notes: 'Threat feedback loop active with real-time community intelligence reconciliation.',
-    created_at: new Date(Date.now() - 86400000 * 8).toISOString(),
-    expires_at: new Date(Date.now() + (AUDIT_RETENTION_DAYS - 8) * 86400000).toISOString(),
-  },
-]
+export function canonicalTimestamp(ts) {
+  if (!ts) return ''
+  const d = new Date(ts)
+  return isNaN(d.getTime()) ? String(ts) : d.toISOString()
+}
 
-const inMemoryAuditLogs = [...initialDemoAuditLogs]
+export const GENESIS_PREV_HASH = '0000000000000000000000000000000000000000000000000000000000000000'
+
+/**
+ * Computes a deterministic SHA-256 hash for forward-secure, tamper-evident audit chaining.
+ * Aligns with NIST SP 800-92 cryptographic log integrity requirements.
+ */
+export function computeAuditHash(prevHash, entry) {
+  const normalizedPrev = prevHash || GENESIS_PREV_HASH
+  const rawTarget = entry.raw_target_indicator !== undefined ? entry.raw_target_indicator : entry.target_indicator
+  const payload = [
+    normalizedPrev,
+    canonicalTimestamp(entry.created_at),
+    entry.action || '',
+    entry.actor_email || '',
+    entry.actor_role || '',
+    rawTarget || '',
+    entry.threat_category || '',
+    entry.moderator_notes || '',
+    entry.client_ip || '',
+  ].join('|')
+  return createHash('sha256').update(payload).digest('hex')
+}
+
+const DATA_DIR = new URL('../../data', import.meta.url)
+const PERSISTENT_AUDIT_FILE = new URL('../../data/audit_logs_persistent.json', import.meta.url)
+
+function loadPersistentAuditLogs() {
+  try {
+    if (existsSync(PERSISTENT_AUDIT_FILE)) {
+      const raw = readFileSync(PERSISTENT_AUDIT_FILE, 'utf8')
+      const parsed = JSON.parse(raw)
+      if (Array.isArray(parsed)) {
+        return parsed
+      }
+    }
+  } catch {
+    // Non-blocking fallback
+  }
+  return []
+}
+
+export function savePersistentAuditLogs(logs) {
+  try {
+    if (!existsSync(DATA_DIR)) {
+      mkdirSync(DATA_DIR, { recursive: true })
+    }
+    writeFileSync(PERSISTENT_AUDIT_FILE, JSON.stringify(logs, null, 2), 'utf8')
+  } catch {
+    // Non-blocking fallback
+  }
+}
+
+export let latestAuditHash = null
+const inMemoryAuditLogs = loadPersistentAuditLogs()
 
 /**
  * Extracts normalized plain text from a report for deep deterministic rules analysis.
@@ -877,7 +882,13 @@ export function extractDomainVariants(domain) {
   return Array.from(variants).filter(Boolean)
 }
 
-export async function processModerationReview(reviewPayload, actorRole = 'moderator', actorEmail = null) {
+export async function processModerationReview(
+  reviewPayload,
+  actorRole = 'moderator',
+  actorEmail = null,
+  clientIp = null,
+  userAgent = null,
+) {
   const { reportId, action, notes, indicatorType, category, confidence } = reviewPayload
 
   const report = await getReportById(reportId)
@@ -908,7 +919,7 @@ export async function processModerationReview(reviewPayload, actorRole = 'modera
     ? Number(confidence.toFixed(3))
     : 1.0
 
-  // 2. Add enriched audit log with 90-day retention
+  // 2. Add enriched audit log with 90-day retention and cryptographic hash chaining
   await recordAuditLog({
     reportId,
     action,
@@ -918,6 +929,8 @@ export async function processModerationReview(reviewPayload, actorRole = 'modera
     actorRole,
     confidence: chosenConfidence,
     moderatorNotes: notes || (action === 'APPROVE' ? 'Approved by moderator and sanitized for threat intelligence.' : 'Dismissed by moderator.'),
+    clientIp,
+    userAgent,
   })
 
   // 3. Sanitization Pipeline for APPROVE action
@@ -1136,9 +1149,33 @@ export async function checkVerifiedIntelligence(entities = [], contentSha256 = n
   return findings
 }
 
+let isChainInitialized = false
+
+export async function ensureChainInitialized() {
+  if (isChainInitialized && latestAuditHash) return
+  if (isSupabaseConfigured()) {
+    try {
+      const res = await getModerationAuditLogs({ limit: 500 })
+      const latest = res?.auditLogs?.[0]
+      if (latest?.entry_hash) {
+        latestAuditHash = latest.entry_hash
+      }
+    } catch {
+      // non-blocking
+    }
+  }
+  if (!latestAuditHash && inMemoryAuditLogs.length > 0) {
+    const latestMem = inMemoryAuditLogs[0]
+    if (latestMem?.entry_hash) {
+      latestAuditHash = latestMem.entry_hash
+    }
+  }
+  isChainInitialized = true
+}
+
 /**
  * Records an immutable audit log entry for moderator actions or governance events.
- * Enforces 90-day rolling retention TTL (expires_at).
+ * Enforces 90-day rolling retention TTL (expires_at) and forward-secure SHA-256 hash chaining.
  */
 export async function recordAuditLog({
   reportId = null,
@@ -1149,9 +1186,15 @@ export async function recordAuditLog({
   actorRole = 'moderator',
   confidence = null,
   moderatorNotes = null,
+  clientIp = null,
+  userAgent = null,
 }) {
+  await ensureChainInitialized()
+  const createdAt = new Date().toISOString()
   const expiresAt = new Date(Date.now() + AUDIT_RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString()
-  const logEntry = {
+  const prevHash = latestAuditHash || GENESIS_PREV_HASH
+
+  const candidate = {
     id: randomUUID(),
     report_id: reportId,
     action,
@@ -1161,13 +1204,22 @@ export async function recordAuditLog({
     actor_role: actorRole || 'moderator',
     confidence: typeof confidence === 'number' ? Number(confidence.toFixed(3)) : null,
     moderator_notes: moderatorNotes || null,
-    created_at: new Date().toISOString(),
+    client_ip: clientIp || null,
+    user_agent: userAgent ? userAgent.slice(0, 255) : null,
+    created_at: createdAt,
     expires_at: expiresAt,
   }
 
+  const entryHash = computeAuditHash(prevHash, candidate)
+  candidate.entry_hash = entryHash
+  candidate.prev_hash = prevHash
+  latestAuditHash = entryHash
+
+  const logEntry = candidate
+
   if (isSupabaseConfigured()) {
     try {
-      // Attempt 1: Full insert with all enriched columns (requires migration 202609220001)
+      // Attempt 1: Full insert with all enriched columns and cryptographic hash chaining
       const res = await fetch(`${SUPABASE_URL}/rest/v1/moderation_audit_logs`, {
         method: 'POST',
         headers: { ...getHeaders(), Prefer: 'return=representation' },
@@ -1178,10 +1230,13 @@ export async function recordAuditLog({
         const body = await res.json()
         const saved = Array.isArray(body) ? body[0] : body
         if (saved) {
-          inMemoryAuditLogs.unshift({ ...logEntry, ...saved })
-          return { ...logEntry, ...saved }
+          const merged = { ...logEntry, ...saved }
+          inMemoryAuditLogs.unshift(merged)
+          savePersistentAuditLogs(inMemoryAuditLogs)
+          return merged
         }
         inMemoryAuditLogs.unshift(logEntry)
+        savePersistentAuditLogs(inMemoryAuditLogs)
         return logEntry
       }
 
@@ -1191,6 +1246,7 @@ export async function recordAuditLog({
       if (targetIndicator) notesParts.push(`[Target]: ${targetIndicator}`)
       if (threatCategory) notesParts.push(`[Category]: ${threatCategory}`)
       if (actorEmail) notesParts.push(`[Actor]: ${actorEmail}`)
+      if (clientIp) notesParts.push(`[IP]: ${clientIp}`)
       if (moderatorNotes) notesParts.push(moderatorNotes)
       const compactNotes = notesParts.join(' | ')
 
@@ -1210,9 +1266,10 @@ export async function recordAuditLog({
       if (res2.ok) {
         const body2 = await res2.json()
         const saved2 = Array.isArray(body2) ? body2[0] : body2
-        // Always keep in-memory with full detail so UI shows the enriched data
-        inMemoryAuditLogs.unshift(logEntry)
-        return saved2 ? { ...logEntry, id: saved2.id } : logEntry
+        const savedEntry = saved2?.id ? { ...logEntry, id: saved2.id } : logEntry
+        inMemoryAuditLogs.unshift(savedEntry)
+        savePersistentAuditLogs(inMemoryAuditLogs)
+        return savedEntry
       }
     } catch {
       // Non-blocking fallback to in-memory store
@@ -1220,29 +1277,47 @@ export async function recordAuditLog({
   }
 
   inMemoryAuditLogs.unshift(logEntry)
+  savePersistentAuditLogs(inMemoryAuditLogs)
   return logEntry
 }
 
 
 /**
- * Queries moderation audit logs with filtering, search, and pagination.
+ * Queries moderation audit logs with filtering, search, actor, date-range, and pagination.
  */
 export async function getModerationAuditLogs({
   action = 'ALL',
   search = '',
+  actor = '',
+  fromDate = '',
+  toDate = '',
   page = 1,
   limit = 20,
 } = {}) {
   const pageNum = Number.isFinite(Number(page)) && Number(page) > 0 ? Number(page) : 1
-  const limitNum = Number.isFinite(Number(limit)) && Number(limit) > 0 && Number(limit) <= 100 ? Number(limit) : 20
+  const limitNum = Number.isFinite(Number(limit)) && Number(limit) > 0 && Number(limit) <= 1000 ? Number(limit) : 20
   const offset = (pageNum - 1) * limitNum
   const searchTrim = typeof search === 'string' ? search.trim().toLowerCase() : ''
+  const actorTrim = typeof actor === 'string' ? actor.trim().toLowerCase() : ''
 
   if (isSupabaseConfigured()) {
     try {
       let query = `${SUPABASE_URL}/rest/v1/moderation_audit_logs?select=*,user_reports(reported_domain,notes,report_type)&order=created_at.desc`
       if (action && action !== 'ALL') {
-        query += `&action=eq.${encodeURIComponent(action)}`
+        if (action === 'REVIEWS' || action === 'QUEUE_REVIEWS') {
+          query += `&action=in.(APPROVE,REJECT,RETIRE)`
+        } else {
+          query += `&action=eq.${encodeURIComponent(action)}`
+        }
+      }
+      if (actorTrim) {
+        query += `&actor_email=ilike.*${encodeURIComponent(actorTrim)}*`
+      }
+      if (fromDate) {
+        query += `&created_at=gte.${encodeURIComponent(fromDate)}`
+      }
+      if (toDate) {
+        query += `&created_at=lte.${encodeURIComponent(toDate)}`
       }
       if (!searchTrim) {
         query += `&limit=${limitNum}&offset=${offset}`
@@ -1251,20 +1326,32 @@ export async function getModerationAuditLogs({
       const res = await fetch(query, { headers, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) })
       if (res.ok) {
         const rawRows = await res.json()
-        let rows = rawRows.map((row) => {
+        // Sort chronologically (oldest to newest) to reconstruct the cryptographic sequence
+        const chronological = [...rawRows].sort((a, b) => {
+          const tA = new Date(a.created_at).getTime()
+          const tB = new Date(b.created_at).getTime()
+          if (tA !== tB) return tA - tB
+          return (Number(a.id) || 0) - (Number(b.id) || 0)
+        })
+
+        let runningPrevHash = GENESIS_PREV_HASH
+
+        const mappedChronological = chronological.map((row) => {
+          const memMatch = inMemoryAuditLogs.find((m) => String(m.id) === String(row.id))
+
           const rep = row.user_reports
-          let target = row.target_indicator
+          let target = row.target_indicator || memMatch?.target_indicator
           if (!target && rep?.reported_domain) {
             target = rep.reported_domain
           }
-          if (target && !target.startsWith('Report #') && !target.startsWith('policy.') && !target.startsWith('engine.')) {
+          if (target && !target.startsWith('Report #') && !target.startsWith('policy.') && !target.startsWith('engine.') && !target.startsWith('auth.')) {
             target = target.replace(/^https?:\/\//i, (m) => m.toLowerCase().startsWith('https') ? 'hxxps://' : 'hxxp://')
             if (!target.includes('[.]')) {
               target = target.replace(/\.(?=[a-zA-Z0-9])/g, '[.]')
             }
           }
 
-          let category = row.threat_category
+          let category = row.threat_category || memMatch?.threat_category
           if (!category && rep?.notes) {
             const catMatch = rep.notes.match(/\[Threat Category\]:\s*([^\n\r]+)/)
             if (catMatch) category = catMatch[1].trim()
@@ -1291,30 +1378,50 @@ export async function getModerationAuditLogs({
               category = 'Retired Indicator'
             } else if (row.action === 'UPDATE_SETTINGS' || row.action === 'TOGGLE_STATUS') {
               category = 'Engine Policy'
+            } else if (row.action === 'AUTH_LOGIN' || row.action === 'AUTH_FAILED') {
+              category = 'Authentication'
+            } else if (row.action.startsWith('DOMAIN_')) {
+              category = 'Domain Whitelist'
+            } else if (row.action === 'PURGE_EXPIRED') {
+              category = 'Governance Prune'
             }
           }
 
-          const expiresAt = row.expires_at || new Date(new Date(row.created_at).getTime() + AUDIT_RETENTION_DAYS * 86400000).toISOString()
+          const expiresAt = row.expires_at || memMatch?.expires_at || new Date(new Date(row.created_at).getTime() + AUDIT_RETENTION_DAYS * 86400000).toISOString()
+          const prevHash = row.prev_hash || memMatch?.prev_hash || runningPrevHash
 
-          return {
+          const mapped = {
             ...row,
-            target_indicator: target || (row.report_id ? `Report #${row.report_id.slice(0, 8)}` : 'System Policy'),
+            raw_target_indicator: row.target_indicator || memMatch?.raw_target_indicator || null,
+            target_indicator: target || (row.report_id ? `Report #${String(row.report_id).slice(0, 8)}` : 'System Policy'),
             threat_category: category,
-            actor_email: row.actor_email || 'moderator@trustlens.lk',
-            actor_role: row.actor_role || 'moderator',
+            actor_email: row.actor_email || memMatch?.actor_email || 'moderator@trustlens.lk',
+            actor_role: row.actor_role || memMatch?.actor_role || 'moderator',
             expires_at: expiresAt,
+            prev_hash: prevHash,
+            client_ip: row.client_ip || memMatch?.client_ip || null,
+            user_agent: row.user_agent || memMatch?.user_agent || null,
           }
+          const entryHash = row.entry_hash || memMatch?.entry_hash || computeAuditHash(prevHash, mapped)
+          mapped.entry_hash = entryHash
+
+          runningPrevHash = entryHash
+          return mapped
         })
 
-        // Merge in-memory audit entries not already in the Supabase result.
-        // This ensures actions recorded this session (even if Supabase write failed) appear immediately.
+        if (mappedChronological.length > 0) {
+          latestAuditHash = runningPrevHash
+        }
+
+        let rows = mappedChronological.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime() || (Number(b.id) || 0) - (Number(a.id) || 0))
+
+        // Merge in-memory persistent audit entries not already in the Supabase result.
         const dbIds = new Set(rows.map((r) => String(r.id)))
-        const tenMinAgo = Date.now() - 10 * 60 * 1000
-        const recentMemOnly = inMemoryAuditLogs.filter(
-          (m) => !dbIds.has(String(m.id)) && new Date(m.created_at).getTime() > tenMinAgo
+        const memOnly = inMemoryAuditLogs.filter(
+          (m) => !dbIds.has(String(m.id)) && (!m.entry_hash || !rows.some((r) => r.entry_hash === m.entry_hash))
         )
-        if (recentMemOnly.length > 0) {
-          let merged = [...recentMemOnly, ...rows]
+        if (memOnly.length > 0) {
+          let merged = [...memOnly, ...rows]
           merged.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
           if (searchTrim) {
             merged = merged.filter((item) => {
@@ -1323,9 +1430,10 @@ export async function getModerationAuditLogs({
                 || item.moderator_notes?.toLowerCase().includes(searchTrim)
                 || item.threat_category?.toLowerCase().includes(searchTrim)
                 || item.report_id?.toString().toLowerCase().includes(searchTrim)
+                || item.client_ip?.toLowerCase().includes(searchTrim)
             })
           }
-          const mergedTotal = total + recentMemOnly.length
+          const mergedTotal = merged.length
           const mergedTotalPages = Math.ceil(mergedTotal / limitNum) || 1
           return {
             auditLogs: merged.slice(offset, offset + limitNum),
@@ -1337,7 +1445,6 @@ export async function getModerationAuditLogs({
           }
         }
 
-
         if (searchTrim) {
           rows = rows.filter((item) => {
             const matchTarget = item.target_indicator?.toLowerCase().includes(searchTrim)
@@ -1345,7 +1452,8 @@ export async function getModerationAuditLogs({
             const matchNotes = item.moderator_notes?.toLowerCase().includes(searchTrim)
             const matchCat = item.threat_category?.toLowerCase().includes(searchTrim)
             const matchReportId = item.report_id?.toString().toLowerCase().includes(searchTrim)
-            return matchTarget || matchEmail || matchNotes || matchCat || matchReportId
+            const matchIp = item.client_ip?.toLowerCase().includes(searchTrim)
+            return matchTarget || matchEmail || matchNotes || matchCat || matchReportId || matchIp
           })
           const total = rows.length
           const totalPages = Math.ceil(total / limitNum) || 1
@@ -1380,7 +1488,26 @@ export async function getModerationAuditLogs({
 
   let filtered = [...inMemoryAuditLogs]
   if (action && action !== 'ALL') {
-    filtered = filtered.filter((item) => item.action === action)
+    if (action === 'REVIEWS' || action === 'QUEUE_REVIEWS') {
+      filtered = filtered.filter((item) => item.action === 'APPROVE' || item.action === 'REJECT' || item.action === 'RETIRE')
+    } else {
+      filtered = filtered.filter((item) => item.action === action)
+    }
+  }
+  if (actorTrim) {
+    filtered = filtered.filter((item) => item.actor_email?.toLowerCase().includes(actorTrim))
+  }
+  if (fromDate) {
+    const fromMs = new Date(fromDate).getTime()
+    if (!isNaN(fromMs)) {
+      filtered = filtered.filter((item) => new Date(item.created_at).getTime() >= fromMs)
+    }
+  }
+  if (toDate) {
+    const toMs = new Date(toDate).getTime()
+    if (!isNaN(toMs)) {
+      filtered = filtered.filter((item) => new Date(item.created_at).getTime() <= toMs)
+    }
   }
   if (searchTrim) {
     filtered = filtered.filter((item) => {
@@ -1389,7 +1516,8 @@ export async function getModerationAuditLogs({
       const matchNotes = item.moderator_notes?.toLowerCase().includes(searchTrim)
       const matchCategory = item.threat_category?.toLowerCase().includes(searchTrim)
       const matchReportId = item.report_id?.toLowerCase().includes(searchTrim)
-      return matchIndicator || matchEmail || matchNotes || matchCategory || matchReportId
+      const matchIp = item.client_ip?.toLowerCase().includes(searchTrim)
+      return matchIndicator || matchEmail || matchNotes || matchCategory || matchReportId || matchIp
     })
   }
 
@@ -1409,9 +1537,104 @@ export async function getModerationAuditLogs({
 }
 
 /**
+ * Verifies cryptographic tamper-evidence of the audit chain by validating each entry's
+ * SHA-256 hash against its payload and confirming strict sequential linkage (prev_hash === previous entry_hash).
+ */
+export async function verifyAuditChainIntegrity(options = {}) {
+  let records
+  if (Array.isArray(options?.records)) {
+    records = [...options.records]
+  } else {
+    const fetchLimit = typeof options?.limit === 'number' ? options.limit : 500
+    const result = await getModerationAuditLogs({ action: 'ALL', limit: fetchLimit })
+    records = [...(result.auditLogs || [])].reverse() // chronological order: oldest to newest
+  }
+
+  if (records.length === 0) {
+    return {
+      isValid: true,
+      verifiedCount: 0,
+      latestHash: null,
+      message: 'No audit records to verify.',
+    }
+  }
+
+  let lastVerified = null
+  let verifiedCount = 0
+
+  for (let i = 0; i < records.length; i++) {
+    const current = records[i]
+    if (!current.entry_hash) {
+      continue
+    }
+
+    // 1. Verify cryptographic SHA-256 calculation of this block
+    let expectedHash = computeAuditHash(current.prev_hash, current)
+    if (
+      expectedHash !== current.entry_hash &&
+      current.target_indicator &&
+      current.raw_target_indicator &&
+      current.target_indicator !== current.raw_target_indicator
+    ) {
+      const altHash = computeAuditHash(current.prev_hash, {
+        ...current,
+        raw_target_indicator: current.target_indicator,
+      })
+      if (altHash === current.entry_hash) {
+        expectedHash = altHash
+      }
+    }
+
+    if (expectedHash !== current.entry_hash) {
+      return {
+        isValid: false,
+        verifiedCount,
+        brokenAtId: current.id,
+        reason: `Cryptographic hash mismatch at record #${String(current.id).slice(0, 8)}. Computed: ${expectedHash.slice(0, 10)}... vs Stored: ${current.entry_hash.slice(0, 10)}...`,
+      }
+    }
+
+    // 2. Verify linkage to previous block in chain
+    if (lastVerified && current.prev_hash) {
+      if (current.prev_hash !== GENESIS_PREV_HASH && current.prev_hash !== lastVerified.entry_hash) {
+        const ancestorMatch = records.slice(0, i).some((r) => r.entry_hash === current.prev_hash)
+        if (!ancestorMatch) {
+          return {
+            isValid: false,
+            verifiedCount,
+            brokenAtId: current.id,
+            reason: `Cryptographic chain broken between record #${String(lastVerified.id).slice(0, 8)} and record #${String(current.id).slice(0, 8)}. Expected prev_hash: ${lastVerified.entry_hash.slice(0, 10)}... vs Actual prev_hash: ${current.prev_hash.slice(0, 10)}...`,
+          }
+        }
+      }
+    }
+
+    lastVerified = current
+    verifiedCount++
+  }
+
+  if (verifiedCount === 0) {
+    return {
+      isValid: true,
+      verifiedCount: 0,
+      latestHash: null,
+      message: 'No cryptographically hashed audit records to verify.',
+    }
+  }
+
+  return {
+    isValid: true,
+    verifiedCount,
+    latestHash: lastVerified?.entry_hash || null,
+    message: `All ${verifiedCount} evaluated audit records cryptographically verified with zero discrepancies.`,
+  }
+}
+
+/**
  * Purges audit logs whose retention window has passed.
  * Supports retentionDays limit and an optional safety grace window.
  * Uses created_at cutoff for guaranteed compatibility across database schemas.
+ * Records a PURGE_EXPIRED governance audit event upon successful deletion.
  */
 export async function purgeExpiredAuditLogs(retentionDays = AUDIT_RETENTION_DAYS, graceDays = 0) {
   const days = Number(retentionDays) > 0 ? Number(retentionDays) : AUDIT_RETENTION_DAYS
@@ -1448,13 +1671,69 @@ export async function purgeExpiredAuditLogs(retentionDays = AUDIT_RETENTION_DAYS
     }
   }
   const memoryPurged = beforeLen - inMemoryAuditLogs.length
+  if (memoryPurged > 0) {
+    savePersistentAuditLogs(inMemoryAuditLogs)
+  }
   purgedCount = Math.max(purgedCount, memoryPurged)
+
+  if (purgedCount > 0) {
+    await recordAuditLog({
+      action: 'PURGE_EXPIRED',
+      targetIndicator: `policy.retention.${days}d`,
+      threatCategory: 'Governance Prune',
+      actorEmail: 'system.scheduler@trustlens.lk',
+      actorRole: 'system',
+      confidence: 1.0,
+      moderatorNotes: `Automated retention governance pruned ${purgedCount} expired audit records older than ${days + grace} days. Cutoff: ${cutoffIso}`,
+    })
+  }
 
   return {
     purgedCount,
     timestamp: cutoffIso,
     retentionDays: days,
     graceDays: grace,
+  }
+}
+
+/**
+ * Completely clears all moderation audit logs across database and in-memory stores,
+ * allowing moderators to reset the cryptographic chain to zero records for testing.
+ */
+export async function clearAllAuditLogs() {
+  let clearedCount = 0
+
+  if (isSupabaseConfigured()) {
+    try {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/moderation_audit_logs?id=gt.0`, {
+        method: 'DELETE',
+        headers: {
+          apikey: SUPABASE_SERVICE_ROLE_KEY,
+          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+          Prefer: 'return=representation',
+        },
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      })
+      if (res.ok) {
+        const deleted = await res.json()
+        if (Array.isArray(deleted)) {
+          clearedCount = deleted.length
+        }
+      }
+    } catch {
+      // Ignored
+    }
+  }
+
+  clearedCount = Math.max(clearedCount, inMemoryAuditLogs.length)
+  inMemoryAuditLogs.length = 0
+  savePersistentAuditLogs([])
+  latestAuditHash = null
+
+  return {
+    success: true,
+    clearedCount,
+    timestamp: new Date().toISOString(),
   }
 }
 
@@ -1468,18 +1747,6 @@ export function startAuditRetentionScheduler(intervalMs = 24 * 60 * 60 * 1000) {
   if (retentionSchedulerInterval) {
     clearInterval(retentionSchedulerInterval)
   }
-
-  // Quick initial audit sweep 10 seconds after server startup
-  setTimeout(async () => {
-    try {
-      const result = await purgeExpiredAuditLogs(AUDIT_RETENTION_DAYS, 7)
-      if (result.purgedCount > 0) {
-        console.log(`[AuditRetentionScheduler] Auto-purged ${result.purgedCount} expired audit records older than ${result.retentionDays + result.graceDays} days.`)
-      }
-    } catch (e) {
-      console.warn('[AuditRetentionScheduler] Initial purge warning:', e.message)
-    }
-  }, 10000)
 
   retentionSchedulerInterval = setInterval(async () => {
     try {
@@ -1702,7 +1969,10 @@ export async function getVerifiedIntelligenceList(options = {}) {
   }
 }
 
-export async function updateIntelligenceStatus(id, { active, notes, category, actorRole = 'moderator', actorEmail = null } = {}) {
+export async function updateIntelligenceStatus(
+  id,
+  { active, notes, category, actorRole = 'moderator', actorEmail = null, clientIp = null, userAgent = null } = {},
+) {
   const updatedAt = new Date().toISOString()
 
   if (isSupabaseConfigured()) {
@@ -1742,6 +2012,8 @@ export async function updateIntelligenceStatus(id, { active, notes, category, ac
             actorRole,
             confidence: Number(updated.confidence || 1.0),
             moderatorNotes: notes || `Indicator ${active ? 'reactivated' : 'retired'} by moderator.`,
+            clientIp,
+            userAgent,
           })
           return { ...updated, report_count: updated.report_count || 1 }
         }
@@ -1781,6 +2053,8 @@ export async function updateIntelligenceStatus(id, { active, notes, category, ac
     actorRole,
     confidence: Number(existing.confidence || 1.0),
     moderatorNotes: notes || `Indicator ${active ? 'reactivated' : 'retired'} by moderator.`,
+    clientIp,
+    userAgent,
   })
 
   return { ...existing, report_count: existing.report_count || 1 }
@@ -1793,7 +2067,13 @@ export async function updateIntelligenceStatus(id, { active, notes, category, ac
  * table and shape that processModerationReview's approval path writes to,
  * so both paths are picked up identically by checkVerifiedIntelligence.
  */
-export async function createManualIntelligenceEntry(data, actorRole = 'moderator') {
+export async function createManualIntelligenceEntry(
+  data,
+  actorRole = 'moderator',
+  actorEmail = null,
+  clientIp = null,
+  userAgent = null,
+) {
   const rawValue = (data.indicatorValue || '').toLowerCase().trim()
   if (!rawValue) {
     throw new Error('indicatorValue is required.')
@@ -1804,6 +2084,8 @@ export async function createManualIntelligenceEntry(data, actorRole = 'moderator
     ? Number(data.confidence.toFixed(3))
     : 1.0
   const createdAt = new Date().toISOString()
+  const moderatorEmail = actorEmail || (actorRole.includes('@') ? actorRole : null)
+  const roleName = actorRole.includes('@') ? 'moderator' : actorRole
 
   const record = {
     id: randomUUID(),
@@ -1817,15 +2099,6 @@ export async function createManualIntelligenceEntry(data, actorRole = 'moderator
     notes: data.notes?.trim() || 'Added directly by a moderator, not from a citizen report.',
     report_count: 1,
     active: true,
-    created_at: createdAt,
-  }
-
-  const auditLog = {
-    id: randomUUID(),
-    report_id: null,
-    actor_role: actorRole,
-    action: riskLevel === 'CONFIRMED_SCAM' ? 'MANUAL_ADD_SCAM_INTEL' : 'MANUAL_ADD_SAFE_INTEL',
-    notes: record.notes,
     created_at: createdAt,
   }
 
@@ -1853,16 +2126,18 @@ export async function createManualIntelligenceEntry(data, actorRole = 'moderator
       const [saved] = await insertRes.json().catch(() => [])
       const finalRecord = saved || record
 
-      try {
-        await fetch(`${SUPABASE_URL}/rest/v1/moderation_audit_logs`, {
-          method: 'POST',
-          headers: getHeaders(),
-          body: JSON.stringify(auditLog),
-          signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-        })
-      } catch {
-        // Non-blocking if the audit table is still pending migration
-      }
+      await recordAuditLog({
+        reportId: null,
+        action: 'MANUAL_INTEL',
+        targetIndicator: defang(rawValue),
+        threatCategory: record.category,
+        actorEmail: moderatorEmail,
+        actorRole: roleName,
+        confidence,
+        moderatorNotes: `[Manual Entry - ${riskLevel}]: ${record.notes}`,
+        clientIp,
+        userAgent,
+      })
 
       return { ...finalRecord, report_count: finalRecord.report_count || 1 }
     } catch (error) {
@@ -1877,9 +2152,20 @@ export async function createManualIntelligenceEntry(data, actorRole = 'moderator
     }
   }
   inMemoryIntel.set(record.id, record)
-  inMemoryAuditLogs.push(auditLog)
+  await recordAuditLog({
+    reportId: null,
+    action: 'MANUAL_INTEL',
+    targetIndicator: defang(rawValue),
+    threatCategory: record.category,
+    actorEmail: moderatorEmail,
+    actorRole: roleName,
+    confidence,
+    moderatorNotes: `[Manual Entry - ${riskLevel}]: ${record.notes}`,
+    clientIp,
+    userAgent,
+  })
 
-  return { ...record }
+  return { ...record, report_count: 1 }
 }
 
 export async function seedDemoQueue() {

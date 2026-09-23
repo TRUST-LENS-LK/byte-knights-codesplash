@@ -509,13 +509,29 @@ export async function toggleIntelligenceStatus(
 export interface ModerationAuditLogItem {
   id: string | number
   report_id: string | null
-  action: 'APPROVE' | 'REJECT' | 'RETIRE' | 'TOGGLE_STATUS' | 'UPDATE_SETTINGS' | 'PURGE_EXPIRED'
+  action:
+    | 'APPROVE'
+    | 'REJECT'
+    | 'RETIRE'
+    | 'TOGGLE_STATUS'
+    | 'UPDATE_SETTINGS'
+    | 'PURGE_EXPIRED'
+    | 'AUTH_LOGIN'
+    | 'AUTH_FAILED'
+    | 'DOMAIN_CREATE'
+    | 'DOMAIN_UPDATE'
+    | 'DOMAIN_DELETE'
+    | 'MANUAL_INTEL'
   target_indicator: string | null
   threat_category: string | null
   actor_email: string | null
   actor_role: string
   confidence: number | null
   moderator_notes: string | null
+  entry_hash?: string
+  prev_hash?: string | null
+  client_ip?: string | null
+  user_agent?: string | null
   created_at: string
   expires_at?: string
 }
@@ -555,7 +571,10 @@ export async function fetchModerationAuditLogs(
     page?: number
     limit?: number
     action?: string
+    actor?: string
     search?: string
+    fromDate?: string
+    toDate?: string
   } = {}
 ): Promise<ModerationAuditLogsResponse> {
   try {
@@ -563,7 +582,10 @@ export async function fetchModerationAuditLogs(
     if (options.page) params.set('page', String(options.page))
     if (options.limit) params.set('limit', String(options.limit))
     if (options.action && options.action !== 'ALL') params.set('action', options.action)
+    if (options.actor) params.set('actor', options.actor)
     if (options.search) params.set('search', options.search)
+    if (options.fromDate) params.set('fromDate', options.fromDate)
+    if (options.toDate) params.set('toDate', options.toDate)
 
     const res = await fetch(`${API_BASE}/api/moderation/audit-logs?${params.toString()}`, {
       headers: { Authorization: `Bearer ${token}` },
@@ -583,6 +605,51 @@ export async function fetchModerationAuditLogs(
     }
   } catch (err) {
     return { success: false, error: err instanceof Error ? err.message : 'Network error' }
+  }
+}
+
+export interface AuditChainVerifyResult {
+  success: boolean
+  verified: boolean
+  totalEntriesChecked: number
+  brokenAtId?: string | number | null
+  reason?: string
+  error?: string
+}
+
+export async function verifyAuditChainIntegrity(
+  token: string
+): Promise<AuditChainVerifyResult> {
+  try {
+    const res = await fetch(`${API_BASE}/api/moderation/audit-logs/verify`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    const data = await res.json()
+    if (!res.ok) {
+      return {
+        success: false,
+        verified: false,
+        totalEntriesChecked: 0,
+        error: data.message || `Failed to verify chain (${res.status})`,
+      }
+    }
+    const verification = data.verification || {}
+    const isVerified = Boolean(data.verified ?? verification.isValid)
+    return {
+      success: true,
+      verified: isVerified,
+      totalEntriesChecked: data.totalEntriesChecked ?? verification.verifiedCount ?? 0,
+      brokenAtId: data.brokenAtId ?? verification.brokenAtId ?? null,
+      reason: data.reason ?? verification.reason ?? null,
+      error: data.error,
+    }
+  } catch (err) {
+    return {
+      success: false,
+      verified: false,
+      totalEntriesChecked: 0,
+      error: err instanceof Error ? err.message : 'Network error during chain verification',
+    }
   }
 }
 
@@ -635,7 +702,21 @@ export async function triggerAuditPurge(
 
 export function exportAuditLogsToCsv(logs: ModerationAuditLogItem[]): void {
   if (!logs || !logs.length) return
-  const headers = ['ID', 'Action', 'Target Indicator', 'Threat Category', 'Actor Email', 'Actor Role', 'Confidence', 'Notes', 'Created At', 'Expires At']
+  const headers = [
+    'ID',
+    'Action',
+    'Target Indicator',
+    'Threat Category',
+    'Actor Email',
+    'Actor Role',
+    'Confidence',
+    'Notes',
+    'Entry Hash (SHA-256)',
+    'Prev Hash',
+    'Client IP',
+    'Created At',
+    'Expires At',
+  ]
   const escapeCsv = (val: unknown) => {
     if (val === null || val === undefined) return '""'
     const str = String(val).replace(/"/g, '""')
@@ -650,6 +731,9 @@ export function exportAuditLogsToCsv(logs: ModerationAuditLogItem[]): void {
     escapeCsv(log.actor_role),
     escapeCsv(log.confidence !== null ? log.confidence : ''),
     escapeCsv(log.moderator_notes),
+    escapeCsv(log.entry_hash || ''),
+    escapeCsv(log.prev_hash || ''),
+    escapeCsv(log.client_ip || ''),
     escapeCsv(log.created_at),
     escapeCsv(log.expires_at),
   ])
