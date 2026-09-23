@@ -37,6 +37,48 @@ import {
 import { reconcileDecision } from './services/reconcileIntelligence.mjs'
 import { getOpenApiSpec, getSwaggerHtml } from './http/swagger.mjs'
 
+// In-memory cache for sandbox detonation results (1-hour TTL, max 200 entries)
+const SCAN_EVIDENCE_CACHE = new Map()
+const SCAN_CACHE_TTL_MS = 60 * 60 * 1000
+const MAX_SCAN_CACHE_ENTRIES = 200
+
+const ADULT_DOMAIN_REGEX = /(?:^|\.)(?:xxx|adult|porn|sex|fetish|tube8|pornhub|xvideos|redtube|youporn|xhamster|eporner|beeg|spankbang|chaturbate|onlyfans|camsoda|stripchat|livejasmin)\b/i
+const ADULT_KEYWORD_REGEX = /(?:porn|xxx|sex|nude|nsfw|hentai|erotic|adult)/i
+
+function isAdultTarget(urlStr) {
+  if (!urlStr) return false
+  try {
+    const parsed = new URL(/^https?:\/\//i.test(urlStr) ? urlStr : `https://${urlStr}`)
+    const host = parsed.hostname.toLowerCase()
+    return ADULT_DOMAIN_REGEX.test(host) || ADULT_KEYWORD_REGEX.test(host)
+  } catch {
+    return false
+  }
+}
+
+function getCachedScanEvidence(url) {
+  const entry = SCAN_EVIDENCE_CACHE.get(url)
+  if (!entry) return null
+  if (Date.now() - entry.timestamp > SCAN_CACHE_TTL_MS) {
+    SCAN_EVIDENCE_CACHE.delete(url)
+    return null
+  }
+  // Safety guard: purge dirty cached screenshots for adult sites
+  if (isAdultTarget(url) && entry.data?.evidence?.screenshotBase64) {
+    SCAN_EVIDENCE_CACHE.delete(url)
+    return null
+  }
+  return entry.data
+}
+
+function setCachedScanEvidence(url, data) {
+  if (SCAN_EVIDENCE_CACHE.size >= MAX_SCAN_CACHE_ENTRIES) {
+    const oldestKey = SCAN_EVIDENCE_CACHE.keys().next().value
+    if (oldestKey) SCAN_EVIDENCE_CACHE.delete(oldestKey)
+  }
+  SCAN_EVIDENCE_CACHE.set(url, { timestamp: Date.now(), data })
+}
+
 const server = createServer(async (req, res) => {
   res.req = req
   const requestId = randomUUID()
@@ -547,25 +589,53 @@ const server = createServer(async (req, res) => {
     let finalScanText = text
     let scannerFailed = false
     const scannerEvidence = []
-    const urlEntities = entities.filter(e => e.type === 'url').slice(0, 3) // Scan up to 3 URLs max
+    let urlEntities = entities.filter(e => e.type === 'url').slice(0, 3) // Scan up to 3 URLs max
 
-    if (urlEntities.length > 0 && process.env.SCANNER_URL) {
+    // If submission is type 'url' or text is a bare domain, ensure it is queued for scanner even if not detected by message regex
+    if (urlEntities.length === 0 && (body.type === 'url' || /^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(?:\/.*)?$/.test(text.trim()))) {
+      const trimmedUrl = text.trim()
+      urlEntities = [{
+        type: 'url',
+        value: trimmedUrl,
+        normalizedValue: /^https?:\/\//i.test(trimmedUrl) ? trimmedUrl : `https://${trimmedUrl}`
+      }]
+    } else if (urlEntities.length === 0) {
+      // Also queue extracted bare domain entities (e.g. multiple bare links like "eporner.com\nyoutube.com")
+      const domainEntities = entities.filter(e => e.type === 'domain').slice(0, 3)
+      if (domainEntities.length > 0) {
+        urlEntities = domainEntities.map(d => {
+          const val = String(d.normalizedValue || d.value)
+          return {
+            type: 'url',
+            value: val,
+            normalizedValue: /^https?:\/\//i.test(val) ? val : `https://${val}`
+          }
+        })
+      }
+    }
+
+    const scannerBaseUrl = process.env.SCANNER_URL || 'http://localhost:8789'
+
+    if (urlEntities.length > 0 && scannerBaseUrl) {
       const scanPromises = urlEntities.map(async (urlEntity) => {
-        const scanRes = await fetch(`${process.env.SCANNER_URL}/scan`, {
+        const targetToScan = urlEntity.normalizedValue || urlEntity.value
+        const cached = getCachedScanEvidence(targetToScan)
+        if (cached) {
+          return cached
+        }
+        const scanRes = await fetch(`${scannerBaseUrl}/scan`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            // Matches the optional shared-secret check in the scanner
-            // service. Sending an empty string when unset is harmless: the
-            // scanner only enforces the header when it has its own secret
-            // configured.
             'x-scanner-secret': process.env.SCANNER_SHARED_SECRET || '',
           },
-          body: JSON.stringify({ url: urlEntity.value }),
-          signal: AbortSignal.timeout(20000)
+          body: JSON.stringify({ url: targetToScan }),
+          signal: AbortSignal.timeout(25000)
         })
         if (!scanRes.ok) throw new Error(`Scanner returned ${scanRes.status}`)
-        return scanRes.json()
+        const data = await scanRes.json()
+        setCachedScanEvidence(targetToScan, data)
+        return data
       })
 
       const results = await Promise.allSettled(scanPromises)
@@ -576,7 +646,18 @@ const server = createServer(async (req, res) => {
             finalScanText += '\n\n' + result.value.textContent
           }
           if (result.value.evidence) {
-            scannerEvidence.push({ url: result.value.requestedUrl, ...result.value.evidence })
+            const isAdult = Boolean(
+              result.value.isAdultContent ||
+              result.value.evidence?.isAdultContent ||
+              isAdultTarget(result.value.requestedUrl || '')
+            )
+            scannerEvidence.push({
+              url: result.value.requestedUrl,
+              ...result.value.evidence,
+              isPartial: Boolean(result.value.isPartial || result.value.evidence?.isPartial),
+              isAdultContent: isAdult,
+              screenshotBase64: isAdult ? null : (result.value.evidence.screenshotBase64 || null),
+            })
           }
           if (result.value.limitations && result.value.limitations.length > 0) {
             // We'll push these into decision.limitations after analyze()

@@ -32,6 +32,14 @@ import { ScreenshotOcrUploader } from './components/ScreenshotOcrUploader'
 import { Camera } from 'lucide-react'
 import { ReportModal } from './components/ReportModal'
 import { ModeratorDashboard } from './components/ModeratorDashboard'
+import {
+  TopAnnouncementBar,
+  ScamTrendsSection,
+  HowItWorksSection,
+  FaqSection,
+  AboutMissionSection,
+  LandingFooter,
+} from './components/LandingSections'
 import './App.css'
 import './components/NavSentinelDock.css'
 
@@ -59,6 +67,8 @@ interface ScannerEvidenceItem {
   emailFields?: number
   externalDomains?: string[]
   screenshotBase64?: string
+  isPartial?: boolean
+  isAdultContent?: boolean
 }
 
 
@@ -78,7 +88,7 @@ function App() {
   const [checked, setChecked] = useState(false)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [apiAnalysis, setApiAnalysis] = useState<ReturnType<typeof analyzeSubmission> | null>(null)
-  const [apiMode, setApiMode] = useState<'local' | 'api'>('local')
+  const [, setApiMode] = useState<'local' | 'api'>('local')
   const [inputType, setInputType] = useState<'message' | 'screenshot'>('message')
   const [intelligenceOverlay, setIntelligenceOverlay] = useState<IntelligenceOverlay | null>(null)
 
@@ -87,6 +97,41 @@ function App() {
   const [copiedKey, setCopiedKey] = useState<string | null>(null)
   const [selectedScreenshot, setSelectedScreenshot] = useState<string | null>(null)
   const [showTechnicalTrace, setShowTechnicalTrace] = useState(false)
+
+  // ScrollSpy: Track current viewport section to highlight active nav bar link
+  const [activeSection, setActiveSection] = useState<'checker' | 'scam-trends' | 'how-it-works' | 'faq' | 'about'>('checker')
+
+  useEffect(() => {
+    const handleScroll = () => {
+      const scrollPos = window.scrollY + 200
+      const isAtBottom = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 60
+
+      if (isAtBottom) {
+        setActiveSection('about')
+        return
+      }
+
+      const sections: Array<{ id: 'checker' | 'scam-trends' | 'how-it-works' | 'faq' | 'about'; el: HTMLElement | null }> = [
+        { id: 'checker', el: document.getElementById('checker-console') },
+        { id: 'scam-trends', el: document.getElementById('scam-trends') },
+        { id: 'how-it-works', el: document.getElementById('how-it-works') },
+        { id: 'faq', el: document.getElementById('faq') },
+        { id: 'about', el: document.getElementById('about') },
+      ]
+
+      for (let i = sections.length - 1; i >= 0; i--) {
+        const sec = sections[i]
+        if (sec.el && sec.el.offsetTop <= scrollPos) {
+          setActiveSection(sec.id)
+          break
+        }
+      }
+    }
+
+    window.addEventListener('scroll', handleScroll, { passive: true })
+    handleScroll()
+    return () => window.removeEventListener('scroll', handleScroll)
+  }, [])
 
   const resultRef = useRef<HTMLElement>(null)
 
@@ -159,7 +204,7 @@ function App() {
         setIntelligenceOverlay((result as Record<string, unknown>).intelligenceOverlay as IntelligenceOverlay)
       }
       setChecked(true)
-      setActiveTab('signals')
+      setActiveTab('all')
       setTimeout(() => {
         resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
       }, 100)
@@ -167,7 +212,7 @@ function App() {
       setApiAnalysis(null)
       setApiMode('local')
       setChecked(true)
-      setActiveTab('signals')
+      setActiveTab('all')
       setTimeout(() => {
         resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
       }, 100)
@@ -192,6 +237,8 @@ function App() {
   }
 
   const hasScreenshot = Boolean(scannerEvidence?.some((ev) => Boolean(ev.screenshotBase64)))
+  const hasAdultContent = Boolean(scannerEvidence?.some((ev) => Boolean(ev.isAdultContent)))
+  const hasDangerousInputs = Boolean(scannerEvidence?.some((ev) => (ev.passwordFields ?? 0) > 0 || (ev.paymentFields ?? 0) > 0))
 
   // Clean, professional formatting for limitations (filters out raw call stack dumps)
   const sanitizedLimitations = useMemo(() => {
@@ -221,66 +268,167 @@ function App() {
     return clean
   }, [decision])
 
+  const handleSelectSample = (sampleText: string) => {
+    setText(sampleText)
+    setInputType('message')
+    setChecked(false)
+    setIntelligenceOverlay(null)
+    const consoleEl = document.getElementById('checker-console')
+    if (consoleEl) {
+      consoleEl.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }
+  }
+
+  const handleStartCheck = () => {
+    const consoleEl = document.getElementById('checker-console')
+    if (consoleEl) {
+      consoleEl.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }
+  }
+
   if (view === 'moderator') {
     return <ModeratorDashboard onBackToScanner={() => setView('checker')} />
   }
 
   return (
-    <main className="app-shell">
-      {/* ── Minimal Clean Navigation Header ────────────────────────── */}
-      <header className="nav-header">
-        <div
-          className="nav-brand"
-          onClick={() => setView('checker')}
-          title="TrustLens LK"
-          role="button"
-          tabIndex={0}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') setView('checker')
-          }}
-        >
-          <div className="nav-logo-box">
-            <img src="/TrustLens_Icon.png" alt="TrustLens LK" className="nav-logo-img" />
-          </div>
-          <div className="nav-brand-title">
-            TrustLens <span className="nav-brand-badge">LK</span>
-          </div>
-        </div>
-
-        <div className="nav-actions">
-          <button
-            type="button"
-            className="nav-btn-portal"
-            onClick={() => setView('moderator')}
-            title="Moderator Portal"
+    <>
+      <TopAnnouncementBar />
+      <main className="app-shell">
+        {/* ── Minimal Clean Navigation Header ────────────────────── */}
+        <header className="nav-header">
+          <div
+            className="nav-brand"
+            onClick={() => {
+              setView('checker')
+              window.scrollTo({ top: 0, behavior: 'smooth' })
+            }}
+            title="TrustLens LK"
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                setView('checker')
+                window.scrollTo({ top: 0, behavior: 'smooth' })
+              }
+            }}
           >
-            <ShieldCheck size={16} />
-            <span>Moderator Portal</span>
-          </button>
-        </div>
-      </header>
+            <div className="nav-logo-box">
+              <img src="/TrustLens_Icon.png" alt="TrustLens LK" className="nav-logo-img" />
+            </div>
+            <div className="nav-brand-title">
+              TrustLens <span className="nav-brand-badge">LK</span>
+            </div>
+          </div>
+
+          {/* Navigation Links with Active ScrollSpy Tracking */}
+          <nav className="nav-links" aria-label="Main Navigation">
+            <a
+              href="#checker-console"
+              className={`nav-link ${activeSection === 'checker' ? 'active' : ''}`}
+              onClick={(e) => {
+                e.preventDefault()
+                setActiveSection('checker')
+                document.getElementById('checker-console')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+              }}
+            >
+              Check a Scam
+            </a>
+            <a
+              href="#scam-trends"
+              className={`nav-link ${activeSection === 'scam-trends' ? 'active' : ''}`}
+              onClick={(e) => {
+                e.preventDefault()
+                setActiveSection('scam-trends')
+                document.getElementById('scam-trends')?.scrollIntoView({ behavior: 'smooth' })
+              }}
+            >
+              Scam Trends
+            </a>
+            <a
+              href="#how-it-works"
+              className={`nav-link ${activeSection === 'how-it-works' ? 'active' : ''}`}
+              onClick={(e) => {
+                e.preventDefault()
+                setActiveSection('how-it-works')
+                document.getElementById('how-it-works')?.scrollIntoView({ behavior: 'smooth' })
+              }}
+            >
+              How It Works
+            </a>
+            <a
+              href="#faq"
+              className={`nav-link ${activeSection === 'faq' ? 'active' : ''}`}
+              onClick={(e) => {
+                e.preventDefault()
+                setActiveSection('faq')
+                document.getElementById('faq')?.scrollIntoView({ behavior: 'smooth' })
+              }}
+            >
+              FAQ
+            </a>
+            <a
+              href="#about"
+              className={`nav-link ${activeSection === 'about' ? 'active' : ''}`}
+              onClick={(e) => {
+                e.preventDefault()
+                setActiveSection('about')
+                document.getElementById('about')?.scrollIntoView({ behavior: 'smooth' })
+              }}
+            >
+              About
+            </a>
+          </nav>
+
+          <div className="nav-actions">
+            <button
+              type="button"
+              className="nav-btn-report"
+              onClick={() => setIsReportModalOpen(true)}
+              title="Report a Scam to Community Registry"
+            >
+              <ShieldAlert size={15} />
+              <span>Report Scam</span>
+            </button>
+            <button
+              type="button"
+              className="nav-btn-portal"
+              onClick={() => setView('moderator')}
+              title="Moderator Portal"
+            >
+              <ShieldCheck size={16} />
+              <span>Moderator Portal</span>
+            </button>
+          </div>
+        </header>
 
       {/* ── Hero Section & Analysis Console ───────────────────────── */}
       <section className="hero">
         <div className="hero-copy">
           <div className="hero-eyebrow">
-            <Zap size={13} />
-            <span>Sri Lanka National Scam Defense</span>
+            <span>Sri Lanka Scam Decision Support</span>
           </div>
           <h1>Does this message deserve your trust?</h1>
           <p className="hero-description">
-            Verify suspicious SMS, WhatsApp messages, payment requests, or links. TrustLens executes deterministic NLP rules, live headless browser sandbox DOM inspection, and threat intelligence.
+            Verify suspicious SMS, WhatsApp messages, payment requests, or links. TrustLens securely scans and analyzes content to protect you from scams and digital threats.
           </p>
-          <div className="hero-features">
-            <span className="feature-tag">🛡️ Anti-SSRF Browser Sandbox</span>
-            <span className="feature-tag">⚡ Zero AI Hallucination</span>
-            <span className="feature-tag">🔒 Private by Default</span>
-            <span className="feature-tag">🇱🇰 Sinhala/Tamil/EN Heuristics</span>
+          <div className="hero-trust-strip">
+            <div className="trust-item">
+              <ShieldCheck size={16} className="trust-icon" />
+              <span>Real-Time Sandbox Inspection</span>
+            </div>
+            <div className="trust-item">
+              <CheckCircle2 size={16} className="trust-icon" />
+              <span>Verified LK Bank & Utility Directory</span>
+            </div>
+            <div className="trust-item">
+              <Lock size={16} className="trust-icon" />
+              <span>Zero-Log Privacy Guard</span>
+            </div>
           </div>
         </div>
 
         {/* Input Console Card */}
-        <div className="console-card">
+        <div id="checker-console" className="console-card">
           <div className="console-card-header">
             <div className="console-label-row">
               <span className="console-label">Suspicious Message or Link</span>
@@ -319,6 +467,7 @@ function App() {
               <span>Upload Screenshot (OCR)</span>
             </button>
           </div>
+
           {inputType === 'screenshot' && (
             <ScreenshotOcrUploader 
               onTextConfirmed={(ocrText) => {
@@ -348,7 +497,7 @@ function App() {
               <span className="char-counter">{text.length.toLocaleString()} / 10,000 characters</span>
               <span className="privacy-badge">
                 <Info size={12} />
-                <span>No passwords or private OTPs will ever be logged. ({apiMode === 'api' ? 'Sandbox API' : 'Local Analysis'})</span>
+                <span>No passwords or private OTPs will ever be logged.</span>
               </span>
             </div>
             <button
@@ -360,7 +509,7 @@ function App() {
               {isAnalyzing ? (
                 <>
                   <span className="spinner" />
-                  <span>Inspecting Sandbox...</span>
+                  <span>Scanning securely...</span>
                 </>
               ) : (
                 <>
@@ -377,7 +526,29 @@ function App() {
           Executive Threat Results Dashboard
          ══════════════════════════════════════════════════════════════ */}
       {checked && (
-        <section ref={resultRef} id="results-dashboard" className="result-section" aria-live="polite">
+        <section
+          ref={resultRef}
+          id="results-dashboard"
+          className={`result-section risk-border-${verdictVariantClass}`}
+          aria-live="polite"
+        >
+          {/* ── Outer Results Frame Identification Bar ─────────────── */}
+          <div className="result-frame-topbar">
+            <div className="result-frame-title">
+              <span className="result-frame-dot" />
+              <span className="result-frame-badge">SCAN RESULTS</span>
+              <span className="result-frame-subtitle">Comprehensive Security Evaluation & Evidence Dossier</span>
+            </div>
+            <div className="result-frame-verdict-pill">
+              {verdictVariantClass === 'verified-safe' || verdictVariantClass === 'official-entity' ? (
+                <span>● VERDICT: SAFE & LEGITIMATE</span>
+              ) : verdictVariantClass === 'high-risk' ? (
+                <span>▲ VERDICT: HIGH RISK / SCAM DETECTED</span>
+              ) : (
+                <span>◆ VERDICT: CAUTION / SUSPICIOUS</span>
+              )}
+            </div>
+          </div>
           
           {/* ── 1. The Command Center Verdict Banner ────────────────── */}
           <div className={`command-verdict-banner ${verdictVariantClass}`}>
@@ -414,7 +585,7 @@ function App() {
               )}
 
               <div className="engine-meta-pill">
-                <span>Anti-SSRF Sandbox • Deterministic NLP v2</span>
+                <span>Advanced Security Scan</span>
               </div>
             </div>
 
@@ -490,9 +661,9 @@ function App() {
                 <span className="stat-value">{decision.findings.length} Flagged</span>
               </div>
               <div className="stat-pill">
-                <span className="stat-label">Browser Sandbox</span>
+                <span className="stat-label">Link Scan</span>
                 <span className="stat-value">
-                  {hasScreenshot ? '📸 DOM Screenshot Captured' : scannerEvidence?.length ? 'Isolated DOM Inspected' : 'Text Analysis Active'}
+                  {hasScreenshot ? '📸 Screenshot Captured' : hasAdultContent ? '18+ Visual Guard Active' : scannerEvidence?.length ? 'Link Inspected' : 'Text Analysis Active'}
                 </span>
               </div>
               <div className="stat-pill">
@@ -504,6 +675,7 @@ function App() {
             </div>
 
           </div>
+
 
           {/* ── 2. Segmented Navigation Tabs ─────────────────────────── */}
           <div className="dashboard-tabs-container">
@@ -524,7 +696,9 @@ function App() {
               >
                 <Activity size={16} />
                 <span>Threat Signals</span>
-                <span className="tab-counter">{decision.findings.length}</span>
+                <span className={`tab-counter ${decision.findings.length > 0 ? 'danger' : 'clean'}`}>
+                  {decision.findings.length}
+                </span>
               </button>
 
               <button
@@ -533,11 +707,13 @@ function App() {
                 onClick={() => setActiveTab('sandbox')}
               >
                 <Terminal size={16} />
-                <span>Safe Browser Sandbox</span>
-                {hasScreenshot ? (
-                  <span className="tab-badge-pill green">📸 Proof</span>
+                <span>Website Scan Evidence</span>
+                {hasDangerousInputs ? (
+                  <span className="tab-badge-pill red">Alert</span>
                 ) : (
-                  <span className="tab-counter">{scannerEvidence?.length ?? 0}</span>
+                  <span className={`tab-counter ${scannerEvidence?.length ? 'clean' : ''}`}>
+                    {scannerEvidence?.length ?? 0}
+                  </span>
                 )}
               </button>
 
@@ -548,8 +724,12 @@ function App() {
               >
                 <Building2 size={16} />
                 <span>National Intel & Consensus</span>
-                {intelligenceOverlay && intelligenceOverlay.netVerdict !== 'NO_INTEL' && (
-                  <span className="tab-badge-pill purple">Live Intel</span>
+                {isOfficialEntity ? (
+                  <span className="tab-badge-pill official">Verified</span>
+                ) : isConfirmedScam ? (
+                  <span className="tab-badge-pill red">Scam Reported</span>
+                ) : (
+                  <span className="tab-badge-pill neutral">Gov/Bank Registry</span>
                 )}
               </button>
             </nav>
@@ -562,14 +742,25 @@ function App() {
             {(activeTab === 'all' || activeTab === 'signals') && (
               <div className="tab-pane active" id="tab-signals">
                 {activeTab === 'all' && (
-                  <div className="section-overview-header">
+                  <div className={`section-overview-header ${decision.findings.length > 0 ? 'status-danger' : 'status-clean'}`}>
                     <div className="section-overview-title">
-                      <Activity size={18} color="var(--brand-primary)" />
-                      <h3>Pillar 1: Threat Signals & Extracted Indicators</h3>
+                      {decision.findings.length > 0 ? (
+                        <AlertOctagon size={22} color="#e11d48" />
+                      ) : (
+                        <CheckCircle2 size={22} color="#059669" />
+                      )}
+                      <div>
+                        <div className="section-step-label">SECURITY SCAN</div>
+                        <h3>Suspicious Links & Patterns Found</h3>
+                      </div>
                     </div>
-                    <span className="section-overview-badge">
-                      {decision.findings.length} Flagged Pattern{decision.findings.length === 1 ? '' : 's'}
-                    </span>
+                    <div className="section-overview-badges">
+                      <span className={`section-overview-badge ${decision.findings.length > 0 ? 'badge-danger' : 'badge-clean'}`}>
+                        {decision.findings.length > 0
+                          ? `${decision.findings.length} Threat Pattern${decision.findings.length === 1 ? '' : 's'} Flagged`
+                          : '0 Threat Signatures (Clean)'}
+                      </span>
+                    </div>
                   </div>
                 )}
                 <div className="tab-grid-layout">
@@ -579,7 +770,7 @@ function App() {
                       <div className="pane-card-header">
                         <div className="pane-title-group">
                           <Activity size={18} color="var(--brand-primary)" />
-                          <h3>Heuristic Detection Signals</h3>
+                          <h3>Suspicious Patterns Detected</h3>
                         </div>
                         <span className="pane-meta-tag">
                           {decision.findings.length} pattern{decision.findings.length === 1 ? '' : 's'} matched
@@ -701,21 +892,44 @@ function App() {
                     </div>
                   </div>
                 </div>
+
+
               </div>
             )}
 
             {/* ── TAB 2: LIVE BROWSER SANDBOX & PROOF ───────────────── */}
             {(activeTab === 'all' || activeTab === 'sandbox') && (
-              <div className="tab-pane active" id="tab-sandbox" style={activeTab === 'all' ? { marginTop: '28px' } : undefined}>
+              <div className="tab-pane active" id="tab-sandbox" style={activeTab === 'all' ? { marginTop: '14px' } : undefined}>
                 {activeTab === 'all' && (
-                  <div className="section-overview-header">
+                  <div className={`section-overview-header ${
+                    hasDangerousInputs
+                      ? 'status-danger'
+                      : hasScreenshot || (scannerEvidence && scannerEvidence.length > 0)
+                        ? 'status-clean'
+                        : 'status-neutral'
+                  }`}>
                     <div className="section-overview-title">
-                      <Terminal size={18} color="var(--brand-secondary)" />
-                      <h3>Pillar 2: Safe Browser Sandbox & Visual Proof</h3>
+                      <Terminal size={22} color={hasDangerousInputs ? '#e11d48' : '#0066FF'} />
+                      <div>
+                        <div className="section-step-label">WEBSITE SCAN EVIDENCE</div>
+                        <h3>Website Scan Evidence & Visual Proof</h3>
+                      </div>
                     </div>
-                    <span className="section-overview-badge">
-                      {hasScreenshot ? '📸 DOM Screenshot Captured' : scannerEvidence?.length ? 'Isolated DOM Inspected' : 'Text Analysis Active'}
-                    </span>
+                    <div className="section-overview-badges">
+                      <span className={`section-overview-badge ${
+                        hasDangerousInputs ? 'badge-danger' : hasAdultContent ? 'badge-neutral' : hasScreenshot ? 'badge-clean' : 'badge-neutral'
+                      }`}>
+                        {hasDangerousInputs
+                          ? 'Credential / Payment Form Detected'
+                          : hasAdultContent
+                            ? '18+ Visual Capture Suppressed'
+                            : hasScreenshot
+                              ? 'Live Website Scanned & Clean'
+                              : scannerEvidence?.length
+                                ? 'Link Safely Scanned'
+                                : 'Text Content (No Link Scanning Required)'}
+                      </span>
+                    </div>
                   </div>
                 )}
                 {scannerEvidence && scannerEvidence.length > 0 ? (
@@ -734,18 +948,28 @@ function App() {
                                 <Terminal size={22} color="var(--brand-secondary)" />
                               </div>
                               <div className="sandbox-intro-text">
-                                <h3>Playwright Headless Browser Sandbox</h3>
-                                <p>Rendered in an isolated Docker container with strict anti-SSRF DNS pinning, redirect filtering, and &lt;5MB data cap.</p>
+                                <h3>Live Website Scanner</h3>
+                                <p>Safely loads the website in an isolated environment to check for malicious content without risking your device.</p>
                               </div>
                             </div>
                             <div className="sandbox-badges-row">
-                              <span className="sandbox-sec-tag">🔒 Anti-SSRF Enforced</span>
-                              <span className="sandbox-sec-tag">⚡ 5MB Byte Cap</span>
-                              <span className="sandbox-sec-tag">🛡️ Isolated DOM</span>
+                              <span className="sandbox-sec-tag">Network Security Enforced</span>
+                              <span className="sandbox-sec-tag">Fast Scanning</span>
+                              <span className="sandbox-sec-tag">Isolated Container</span>
+                              {ev.isAdultContent && (
+                                <span className="sandbox-sec-tag adult-badge-tag" title="Domain flagged as age-restricted or explicit adult material. Visual screenshot suppressed.">
+                                  18+ Content Filtered
+                                </span>
+                              )}
+                              {ev.isPartial && (
+                                <span className="sandbox-sec-tag partial-capture-tag" title="The target server was slow to respond; visible layout and form inputs were securely captured before timeout.">
+                                  Partial Capture (Slow Target Server)
+                                </span>
+                              )}
                             </div>
                           </div>
 
-                          {/* DOM Security Diagnostics Grid */}
+                          {/* Security Diagnostics Grid */}
                           <div className="sandbox-metrics-row">
                             <div className="sb-metric-card">
                               <div className="sb-metric-top">
@@ -763,7 +987,7 @@ function App() {
                               </div>
                               <div className="sb-metric-val">{ev.passwordFields ?? 0}</div>
                               <span className="sb-metric-desc">
-                                {hasPasswordHarvesting ? '⚠️ Credential Harvest Attempt' : 'No password inputs found'}
+                                {hasPasswordHarvesting ? 'Credential Harvest Attempt' : 'No password inputs found'}
                               </span>
                             </div>
 
@@ -774,7 +998,7 @@ function App() {
                               </div>
                               <div className="sb-metric-val">{ev.paymentFields ?? 0}</div>
                               <span className="sb-metric-desc">
-                                {hasPaymentCoercion ? '⚠️ Financial Input Detected' : 'No credit card inputs'}
+                                {hasPaymentCoercion ? 'Financial Input Detected' : 'No credit card inputs'}
                               </span>
                             </div>
 
@@ -788,12 +1012,47 @@ function App() {
                             </div>
                           </div>
 
-                          {/* Visual Proof: Mock macOS Browser Window Frame */}
-                          {ev.screenshotBase64 && (
+                          {/* Visual Proof or Safety Shield */}
+                          {ev.isAdultContent ? (
+                            <div className="browser-mockup-wrapper">
+                              <div className="browser-mockup-header-title">
+                                <ShieldAlert size={15} color="#d97706" />
+                                <span>Content Safety Guard:</span>
+                              </div>
+
+                              <div className="browser-mockup adult-content-shield">
+                                <div className="browser-chrome-bar">
+                                  <div className="browser-dots">
+                                    <span className="dot red" />
+                                    <span className="dot yellow" />
+                                    <span className="dot green" />
+                                  </div>
+                                  <div className="browser-address-bar">
+                                    <Lock size={12} className="browser-lock-icon" />
+                                    <span className="browser-url-text">{defangUrl(ev.url || 'target-url')}</span>
+                                    <span className="browser-adult-tag">18+ RESTRICTED</span>
+                                  </div>
+                                </div>
+
+                                <div className="sandbox-adult-guard-body">
+                                  <div className="adult-guard-icon-wrap">
+                                    <ShieldAlert size={36} color="#d97706" />
+                                  </div>
+                                  <h4>18+ Explicit Content Detected</h4>
+                                  <p>
+                                    Live visual capture has been automatically suppressed by the TrustLens LK Safety Filter to prevent displaying explicit adult material.
+                                  </p>
+                                  <span className="adult-guard-subtext">
+                                    Form security diagnostics and third-party network telemetry remain fully active below.
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          ) : ev.screenshotBase64 ? (
                             <div className="browser-mockup-wrapper">
                               <div className="browser-mockup-header-title">
                                 <Eye size={15} />
-                                <span>Live Visual Render Capture:</span>
+                                <span>Live Website Screenshot:</span>
                               </div>
 
                               <div className="browser-mockup">
@@ -806,7 +1065,12 @@ function App() {
                                   <div className="browser-address-bar">
                                     <Lock size={12} className="browser-lock-icon" />
                                     <span className="browser-url-text">{defangUrl(ev.url || 'target-url')}</span>
-                                    <span className="browser-sandboxed-tag">ISOLATED RENDER</span>
+                                    <span className="browser-sandboxed-tag">SECURE SCAN</span>
+                                    {ev.isPartial && (
+                                      <span className="browser-partial-tag" title="Target web server responded slowly; partial capture preserved.">
+                                        PARTIAL CAPTURE
+                                      </span>
+                                    )}
                                   </div>
                                   <button
                                     type="button"
@@ -824,7 +1088,7 @@ function App() {
                                 >
                                   <img
                                     src={`data:image/jpeg;base64,${ev.screenshotBase64}`}
-                                    alt="Isolated Sandbox Render"
+                                    alt="Secure Scan Screenshot"
                                     className="sandbox-screenshot-img"
                                   />
                                   <div className="browser-viewport-overlay">
@@ -834,7 +1098,7 @@ function App() {
                                 </div>
                               </div>
                             </div>
-                          )}
+                          ) : null}
 
                           {/* Contacted External Domains */}
                           {ev.externalDomains && ev.externalDomains.length > 0 && (
@@ -864,21 +1128,36 @@ function App() {
                     <p>The submitted content is text-only without active URLs. When messages contain hyperlinks, TrustLens spins up an isolated Playwright browser container to safely render and inspect the destination DOM.</p>
                   </div>
                 )}
+
+
               </div>
             )}
 
             {/* ── TAB 3: NATIONAL REGISTRY & COMMUNITY INTEL ────────── */}
             {(activeTab === 'all' || activeTab === 'intel') && (
-              <div className="tab-pane active" id="tab-intel" style={activeTab === 'all' ? { marginTop: '28px' } : undefined}>
+              <div className="tab-pane active" id="tab-intel" style={activeTab === 'all' ? { marginTop: '14px' } : undefined}>
                 {activeTab === 'all' && (
-                  <div className="section-overview-header">
+                  <div className={`section-overview-header ${
+                    isOfficialEntity ? 'status-official' : isConfirmedScam ? 'status-danger' : 'status-neutral'
+                  }`}>
                     <div className="section-overview-title">
-                      <Building2 size={18} color="var(--brand-primary)" />
-                      <h3>Pillar 3: National Registry & Community Consensus</h3>
+                      <Building2 size={22} color={isOfficialEntity ? '#0066FF' : isConfirmedScam ? '#e11d48' : '#64748b'} />
+                      <div>
+                        <div className="section-step-label">REGISTRY & CROWDSOURCING</div>
+                        <h3>National Registry & Community Consensus</h3>
+                      </div>
                     </div>
-                    <span className="section-overview-badge">
-                      {isOfficialEntity ? 'Approved National Entity' : 'Crowdsourced Intelligence'}
-                    </span>
+                    <div className="section-overview-badges">
+                      <span className={`section-overview-badge ${
+                        isOfficialEntity ? 'badge-official' : isConfirmedScam ? 'badge-danger' : 'badge-neutral'
+                      }`}>
+                        {isOfficialEntity
+                          ? 'Verified National Institution (CBSL / Gov.lk)'
+                          : isConfirmedScam
+                            ? 'Community Confirmed Threat'
+                            : 'Unregistered Domain • Crowdsourced Intel'}
+                      </span>
+                    </div>
                   </div>
                 )}
                 <div className="intel-tab-layout">
@@ -951,8 +1230,8 @@ function App() {
                           />
                         </div>
                         <div className="consensus-metric-labels">
-                          <span className="label-safe">🛡️ {intelligenceOverlay.safeCount} Verified Safe Reports</span>
-                          <span className="label-scam">⚠️ {intelligenceOverlay.scamCount} Phishing Threat Reports</span>
+                          <span className="label-safe">{intelligenceOverlay.safeCount} Verified Safe Reports</span>
+                          <span className="label-scam">{intelligenceOverlay.scamCount} Phishing Threat Reports</span>
                         </div>
                       </div>
                     </div>
@@ -984,7 +1263,7 @@ function App() {
                     >
                       <div className="accordion-title-group">
                         <Terminal size={17} />
-                        <span>Technical Audit & Reconciliation Details</span>
+                        <span>Technical Details (For Advanced Users)</span>
                         <span className="policy-pill">Policy: {decision.policyVersion}</span>
                       </div>
                       {showTechnicalTrace ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
@@ -1055,6 +1334,18 @@ function App() {
         </div>
       )}
 
+      {/* ── Active LK Scam Trends ───────────────────────────────────── */}
+      <ScamTrendsSection onSelectSample={handleSelectSample} />
+
+      {/* ── How Scam Checking Works ─────────────────────────────────── */}
+      <HowItWorksSection onStartCheck={handleStartCheck} />
+
+      {/* ── Frequently Asked Questions ──────────────────────────────── */}
+      <FaqSection />
+
+      {/* ── Mission & Story ─────────────────────────────────────────── */}
+      <AboutMissionSection onStartCheck={handleStartCheck} />
+
       {/* ── Report Modal ───────────────────────────────────────────── */}
       <ReportModal
         isOpen={isReportModalOpen}
@@ -1063,12 +1354,13 @@ function App() {
         reportedDomain={detectedDomain}
       />
 
-      {/* ── Footer ─────────────────────────────────────────────────── */}
-      <footer>
-        <span className="footer-brand">TrustLens LK</span>
-        <span>Deterministic heuristics & verified sandbox inspection guide each recommendation.</span>
-      </footer>
+      {/* ── Rich Multi-Column Footer ─────────────────────────────────── */}
+      <LandingFooter
+        onOpenReportModal={() => setIsReportModalOpen(true)}
+        onBackToScanner={handleStartCheck}
+      />
     </main>
+  </>
   )
 }
 

@@ -1,7 +1,7 @@
 import { createServer } from 'node:http'
 import { scanUrl } from './scanner.mjs'
 
-const PORT = process.env.PORT || 8788
+const PORT = process.env.PORT || 8789
 const MAX_BODY_BYTES = 10000
 // Optional shared secret between this scanner and the main API. Left unset,
 // the endpoint stays open (matches its current behavior, so local

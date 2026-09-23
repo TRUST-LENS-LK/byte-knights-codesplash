@@ -189,12 +189,19 @@ export const ReportModal: React.FC<ReportModalProps> = ({
   const [manualIndicator, setManualIndicator] = useState<string | null>(null)
   const targetIndicator = manualIndicator !== null ? manualIndicator : detectedTarget
 
+  useEffect(() => {
+    if (isOpen && !content.trim() && !reportedDomain) {
+      setIsEditingTarget(true)
+    }
+  }, [isOpen, content, reportedDomain])
+
   // Compute client-side SHA-256
   useEffect(() => {
-    if (content && isOpen) {
-      computeSha256(content).then(setSha256).catch(() => setSha256(''))
+    if (isOpen) {
+      const source = content.trim() || targetIndicator.trim() || notes.trim() || `community-report-${Date.now()}`
+      computeSha256(source).then(setSha256).catch(() => setSha256(''))
     }
-  }, [content, isOpen])
+  }, [content, targetIndicator, notes, isOpen])
 
   // Intelligently pre-select the most relevant threat category when modal opens
   useEffect(() => {
@@ -250,7 +257,19 @@ export const ReportModal: React.FC<ReportModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!sha256) {
+
+    if (!targetIndicator.trim() && !content.trim() && !notes.trim()) {
+      setError('Please provide a suspicious link, phone number, or description of the scam.')
+      return
+    }
+
+    let hash = sha256
+    if (!hash) {
+      const source = content.trim() || targetIndicator.trim() || notes.trim() || `community-report-${Date.now()}`
+      hash = await computeSha256(source).catch(() => '')
+    }
+
+    if (!hash) {
       setError('Cryptographic fingerprint could not be computed for this content.')
       return
     }
@@ -265,7 +284,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({
       const res = await submitUserReport({
         reportType,
         threatCategory,
-        contentSha256: sha256,
+        contentSha256: hash,
         reportedDomain: finalTarget,
         notes: notes.trim() || null,
         submissionId: submissionId || null,

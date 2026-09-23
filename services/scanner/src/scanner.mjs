@@ -1,5 +1,65 @@
 import { chromium } from 'playwright-core'
-import { lookup } from 'node:dns/promises'
+import { Resolver, lookup } from 'node:dns/promises'
+
+// Dedicated Cloudflare Family DNS resolver (1.1.1.3 / 1.0.0.3) for zero-cost malware & adult filtering
+const familyDnsResolver = new Resolver()
+try {
+  familyDnsResolver.setServers(['1.1.1.3', '1.0.0.3'])
+} catch {
+  // Fallback to default if setServers throws in custom environments
+}
+
+// Known adult TLDs and regex patterns (Layer 1)
+const ADULT_TLD_REGEX = /\.(xxx|adult|porn|sex)$/i
+const ADULT_KEYWORDS_REGEX = /(?:^|[.-])(porn|xxx|adult|erotic|nsfw|sex|nude|cams?|tubes?|fuck|boobs?|hentai|strip|dildo)(?:[.-]|$)/i
+const KNOWN_ADULT_DOMAINS = new Set([
+  'eporner.com',
+  'pornhub.com',
+  'xvideos.com',
+  'xnxx.com',
+  'redtube.com',
+  'chaturbate.com',
+  'onlyfans.com',
+  'youporn.com',
+  'xhamster.com',
+  'spankbang.com',
+  'beeg.com',
+  'stripchat.com',
+  'cam4.com',
+  'fapchat.com',
+  'livejasmin.com',
+  'bonga.com',
+  'bongacams.com',
+  'tube8.com',
+  'porn.com',
+  'thumbzilla.com',
+  'hqporner.com',
+  'txxx.com',
+  'daftsex.com'
+])
+
+export function isKnownAdultDomain(hostname) {
+  if (!hostname) return false
+  const cleanHost = hostname.toLowerCase().replace(/^www\./, '')
+  if (KNOWN_ADULT_DOMAINS.has(cleanHost)) return true
+  if (ADULT_TLD_REGEX.test(cleanHost)) return true
+  if (ADULT_KEYWORDS_REGEX.test(cleanHost)) return true
+  return false
+}
+
+export async function isCloudflareFamilyBlocked(hostname) {
+  if (!hostname) return false
+  try {
+    const addresses = await familyDnsResolver.resolve4(hostname).catch(() => [])
+    // Cloudflare Family DNS (1.1.1.3) resolves adult / malware domains to 0.0.0.0
+    if (addresses.includes('0.0.0.0')) {
+      return true
+    }
+  } catch {
+    // If resolution fails or throws, ignore
+  }
+  return false
+}
 
 const SCAN_TIMEOUT = parseInt(process.env.SCAN_TIMEOUT || '15000', 10)
 const MAX_REDIRECTS = parseInt(process.env.MAX_REDIRECTS || '5', 10)
@@ -48,21 +108,37 @@ export async function scanUrl(targetUrl) {
 
   const context = await browser.newContext({
     acceptDownloads: false, // Security: block downloads
+    viewport: { width: 1280, height: 800 },
+    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
   })
 
   const page = await context.newPage()
   const limitations = []
   let totalRedirects = 0
 
-  // Security: DNS Rebinding Protection & Redirect SSRF handling via request interception
+  // Security & Performance: DNS Rebinding Protection, Media Blocking & Redirect SSRF handling
   await page.route('**/*', async (route) => {
     const request = route.request()
-    const requestUrl = new URL(request.url())
+    const resourceType = request.resourceType()
+    let requestUrl
+    try {
+      requestUrl = new URL(request.url())
+    } catch {
+      return route.abort('blockedbyclient').catch(() => {})
+    }
     
+    // Fast-abort large audio/video streaming files to preserve bandwidth, but allow fonts, images, and stylesheets
+    if (
+      resourceType === 'media' ||
+      /\.(mp4|webm|ogg|mp3|wav|flac|aac)(\?.*)?$/i.test(requestUrl.pathname)
+    ) {
+      return route.abort('blockedbyclient').catch(() => {})
+    }
+
     // Only allow http/https
     if (requestUrl.protocol !== 'http:' && requestUrl.protocol !== 'https:') {
       limitations.push(`Blocked unsafe protocol: ${requestUrl.protocol}`)
-      return route.abort('blockedbyclient')
+      return route.abort('blockedbyclient').catch(() => {})
     }
 
     try {
@@ -71,11 +147,11 @@ export async function scanUrl(targetUrl) {
       if (isPrivateIp(address)) {
         console.warn(`[Scanner] Blocked request to private IP ${address} for ${requestUrl.hostname}`)
         limitations.push('Blocked navigation to private or internal network address')
-        return route.abort('blockedbyclient')
+        return route.abort('blockedbyclient').catch(() => {})
       }
     } catch {
       limitations.push(`DNS resolution failed for ${requestUrl.hostname}`)
-      return route.abort('namenotresolved')
+      return route.abort('namenotresolved').catch(() => {})
     }
 
     // Instead of route.continue(), which allows native browser redirect following (bypassing our route handler),
@@ -96,13 +172,24 @@ export async function scanUrl(targetUrl) {
         const location = fetchResponse.headers()['location']
         if (location) {
           if (request.isNavigationRequest()) {
-            // Store the redirect URL to be handled by the outer loop for top-level navigations
-            page._nextRedirectUrl = new URL(location, requestUrl).href
+            totalRedirects++
+            if (totalRedirects > MAX_REDIRECTS) {
+              limitations.push(`Scan stopped: Exceeded maximum redirect limit of ${MAX_REDIRECTS}`)
+              return route.abort('blockedbyclient').catch(() => {})
+            }
           } else {
-            // Subresource redirect: block to prevent native redirection bypassing SSRF checks
-            limitations.push(`Blocked redirect for subresource ${requestUrl.hostname}`)
+            // Subresource redirect: verify destination doesn't target private network
+            try {
+              const redirectTarget = new URL(location, requestUrl)
+              const { address } = await lookup(redirectTarget.hostname)
+              if (isPrivateIp(address)) {
+                limitations.push(`Blocked redirect for subresource ${redirectTarget.hostname}`)
+                return route.abort('blockedbyclient').catch(() => {})
+              }
+            } catch {
+              return route.abort('namenotresolved').catch(() => {})
+            }
           }
-          return route.abort('blockedbyclient')
         }
       }
 
@@ -110,47 +197,70 @@ export async function scanUrl(targetUrl) {
       const body = await fetchResponse.body().catch(() => Buffer.alloc(0))
       if (body.length > maxBytes) {
         limitations.push('Blocked resource exceeding maximum allowed actual size (Body)')
-        return route.abort('blockedbyclient')
+        return route.abort('blockedbyclient').catch(() => {})
       }
       
       return route.fulfill({ response: fetchResponse, body })
     } catch (e) {
-      return route.abort('failed')
+      return route.abort('failed').catch(() => {})
     }
   })
 
   try {
-    let currentUrl = targetUrl
-    let response = null
-    let finalUrl = currentUrl
-    let totalRedirects = 0
-
-    while (true) {
-      page._nextRedirectUrl = null
-      try {
-        response = await page.goto(currentUrl, { waitUntil: 'domcontentloaded', timeout: SCAN_TIMEOUT })
-      } catch (e) {
-        if (page._nextRedirectUrl) {
-          totalRedirects++
-          if (totalRedirects > MAX_REDIRECTS) {
-            limitations.push(`Scan stopped: Exceeded maximum redirect limit of ${MAX_REDIRECTS}`)
-            break
-          }
-          currentUrl = page._nextRedirectUrl
-          continue
-        }
-        if (e.message.includes('Timeout')) {
-          limitations.push(`Scan timed out after ${SCAN_TIMEOUT}ms`)
-        } else if (!e.message.includes('ERR_BLOCKED_BY_CLIENT') || limitations.length === 0) {
-          // If it's a blocked request, limitations should already have been populated by the route handler
-          limitations.push(`Navigation failed: ${e.message}`)
-        }
-      }
-      finalUrl = currentUrl
-      break
+    let currentUrl = (targetUrl || '').trim()
+    // Normalize defanged notation (hxxps:// -> https://, [.] -> .) and bare domains
+    currentUrl = currentUrl
+      .replace(/^hxxps:\/\//i, 'https://')
+      .replace(/^hxxp:\/\//i, 'http://')
+      .replace(/\[\.\]/g, '.')
+    if (!/^https?:\/\//i.test(currentUrl)) {
+      currentUrl = `https://${currentUrl}`
     }
+
+    let isAdultContent = false
+    try {
+      const initialHost = new URL(currentUrl).hostname
+      if (isKnownAdultDomain(initialHost)) {
+        isAdultContent = true
+      } else if (await isCloudflareFamilyBlocked(initialHost)) {
+        isAdultContent = true
+      }
+    } catch {
+      // Handled in navigation
+    }
+
+    let response = null
+    try {
+      response = await page.goto(currentUrl, { waitUntil: 'load', timeout: SCAN_TIMEOUT }).catch(async (err) => {
+        if (err.message.includes('Timeout')) {
+          return page.goto(currentUrl, { waitUntil: 'domcontentloaded', timeout: 5000 }).catch(() => null)
+        }
+        throw err
+      })
+    } catch (e) {
+      if (e.message.includes('Timeout')) {
+        limitations.push(`Scan timed out after ${SCAN_TIMEOUT}ms`)
+      } else if (!e.message.includes('ERR_BLOCKED_BY_CLIENT') || limitations.length === 0) {
+        limitations.push(`Navigation failed: ${e.message}`)
+      }
+    }
+    const finalUrl = page.url() || currentUrl
+    try {
+      const finalHost = new URL(finalUrl).hostname
+      if (!isAdultContent && (isKnownAdultDomain(finalHost) || await isCloudflareFamilyBlocked(finalHost))) {
+        isAdultContent = true
+      }
+    } catch {}
     
-    if (!response && limitations.length === 0) {
+    let isPartial = false
+    if (!response && limitations.length > 0) {
+      const hasContent = await page.evaluate(() => Boolean(document.body && document.body.innerHTML.length > 50)).catch(() => false)
+      if (hasContent) {
+        isPartial = true
+      } else {
+        throw new Error('No response received from target URL')
+      }
+    } else if (!response) {
       throw new Error('No response received from target URL')
     }
 
@@ -208,9 +318,45 @@ export async function scanUrl(targetUrl) {
       forms: 0, loginForms: 0, passwordFields: 0, emailFields: 0, paymentFields: 0, externalDomains: []
     }))
 
-    const screenshotBuffer = await page.screenshot({ type: 'jpeg', quality: 50 }).catch(() => null)
-    if (screenshotBuffer) {
-      evidence.screenshotBase64 = screenshotBuffer.toString('base64')
+    // Layer 3: Inspect HTML meta rating and explicit keywords in DOM
+    if (!isAdultContent) {
+      const isAdultMeta = await page.evaluate(() => {
+        const ratingMeta = document.querySelector('meta[name="rating" i], meta[name="RATING" i]')
+        if (ratingMeta) {
+          const content = (ratingMeta.getAttribute('content') || '').toLowerCase()
+          if (content.includes('adult') || content.includes('rta') || content.includes('mature') || content.includes('18+')) {
+            return true
+          }
+        }
+        const titleText = (document.title || '').toLowerCase()
+        const metaDesc = (document.querySelector('meta[name="description" i]')?.getAttribute('content') || '').toLowerCase()
+        if (/(?:^|\s)(porn|xxx|18\+|adults only|explicit sex|free porn)(?:\s|$)/i.test(`${titleText} ${metaDesc}`)) {
+          return true
+        }
+        return false
+      }).catch(() => false)
+
+      if (isAdultMeta) {
+        isAdultContent = true
+      }
+    }
+
+    // Ensure all styles, web fonts, and dynamic JavaScript hydration have completely rendered
+    await page.waitForLoadState('networkidle', { timeout: 4000 }).catch(() => {})
+    await page.waitForTimeout(1000).catch(() => {})
+
+    evidence.isPartial = isPartial
+    evidence.isAdultContent = isAdultContent
+
+    // Visual Capture Safety Guard: Suppress visual screenshot if adult content is detected
+    if (isAdultContent) {
+      limitations.push('Visual capture suppressed: 18+ adult content detected by safety filter.')
+      evidence.screenshotBase64 = null
+    } else {
+      const screenshotBuffer = await page.screenshot({ type: 'jpeg', quality: 85, fullPage: false }).catch(() => null)
+      if (screenshotBuffer) {
+        evidence.screenshotBase64 = screenshotBuffer.toString('base64')
+      }
     }
 
     return {
@@ -221,6 +367,8 @@ export async function scanUrl(targetUrl) {
       redirectCount: totalRedirects,
       https: isHttps,
       evidence,
+      isPartial,
+      isAdultContent,
       limitations: Array.from(new Set(limitations)),
       textContent: textContent.trim().slice(0, MAX_TEXT_LENGTH), // Bound text size
       httpStatus: response ? response.status() : 0
