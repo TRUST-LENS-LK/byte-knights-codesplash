@@ -712,14 +712,17 @@ export async function submitReport(payload) {
   }
 
   if (isSupabaseConfigured()) {
+    // Exclude virtual/in-memory threat_category from Supabase insert since public.user_reports table schema does not include this column
+    const { threat_category, ...dbRow } = report
     const response = await fetch(`${SUPABASE_URL}/rest/v1/user_reports`, {
       method: 'POST',
       headers: getHeaders(),
-      body: JSON.stringify(report),
+      body: JSON.stringify(dbRow),
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     })
     if (!response.ok) {
-      throw new Error(`Failed to persist report to Supabase: ${response.statusText}`)
+      const errText = await response.text().catch(() => response.statusText)
+      throw new Error(`Failed to persist report to Supabase: ${errText || response.statusText}`)
     }
     const [saved] = await response.json()
     return { ...report, ...(saved || {}) }
