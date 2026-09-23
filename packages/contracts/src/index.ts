@@ -242,6 +242,22 @@ export const userReportSchema = z.object({
   reviewedAt: z.string().nullable().optional(),
 });
 
+export const protectedEntityTypeSchema = z.enum([
+  "OFFICIAL_NATIONAL",
+  "TOP_GLOBAL",
+]);
+
+export const protectedEntitySchema = z.object({
+  isProtected: z.boolean(),
+  type: protectedEntityTypeSchema,
+  name: z.string(),
+  badge: z.string(),
+  warning: z.string(),
+  recommendedAction: z.enum(["REJECT", "APPROVE"]),
+});
+
+export type ProtectedEntity = z.infer<typeof protectedEntitySchema>;
+
 export const moderationActionSchema = z.object({
   reportId: z.string().uuid(),
   action: z.enum(["APPROVE", "REJECT", "RETIRE"]),
@@ -249,6 +265,8 @@ export const moderationActionSchema = z.object({
   indicatorType: z.enum(["domain", "content_hash", "phone", "url"]).optional(),
   category: z.string().max(100).optional().nullable(),
   confidence: z.number().min(0.1).max(1.0).optional().nullable(),
+  overrideProtectedEntity: z.boolean().optional().nullable(),
+  incidentReason: z.string().max(500).optional().nullable(),
 });
 
 export const verifiedIntelligenceSchema = z.object({

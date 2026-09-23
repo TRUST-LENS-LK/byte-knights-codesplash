@@ -495,3 +495,197 @@
     justify-content: flex-end;
   }
 }
+
+/* ── Protected Entity Guardrail Banner ──────────────────────────── */
+.neo-protected-entity-banner {
+  background: #FFFBEB;
+  border: 1px solid #FCD34D;
+  border-radius: 16px;
+  padding: 16px 20px;
+  margin-bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.08);
+}
+
+.neo-protected-entity-banner.national {
+  background: #FEF3C7;
+  border-color: #F59E0B;
+}
+
+.neo-protected-entity-banner.global {
+  background: #EFF6FF;
+  border-color: #93C5FD;
+}
+
+.neo-protected-banner-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.neo-protected-badge-lg {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  color: #0F172A;
+}
+
+.neo-protected-entity-banner.national .neo-protected-badge-lg {
+  border-color: #F59E0B;
+  color: #92400E;
+  background: #FEF3C7;
+}
+
+.neo-protected-entity-banner.global .neo-protected-badge-lg {
+  border-color: #60A5FA;
+  color: #1E40AF;
+  background: #DBEAFE;
+}
+
+.neo-protected-entity-title {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #0F172A;
+}
+
+.neo-protected-warning-text {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: #78350F;
+}
+
+.neo-protected-entity-banner.global .neo-protected-warning-text {
+  color: #1E3A8A;
+}
+
+.neo-protected-recommendation-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: #FFFFFF;
+  border: 1px solid #FDE68A;
+  border-radius: 12px;
+  padding: 10px 14px;
+  flex-wrap: wrap;
+}
+
+.neo-protected-entity-banner.global .neo-protected-recommendation-box {
+  border-color: #BFDBFE;
+}
+
+.neo-recommendation-tag {
+  display: inline-flex;
+  align-items: center;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: #EF4444;
+  color: #FFFFFF;
+  text-transform: uppercase;
+}
+
+.neo-recommendation-text {
+  font-size: 12px;
+  font-weight: 600;
+  color: #0F172A;
+  flex: 1;
+}
+
+.neo-btn-dismiss-recommended {
+  background: #059669;
+  color: #FFFFFF;
+  border: none;
+  border-radius: 10px;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.neo-btn-dismiss-recommended:hover:not(:disabled) {
+  background: #047857;
+  transform: translateY(-1px);
+}
+
+/* ── Circuit Breaker Card ───────────────────────────────────────── */
+.neo-circuit-breaker-card {
+  background: #FFF1F2;
+  border: 1px solid #FECDD3;
+  border-radius: 14px;
+  padding: 16px 18px;
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.neo-circuit-breaker-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #9F1239;
+}
+
+.neo-circuit-breaker-desc {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #881337;
+}
+
+.neo-circuit-breaker-checkbox-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #0F172A;
+  cursor: pointer;
+  padding: 8px 10px;
+  background: #FFFFFF;
+  border: 1px solid #FDA4AF;
+  border-radius: 8px;
+}
+
+.neo-circuit-breaker-checkbox-label input[type='checkbox'] {
+  margin-top: 2px;
+  width: 16px;
+  height: 16px;
+  accent-color: #E11D48;
+  cursor: pointer;
+}
+
+.neo-guardrail-error-banner {
+  background: #FEF2F2;
+  border: 1px solid #F87171;
+  border-radius: 10px;
+  padding: 10px 14px;
+  color: #991B1B;
+  font-size: 12px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}

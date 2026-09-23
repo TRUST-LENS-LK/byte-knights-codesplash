@@ -149,6 +149,38 @@ In compliance with data privacy regulations (GDPR / ISO 27001), audit records ol
 
 ---
 
+### 3.5 Protected Entity Guardrail System & Approval Circuit Breaker (Zero-Hardcoding Architecture)
+- **Problem Statement**:
+  Citizens regularly submit legitimate official domains (e.g., `police.lk`, `cbsl.gov.lk`) or high-reputation global platforms (e.g., `facebook.com`, `google.com`) after receiving scam SMS messages or viewing malicious third-party ads. Without guardrails, an inattentive moderator might approve the domain as a scam, causing catastrophic false positives for millions of citizens.
+- **Architectural Policy (Zero Hardcoding)**:
+  - **No Static Domain Lists**: Never hardcodes lists of banks, police, or tech giants.
+  - **Authoritative National Lookup**: Dynamically invokes Member 3's `lookupDomainDirectory(cleanDomain)` to query `approved_organizations`.
+  - **Global Platform Evaluation**: Dynamically evaluates `isTopGlobalDomain(cleanDomain)` using Tranco Top-1M ranking data from `@trustlens/domain`.
+- **Vertical Features Implemented**:
+  1. **Dynamic Queue Triage & Visual Badging**:
+     - Automatically decorates incoming reports with `protected_entity`:
+       - `🏛️ Official National Entity` (e.g., Sri Lanka Police, Central Bank of Sri Lanka).
+       - `🌐 Top Global Platform` (e.g., Meta, Google, Microsoft).
+     - Moderator queue displays a distinct warning pill and recommended action: `⚡ Recom: REJECT`.
+  2. **Approval Circuit Breaker (HTTP 422 Enforcement)**:
+     - The backend route `/api/moderation/review` blocks direct approval of protected entities, returning `PROTECTED_ENTITY_OVERRIDE_REQUIRED` (HTTP 422).
+     - Approval is locked unless the moderator explicitly passes:
+       - `overrideProtectedEntity: true`
+       - `incidentReason: string` (e.g., `SLCERT-INC-2026-089: Active DNS Hijack Incident`).
+     - Audit logs record the event under threat category `Protected Entity Override`.
+  3. **One-Click Fast Dismissal UI**:
+     - `ReviewDecisionModal.tsx` provides a 1-click button: *"Dismiss as Legitimate Entity (Recommended)"*, allowing rapid clearance of false reports without friction.
+  4. **False Alarm Dispute (`false_positive`) Exemption**:
+     - If a citizen submits a `false_positive` dispute for `police.lk`, approving it clears the domain as `VERIFIED_SAFE`, which is allowed without incident overrides.
+  5. **Reconciliation Disambiguation (`GLOBAL_PLATFORM_WITH_CAUTION`)**:
+     - When a citizen reports a scam hosted on Facebook or Google, the reconciliation engine evaluates 0 or 1 crowd report to `GLOBAL_PLATFORM_WITH_CAUTION` (LOW risk, `PROCEED_CAUTIOUSLY`).
+     - Clarifies to the user that third-party content abuse does not compromise the root platform.
+  6. **Anti-Spoofing Behavioral Override**:
+     - If any message body demands credentials, passwords, or OTPs, `applyBehavioralImpersonationOverride()` escalates to `POSSIBLE_IMPERSONATION` (`HIGH` risk, `STOP_AND_AVOID`), ensuring malicious lures never hide behind legitimate names.
+
+
+---
+
 ## 4. Complete API Surface (Member 5 Endpoints)
 
 | Method | Endpoint | Auth Required | Description |

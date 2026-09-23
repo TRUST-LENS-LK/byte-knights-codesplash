@@ -106,7 +106,7 @@ const THREAT_CATEGORIES: ThreatCategoryOption[] = [
   {
     id: 'impersonation',
     label: 'Impersonation',
-    sublabel: 'Spoofing Bank or CEB',
+    sublabel: 'Brand or Entity Spoofing',
     icon: UserX,
     color: '#EC4899',
   },
@@ -123,7 +123,7 @@ const FALSE_ALARM_CATEGORIES: ThreatCategoryOption[] = [
   {
     id: 'official_institution',
     label: 'Official Institution',
-    sublabel: 'Bank, Gov, CEB, Telecom',
+    sublabel: 'Official Organization or Utility',
     icon: Landmark,
     color: '#10B981',
   },
@@ -141,11 +141,18 @@ const FALSE_ALARM_CATEGORIES: ThreatCategoryOption[] = [
     icon: MessageCircle,
     color: '#6366F1',
   },
+  {
+    id: 'public_information',
+    label: 'Public / Advisory',
+    sublabel: 'News, Notice or General Content',
+    icon: FileText,
+    color: '#64748B',
+  },
 ]
 
 function detectDefaultThreat(text: string, domain?: string | null): string {
   const t = `${domain || ''} ${text}`.toLowerCase()
-  if (/boc|combank|bank|hnb|sampath|login|verify|credential|pin|otp|password|security|card/.test(t)) {
+  if (/bank|banking|financial|account|card|debit|credit|login|verify|credential|pin|otp|password|security/.test(t)) {
     return 'phishing'
   }
   if (/job|earn|part-time|salary|hiring|advance|task|telegram/.test(t)) {
@@ -154,7 +161,7 @@ function detectDefaultThreat(text: string, domain?: string | null): string {
   if (/\.apk|download|install|app|update|trojan|malware/.test(t)) {
     return 'malware'
   }
-  if (/ceb|electricity|water|bill|telecom|dialog|mobitel|lottery|prize|won|lucky|cash|gift|reward|offer/.test(t)) {
+  if (/electricity|utility|water|bill|telecom|carrier|provider|payment|lottery|prize|won|lucky|cash|gift|reward|offer/.test(t)) {
     return 'financial_scam'
   }
   return 'phishing'
@@ -163,10 +170,11 @@ function detectDefaultThreat(text: string, domain?: string | null): string {
 export const ReportModal: React.FC<ReportModalProps> = ({
   isOpen,
   onClose,
-  content,
+  content = '',
   reportedDomain,
   submissionId,
 }) => {
+  const safeContent = typeof content === 'string' ? content : ''
   const [reportType, setReportType] = useState<ReportType>('suspicious')
   const [threatCategory, setThreatCategory] = useState<string>('phishing')
   const [notes, setNotes] = useState('')
@@ -180,21 +188,26 @@ export const ReportModal: React.FC<ReportModalProps> = ({
   const detectedTarget = useMemo(() => {
     return (
       reportedDomain ||
-      content.match(/https?:\/\/[^\s/$.?#].[^\s]*/i)?.[0] ||
-      content.match(/[a-zA-Z0-9-]+\.[a-zA-Z]{2,}(?:\/[^\s]*)?/i)?.[0] ||
+      safeContent.match(/https?:\/\/[^\s/$.?#].[^\s]*/i)?.[0] ||
+      safeContent.match(/[a-zA-Z0-9-]+\.[a-zA-Z]{2,}(?:\/[^\s]*)?/i)?.[0] ||
       ''
     )
-  }, [reportedDomain, content])
+  }, [reportedDomain, safeContent])
 
   const [manualIndicator, setManualIndicator] = useState<string | null>(null)
   const targetIndicator = manualIndicator !== null ? manualIndicator : detectedTarget
 
-  // Compute client-side SHA-256
+  // Compute client-side SHA-256 (falls back to targetIndicator or notes if content is empty)
   useEffect(() => {
-    if (content && isOpen) {
-      computeSha256(content).then(setSha256).catch(() => setSha256(''))
+    if (isOpen) {
+      const payloadToHash =
+        safeContent.trim() ||
+        (targetIndicator && targetIndicator.trim()) ||
+        (notes && notes.trim()) ||
+        'citizen-threat-submission'
+      computeSha256(payloadToHash).then(setSha256).catch(() => setSha256(''))
     }
-  }, [content, isOpen])
+  }, [safeContent, targetIndicator, notes, isOpen])
 
   // Intelligently pre-select the most relevant threat category when modal opens
   useEffect(() => {
@@ -202,10 +215,10 @@ export const ReportModal: React.FC<ReportModalProps> = ({
       if (reportType === 'false_positive') {
         setThreatCategory('official_institution')
       } else {
-        setThreatCategory(detectDefaultThreat(content, targetIndicator))
+        setThreatCategory(detectDefaultThreat(safeContent, targetIndicator))
       }
     }
-  }, [isOpen, reportType, content, targetIndicator])
+  }, [isOpen, reportType, safeContent, targetIndicator])
 
   const handleClose = useCallback(() => {
     if (isSubmitting) return
@@ -250,7 +263,22 @@ export const ReportModal: React.FC<ReportModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!sha256) {
+    let effectiveSha = sha256
+    if (!effectiveSha) {
+      const payloadToHash =
+        (content && content.trim()) ||
+        (targetIndicator && targetIndicator.trim()) ||
+        (notes && notes.trim()) ||
+        'citizen-threat-submission'
+      try {
+        effectiveSha = await computeSha256(payloadToHash)
+        setSha256(effectiveSha)
+      } catch {
+        effectiveSha = ''
+      }
+    }
+
+    if (!effectiveSha) {
       setError('Cryptographic fingerprint could not be computed for this content.')
       return
     }
@@ -260,16 +288,16 @@ export const ReportModal: React.FC<ReportModalProps> = ({
 
     try {
       const finalTarget = targetIndicator.trim() ? defangIndicator(targetIndicator.trim()) : null
-      const excerpt = content.trim().length > 250 ? content.trim().slice(0, 247) + '...' : content.trim()
+      const excerpt = content && content.trim().length > 250 ? content.trim().slice(0, 247) + '...' : (content?.trim() || null)
 
       const res = await submitUserReport({
         reportType,
         threatCategory,
-        contentSha256: sha256,
+        contentSha256: effectiveSha,
         reportedDomain: finalTarget,
         notes: notes.trim() || null,
         submissionId: submissionId || null,
-        rawExcerpt: excerpt || null,
+        rawExcerpt: excerpt,
       })
 
       if (res.success && res.report) {
@@ -290,6 +318,19 @@ export const ReportModal: React.FC<ReportModalProps> = ({
   return createPortal(
     <div
       className="modal-backdrop"
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 999999,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: 'rgba(15, 23, 42, 0.65)',
+        backdropFilter: 'blur(8px)',
+        WebkitBackdropFilter: 'blur(8px)',
+        padding: '16px',
+        boxSizing: 'border-box',
+      }}
       onClick={(e) => {
         if (e.target === e.currentTarget && !isSubmitting) {
           handleClose()
@@ -445,7 +486,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({
                       type="text"
                       value={targetIndicator}
                       onChange={(e) => setManualIndicator(e.target.value)}
-                      placeholder="e.g. ceb-online-payment.top"
+                      placeholder="e.g. suspicious-site.com or login-portal.top"
                       className="clean-target-input"
                     />
                   </div>
@@ -469,21 +510,20 @@ export const ReportModal: React.FC<ReportModalProps> = ({
                       <button
                         type="button"
                         key={tab.type}
-                        className={`clean-intent-pill ${tab.badgeClass} ${isSelected ? 'active' : ''}`}
+                        className={`clean-intent-pill ${isSelected ? 'active selected' : ''}`}
                         role="radio"
                         aria-checked={isSelected}
                         onClick={() => {
                           setReportType(tab.type)
                           if (tab.type === 'false_positive') {
                             setThreatCategory('official_institution')
-                          } else if (threatCategory === 'official_institution' || threatCategory === 'legitimate_business' || threatCategory === 'personal_message') {
+                          } else if (threatCategory === 'official_institution' || threatCategory === 'legitimate_business' || threatCategory === 'personal_message' || threatCategory === 'public_information') {
                             setThreatCategory('phishing')
                           }
                         }}
                       >
                         <TabIcon size={14} aria-hidden="true" />
                         <span>{tab.label}</span>
-                        {isSelected && <span className="clean-active-dot" aria-hidden="true" />}
                       </button>
                     )
                   })}
@@ -498,7 +538,6 @@ export const ReportModal: React.FC<ReportModalProps> = ({
                 <div className="clean-threat-grid" role="radiogroup" aria-label="Threat classification">
                   {availableCategories.map((cat) => {
                     const isSelected = threatCategory === cat.id
-                    const CatIcon = cat.icon
                     return (
                       <button
                         type="button"
@@ -508,15 +547,6 @@ export const ReportModal: React.FC<ReportModalProps> = ({
                         aria-checked={isSelected}
                         onClick={() => setThreatCategory(cat.id)}
                       >
-                        <div
-                          className="clean-threat-icon-box"
-                          style={{
-                            color: cat.color,
-                            backgroundColor: `${cat.color}15`,
-                          }}
-                        >
-                          <CatIcon size={14} aria-hidden="true" />
-                        </div>
                         <div className="clean-threat-text">
                           <span className="clean-threat-title">{cat.label}</span>
                           <span className="clean-threat-sub">{cat.sublabel}</span>
@@ -567,7 +597,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({
                   <button
                     type="submit"
                     className="btn-modal-submit"
-                    disabled={isSubmitting || !sha256}
+                    disabled={isSubmitting}
                   >
                     {isSubmitting ? (
                       <>

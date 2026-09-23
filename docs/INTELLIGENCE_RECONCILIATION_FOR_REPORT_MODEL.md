@@ -146,6 +146,26 @@ flowchart TD
 14. **Immutable Governance Prune Sealing (`PURGE_EXPIRED`)**:
     - Every automated retention purge generates a cryptographically hashed governance entry chained to the active chain tip, permanently recording the deletion timestamp and volume.
 
+### Category 6: Protected Entity Guardrail System & Approval Circuit Breakers (Zero-Hardcoding Architecture)
+15. **Citizen Reports Official National Domain (e.g. `police.lk`, `cbsl.gov.lk`)**:
+    - *The Problem*: Citizens frequently submit legitimate official domains when receiving SMS lures that falsely claim to originate from police or banks. An unobservant moderator might mistakenly approve the domain as a scam.
+    - *Dynamic Guardrail (Zero Hardcoding)*: Queries Member 3's authoritative `lookupDomainDirectory(cleanDomain)` dynamically against `approved_organizations`.
+    - *Outcome*: Triage tags the item as `🏛️ Official National Entity` with recommended action `REJECT`. Direct approval is locked by the **Approval Circuit Breaker** (`PROTECTED_ENTITY_OVERRIDE_REQUIRED`, HTTP 422).
+16. **Citizen Reports Global Platform Abused in Campaign (e.g. `facebook.com`, `google.com`)**:
+    - *The Problem*: Fraudulent ads or phishing pages hosted on top global platforms lead users to report the root domain itself.
+    - *Dynamic Guardrail (Zero Hardcoding)*: Dynamically evaluates `isTopGlobalDomain(cleanDomain)` using Tranco Top-1M ranking data from `@trustlens/domain`.
+    - *Outcome*: Triage tags the item as `🌐 Top Global Platform` with recommended action `REJECT`. In the reconciliation engine, isolated crowd reports evaluate to `GLOBAL_PLATFORM_WITH_CAUTION` (Risk: LOW, `PROCEED_CAUTIOUSLY`), disambiguating third-party platform abuse from core domain compromise.
+17. **Approval Circuit Breaker & Incident Override Workflow**:
+    - If a moderator attempts to click `APPROVE` on a protected entity, the API and UI circuit breakers block execution unless:
+      1. `overrideProtectedEntity === true` is explicitly checked.
+      2. An `incidentReason` or CERT Ticket Reference (e.g. `SLCERT-INC-2026-089: Active DNS Hijack`) is provided.
+    - The audit trail records the action under threat category `Protected Entity Override` with full operator accountability.
+18. **Active Behavioral Impersonation Override on Protected Entities**:
+    - If a message quotes a legitimate global platform (e.g. `facebook.com`) or official domain, but the body contains active credential or payment harvesting (demanding OTPs, bank passwords, or instant money transfers), the engine executes `applyBehavioralImpersonationOverride()`:
+    - *Outcome*: Fails-closed to `POSSIBLE_IMPERSONATION` (`HIGH` risk, `STOP_AND_AVOID`). Safe intelligence and global reputation **never** excuse active credential theft.
+19. **Citizen Disputes False Alarm on Protected Entity (`false_positive`)**:
+    - If a user reports `police.lk` as a `false_positive` (disputing a false flag), the Circuit Breaker does **not** block approval. Approving a false positive marks the indicator as `VERIFIED_SAFE`, protecting the legitimate entity from future heuristic false alarms.
+
 ---
 
 ## 5. Judge & Evaluator Presentation Guide (Member 5 Vertical Slice)
