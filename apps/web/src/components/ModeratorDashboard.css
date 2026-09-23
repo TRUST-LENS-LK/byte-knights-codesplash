@@ -6,13 +6,13 @@
    ========================================================================== */
 
 :root {
-  /* ── Core Brand Palette (Inherited from Central Master Tokens in index.css) ── */
-  --neo-primary: var(--brand-primary, #075ECE);
-  --neo-primary-hover: var(--brand-primary-hover, #0548a3);
-  --neo-primary-active: var(--brand-primary-active, #043880);
-  --neo-primary-light: var(--brand-primary-light, rgba(7, 94, 206, 0.08));
-  --neo-primary-glow: var(--brand-primary-glow, rgba(7, 94, 206, 0.28));
-  --neo-primary-border: var(--brand-primary-border, rgba(7, 94, 206, 0.18));
+  /* ── Core Brand Palette (Moderator Blue — independent of global brand tokens) ── */
+  --neo-primary: #0066FF;
+  --neo-primary-hover: #0052CC;
+  --neo-primary-active: #003D99;
+  --neo-primary-light: rgba(0, 102, 255, 0.08);
+  --neo-primary-glow: rgba(0, 102, 255, 0.28);
+  --neo-primary-border: rgba(0, 102, 255, 0.18);
 
   --neo-navy: var(--brand-navy, #061733);
   --neo-navy-surface: var(--brand-navy-surface, #0a2048);
@@ -437,6 +437,8 @@
 .neo-nav-btn.active svg {
   color: var(--neo-primary);
   stroke: var(--neo-primary);
+  stroke-width: 2.25;
+  fill: rgba(0, 102, 255, 0.15);
   transition: all 0.2s ease;
 }
 
@@ -1990,6 +1992,13 @@
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.neo-audit-action-buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
 }
 
 .neo-toolbar-search-box {

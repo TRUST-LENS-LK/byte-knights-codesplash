@@ -2619,6 +2619,10 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                       </select>
                     </div>
 
+                  </div>
+
+                  {/* Right-aligned audit action buttons */}
+                  <div className="neo-audit-action-buttons">
                     <button
                       type="button"
                       className="neo-btn-toolbar-reset has-active-filters"

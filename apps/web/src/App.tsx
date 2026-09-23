@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, useRef } from 'react'
+import { useMemo, useState, useEffect, useRef, useCallback } from 'react'
 import {
   ShieldCheck,
   ShieldAlert,
@@ -62,6 +62,28 @@ interface ScannerEvidenceItem {
 }
 
 
+function getInitialAppView(): 'checker' | 'moderator' {
+  if (typeof window !== 'undefined') {
+    const hash = window.location.hash.toLowerCase()
+    if (hash.startsWith('#moderator')) {
+      return 'moderator'
+    }
+    const path = window.location.pathname.toLowerCase()
+    if (path.includes('/moderator')) {
+      return 'moderator'
+    }
+    try {
+      const saved = sessionStorage.getItem('trustlens_app_view')
+      if (saved === 'moderator') {
+        return 'moderator'
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  return 'checker'
+}
+
 function App() {
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', 'light')
@@ -72,7 +94,64 @@ function App() {
     }
   }, [])
 
-  const [view, setView] = useState<'checker' | 'moderator'>('checker')
+  const [view, setView] = useState<'checker' | 'moderator'>(getInitialAppView)
+
+  // Keep sessionStorage in sync with view
+  useEffect(() => {
+    try {
+      sessionStorage.setItem('trustlens_app_view', view)
+    } catch {
+      /* ignore */
+    }
+  }, [view])
+
+  // Sync view when browser hash changes (e.g. Back/Forward button)
+  useEffect(() => {
+    const handleHashChange = () => {
+      const hash = window.location.hash.toLowerCase()
+      if (hash.startsWith('#moderator')) {
+        setView('moderator')
+      } else if (hash === '' || hash === '#' || hash.startsWith('#scanner') || hash.startsWith('#checker')) {
+        setView('checker')
+      }
+    }
+
+    window.addEventListener('hashchange', handleHashChange)
+    window.addEventListener('popstate', handleHashChange)
+    return () => {
+      window.removeEventListener('hashchange', handleHashChange)
+      window.removeEventListener('popstate', handleHashChange)
+    }
+  }, [])
+
+  const handleOpenModerator = useCallback(() => {
+    setView('moderator')
+    if (typeof window !== 'undefined') {
+      try {
+        sessionStorage.setItem('trustlens_app_view', 'moderator')
+        const savedModNav = sessionStorage.getItem('trustlens_mod_nav')?.toLowerCase() || 'dashboard'
+        if (!window.location.hash.toLowerCase().startsWith('#moderator')) {
+          window.history.pushState(null, '', `#moderator/${savedModNav}`)
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+  }, [])
+
+  const handleBackToScanner = useCallback(() => {
+    setView('checker')
+    if (typeof window !== 'undefined') {
+      try {
+        sessionStorage.setItem('trustlens_app_view', 'checker')
+        if (window.location.hash.toLowerCase().startsWith('#moderator')) {
+          window.history.pushState(null, '', window.location.pathname + window.location.search)
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+  }, [])
   const [isReportModalOpen, setIsReportModalOpen] = useState(false)
   const [text, setText] = useState('')
   const [checked, setChecked] = useState(false)
@@ -222,7 +301,7 @@ function App() {
   }, [decision])
 
   if (view === 'moderator') {
-    return <ModeratorDashboard onBackToScanner={() => setView('checker')} />
+    return <ModeratorDashboard onBackToScanner={handleBackToScanner} />
   }
 
   return (
@@ -231,12 +310,12 @@ function App() {
       <header className="nav-header">
         <div
           className="nav-brand"
-          onClick={() => setView('checker')}
+          onClick={handleBackToScanner}
           title="TrustLens LK"
           role="button"
           tabIndex={0}
           onKeyDown={(e) => {
-            if (e.key === 'Enter') setView('checker')
+            if (e.key === 'Enter') handleBackToScanner()
           }}
         >
           <div className="nav-logo-box">
@@ -251,7 +330,7 @@ function App() {
           <button
             type="button"
             className="nav-btn-portal"
-            onClick={() => setView('moderator')}
+            onClick={handleOpenModerator}
             title="Moderator Portal"
           >
             <ShieldCheck size={16} />
