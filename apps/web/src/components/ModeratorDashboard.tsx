@@ -478,7 +478,7 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
   const [filterThreat, setFilterThreat] = useState<'ALL' | 'phishing' | 'scam' | 'malware' | 'safe'>('ALL')
   const [filterDate, setFilterDate] = useState<'ALL' | 'today' | '7days' | '30days'>('ALL')
   const [showDemoMenu, setShowDemoMenu] = useState(false)
-  const [isLoadingQueue, setIsLoadingQueue] = useState(false)
+  const [isLoadingQueue, setIsLoadingQueue] = useState(true)
   const [queueError, setQueueError] = useState<string | null>(null)
 
   // Verified Intelligence State
@@ -563,15 +563,20 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
       if (!token) return
       if (showSpinner) setIsLoadingQueue(true)
       setQueueError(null)
-      const res = await fetchModerationQueue(token, 'ALL', 1, 100)
-      setIsLoadingQueue(false)
-      if (res.success && res.reports) {
-        setAllReports(res.reports)
-      } else {
-        setQueueError(res.error || 'Could not load moderation reports.')
-        if (res.error?.includes('expired') || res.error?.includes('Unauthorized')) {
-          handleSignOut()
+      try {
+        const res = await fetchModerationQueue(token, 'ALL', 1, 100)
+        if (res.success && res.reports) {
+          setAllReports(res.reports)
+        } else {
+          setQueueError(res.error || 'Could not load moderation reports.')
+          if (res.error?.includes('expired') || res.error?.includes('Unauthorized')) {
+            handleSignOut()
+          }
         }
+      } catch (err) {
+        setQueueError(err instanceof Error ? err.message : 'Network error connecting to moderation registry.')
+      } finally {
+        if (showSpinner) setIsLoadingQueue(false)
       }
       void loadStats()
     },
@@ -580,8 +585,12 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
 
   useEffect(() => {
     let active = true
-    if (!token) return
+    if (!token) {
+      setIsLoadingQueue(false)
+      return
+    }
 
+    setIsLoadingQueue(true)
     fetchModerationStats(token).then((res) => {
       if (active && res.success && res.stats) {
         setStats(res.stats)
@@ -604,11 +613,20 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
         if (!active) return
         setQueueError(err instanceof Error ? err.message : 'Network error connecting to moderation registry.')
       })
+      .finally(() => {
+        if (active) setIsLoadingQueue(false)
+      })
 
     return () => {
       active = false
     }
   }, [token, handleSignOut])
+
+  useEffect(() => {
+    if (activeNav === 'QUEUE' && token) {
+      void loadReports(true)
+    }
+  }, [activeNav, token, loadReports])
 
   // Automatically reset queue page to 1 whenever tab or any filter changes
   useEffect(() => {
@@ -1481,6 +1499,123 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
     </section>
   )
 
+  // ── SKELETON PLACEHOLDER FOR DASHBOARD VIEW ─────────────────────────────
+  const renderDashboardSkeleton = () => (
+    <div key="DASHBOARD-SKELETON" className="neo-view-transition neo-dashboard-view-layout neo-dashboard-skeleton" aria-busy="true" aria-label="Loading dashboard metrics">
+      {/* Row 1: 4 Skeleton KPI Cards */}
+      <section className="neo-kpi-grid" aria-hidden="true">
+        {[1, 2, 3, 4].map((i) => (
+          <div key={i} className="neo-kpi-card neo-kpi-skeleton">
+            <div className="neo-kpi-content">
+              <div className="neo-kpi-body">
+                <div className="neo-skeleton-bone" style={{ width: '48px', height: '30px', marginBottom: '8px' }} />
+                <div className="neo-skeleton-bone" style={{ width: '70px', height: '14px', marginBottom: '10px' }} />
+                <div className="neo-skeleton-bone" style={{ width: '90px', height: '18px', borderRadius: '99px' }} />
+              </div>
+            </div>
+            <div className="neo-kpi-sparkline" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <div className="neo-skeleton-bone" style={{ width: '70px', height: '24px', borderRadius: '4px' }} />
+            </div>
+          </div>
+        ))}
+      </section>
+
+      {/* Row 2: Skeleton Velocity Chart */}
+      <section className="neo-velocity-row" aria-hidden="true">
+        <div className="neo-card">
+          <div className="neo-card-header">
+            <div>
+              <div className="neo-skeleton-bone" style={{ width: '180px', height: '20px', marginBottom: '6px' }} />
+              <div className="neo-skeleton-bone" style={{ width: '260px', height: '12px' }} />
+            </div>
+            <div className="neo-skeleton-bone" style={{ width: '90px', height: '28px', borderRadius: '99px' }} />
+          </div>
+
+          <div className="neo-chart-container full-width">
+            <div style={{ height: '180px', display: 'flex', alignItems: 'flex-end', gap: '20px', padding: '0 20px 20px', borderBottom: '1px solid #E2E8F0' }}>
+              {[40, 75, 50, 95, 65, 30, 85].map((h, idx) => (
+                <div key={idx} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', height: '100%', justifyContent: 'flex-end' }}>
+                  <div style={{ display: 'flex', gap: '6px', alignItems: 'flex-end', width: '100%', justifyContent: 'center', height: `${h}%` }}>
+                    <div className="neo-skeleton-bone" style={{ width: '14px', height: '100%', borderRadius: '4px 4px 0 0' }} />
+                    <div className="neo-skeleton-bone" style={{ width: '14px', height: `${Math.max(20, h - 15)}%`, borderRadius: '4px 4px 0 0' }} />
+                  </div>
+                  <div className="neo-skeleton-bone" style={{ width: '28px', height: '12px' }} />
+                </div>
+              ))}
+            </div>
+            <div className="neo-chart-legend" style={{ marginTop: '12px' }}>
+              <div className="neo-skeleton-bone" style={{ width: '140px', height: '14px' }} />
+              <div className="neo-skeleton-bone" style={{ width: '140px', height: '14px' }} />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Row 3: 3 Bottom Cards */}
+      <section className="neo-bottom-cards-row" aria-hidden="true">
+        {/* 1. Recent Verified Intel Skeleton */}
+        <div className="neo-card neo-bottom-modern-card">
+          <div className="neo-card-header">
+            <div className="neo-skeleton-bone" style={{ width: '150px', height: '18px' }} />
+            <div className="neo-skeleton-bone" style={{ width: '80px', height: '26px', borderRadius: '6px' }} />
+          </div>
+          <div className="neo-snapshot-list" style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="neo-snapshot-item">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', flex: 1 }}>
+                  <div className="neo-skeleton-bone" style={{ width: '130px', height: '16px' }} />
+                  <div className="neo-skeleton-bone" style={{ width: '80px', height: '12px' }} />
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px' }}>
+                  <div className="neo-skeleton-bone" style={{ width: '55px', height: '18px', borderRadius: '4px' }} />
+                  <div className="neo-skeleton-bone" style={{ width: '45px', height: '10px' }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* 2. Threat Classification Skeleton */}
+        <div className="neo-card neo-bottom-modern-card">
+          <div className="neo-card-header">
+            <div className="neo-skeleton-bone" style={{ width: '160px', height: '18px' }} />
+          </div>
+          <div className="neo-category-list" style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="neo-category-row">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div className="neo-skeleton-bone" style={{ width: '120px', height: '14px' }} />
+                  <div className="neo-skeleton-bone" style={{ width: '50px', height: '16px', borderRadius: '4px' }} />
+                </div>
+                <div className="neo-skeleton-bone" style={{ width: '100%', height: '4px', borderRadius: '2px', marginTop: '6px' }} />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* 3. Priority Incident Skeleton */}
+        <div className="neo-card neo-bottom-modern-card neo-spotlight-card">
+          <div className="neo-spotlight-content" style={{ gap: '12px' }}>
+            <div className="neo-skeleton-bone" style={{ width: '160px', height: '20px', borderRadius: '4px' }} />
+            <div className="neo-spotlight-target-box">
+              <div className="neo-skeleton-bone" style={{ width: '150px', height: '18px' }} />
+              <div className="neo-skeleton-bone" style={{ width: '65px', height: '18px', borderRadius: '4px' }} />
+            </div>
+            <div className="neo-spotlight-quote-box" style={{ padding: '12px' }}>
+              <div className="neo-skeleton-bone" style={{ width: '90%', height: '12px', marginBottom: '6px' }} />
+              <div className="neo-skeleton-bone" style={{ width: '70%', height: '12px' }} />
+            </div>
+            <div style={{ display: 'flex', gap: '8px', marginTop: 'auto' }}>
+              <div className="neo-skeleton-bone" style={{ width: '100px', height: '18px', borderRadius: '4px' }} />
+              <div className="neo-skeleton-bone" style={{ width: '80px', height: '18px', borderRadius: '4px' }} />
+            </div>
+            <div className="neo-skeleton-bone" style={{ width: '100%', height: '36px', borderRadius: '6px', marginTop: '6px' }} />
+          </div>
+        </div>
+      </section>
+    </div>
+  )
+
   return (
     <div key="page-moderator-dashboard" className="neo-dashboard-wrapper trustlens-page-transition">
       {/* Toast Notification */}
@@ -1705,6 +1840,9 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
           {/* VIEW 1: DASHBOARD (Executive Overview & Intelligence Velocity)           */}
           {/* ========================================================================= */}
           {activeNav === 'DASHBOARD' && (
+            isLoadingQueue ? (
+              renderDashboardSkeleton()
+            ) : (
             <div key="DASHBOARD" className="neo-view-transition neo-dashboard-view-layout">
               {/* ── Row 1: Four Modern KPI Metric Cards Matching Mockup ──── */}
               {renderKPICards()}
@@ -1828,7 +1966,7 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                             <div className="neo-snapshot-item-left">
                               <div className="neo-snapshot-target-col">
                                 <div className="neo-snapshot-target-row">
-                                  <span className={`neo-indicator-badge ${isThreat ? 'threat' : 'safe'}`} title={item.reported_domain || item.content_sha256}>
+                                  <span className="neo-indicator-badge" title={item.reported_domain || item.content_sha256}>
                                     {indicatorText}
                                   </span>
                                   <button
@@ -1878,15 +2016,7 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                       </div>
                     ) : (
                       categoryStats.map((cat) => {
-                        const catLower = cat.category.toLowerCase()
-                        let barColor = '#0066FF'
-                        if (catLower.includes('bank') || catLower.includes('phish')) {
-                          barColor = '#6366F1'
-                        } else if (catLower.includes('telecom') || catLower.includes('utility')) {
-                          barColor = '#F59E0B'
-                        } else if (catLower.includes('false') || catLower.includes('alarm')) {
-                          barColor = '#10B981'
-                        }
+                        const barColor = '#0066FF'
 
                         return (
                           <div
@@ -2016,6 +2146,7 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                 </div>
               </section>
             </div>
+            )
           )}
 
           {/* ========================================================================= */}
@@ -2130,6 +2261,18 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                       <span>Reset</span>
                     </button>
 
+                    {/* Refresh Button */}
+                    <button
+                      type="button"
+                      className="neo-btn-toolbar-reset"
+                      onClick={() => void loadReports(true)}
+                      title="Refresh moderation queue"
+                      disabled={isLoadingQueue}
+                    >
+                      <RefreshCw size={12} className={isLoadingQueue ? 'neo-spin' : ''} aria-hidden="true" />
+                      <span>Refresh</span>
+                    </button>
+
                     {/* Demo Tools Dropdown Popup Menu */}
                     <div className="neo-demo-tools-wrapper">
                       <button
@@ -2234,9 +2377,9 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                                 <div className="neo-target-cell">
                                   <div className="neo-target-icon-circle">
                                     {item.reported_domain ? (
-                                      <Globe size={14} color="#64748b" aria-hidden="true" />
+                                      <Globe size={14} color="#0066FF" aria-hidden="true" />
                                     ) : (
-                                      <FileText size={14} color="#64748b" aria-hidden="true" />
+                                      <FileText size={14} color="#0066FF" aria-hidden="true" />
                                     )}
                                   </div>
                                   <div className="neo-target-info">
@@ -2259,13 +2402,7 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
 
                               {/* THREAT */}
                               <td>
-                                <div className="neo-threat-cell">
-                                  <div className={`neo-threat-dot ${threat.type}`} />
-                                  <div className="neo-threat-info">
-                                    <span className="neo-threat-title">{specificCategory}</span>
-                                    <span className="neo-threat-sub">{threat.subtitle}</span>
-                                  </div>
-                                </div>
+                                <span className="neo-threat-title">{specificCategory}</span>
                               </td>
 
                               {/* EXCERPT */}
@@ -2573,7 +2710,7 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                               <td>
                                 <div className="neo-target-cell">
                                   <div className="neo-target-icon-circle">
-                                    <Globe size={14} color="#64748b" aria-hidden="true" />
+                                    <Globe size={14} color="#0066FF" aria-hidden="true" />
                                   </div>
                                   <div className="neo-target-info">
                                     <span
