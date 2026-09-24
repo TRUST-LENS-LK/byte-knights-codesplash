@@ -1,5 +1,22 @@
 [
   {
+    "id": "6366f246-7ddb-4016-869f-c7146ffd749d",
+    "report_id": null,
+    "action": "AUTH_LOGIN",
+    "target_indicator": "auth.login",
+    "threat_category": "Authentication",
+    "actor_email": "moderator2@trustlens.lk",
+    "actor_role": "moderator",
+    "confidence": null,
+    "moderator_notes": "Moderator session established successfully. Role: moderator.",
+    "client_ip": "::1",
+    "user_agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "created_at": "2026-09-24T09:06:30.601Z",
+    "expires_at": "2026-12-23T09:06:30.601Z",
+    "entry_hash": "f1f87b3f3081e7ae44201dfeed2f04fec30343c4da792e9f62bbf1bdfc593489",
+    "prev_hash": "322d2cec6558ba111bafa8e083b88c588763c3efef1495738234ba082770b578"
+  },
+  {
     "id": "f7fabf32-dbb6-4e11-b63d-b2f5ab4c29fd",
     "report_id": null,
     "action": "UPDATE_SETTINGS",
