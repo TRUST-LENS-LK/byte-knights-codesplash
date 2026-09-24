@@ -37,6 +37,7 @@ import {
   recordAuditLog,
 } from './services/reportingService.mjs'
 import { reconcileDecision } from './services/reconcileIntelligence.mjs'
+import { applyAiVerdict, evaluateContextWithAi } from './services/aiContextValidator.mjs'
 import { getOpenApiSpec, getSwaggerHtml } from './http/swagger.mjs'
 
 // In-memory cache for sandbox detonation results (1-hour TTL, max 200 entries)
@@ -833,6 +834,19 @@ const server = createServer(async (req, res) => {
       intelligenceOverlay = reconciled.intelligenceOverlay
     }
 
+    // ── Layer 5: AI Context Validation Engine ──────────────────────────
+    let aiValidation = null
+    const aiResult = await evaluateContextWithAi({
+      text,
+      decision,
+      languageHint: body.language || body.languageHint || null,
+    }).catch(() => null)
+
+    if (aiResult) {
+      decision = applyAiVerdict(decision, aiResult, intelligenceOverlay)
+      aiValidation = decision.aiValidation
+    }
+
     const submissionId = await persistIfConsented({ ...body, text }, decision, entities)
     return send(res, 200, {
       decision,
@@ -842,6 +856,7 @@ const server = createServer(async (req, res) => {
       requestId,
       ...(intelligenceOverlay ? { intelligenceOverlay } : {}),
       ...(submissionId ? { submissionId } : {}),
+      ...(aiValidation ? { aiValidation } : {}),
     }, requestId)
   } catch (error) {
     return send(res, error instanceof SyntaxError ? 400 : 502, {
