@@ -50,7 +50,7 @@ interface AiValidation {
   reasoning: string
   originalRiskBand: 'LOW' | 'MEDIUM' | 'HIGH' | 'UNKNOWN'
   adjustedRiskBand: 'LOW' | 'MEDIUM' | 'HIGH' | 'UNKNOWN'
-  appliedAction: 'DOWNGRADED' | 'HARD_BLOCKED' | 'RETAINED'
+  appliedAction: 'DOWNGRADED' | 'UPGRADED' | 'HARD_BLOCKED' | 'RETAINED'
   evaluatedAt?: string
 }
 
@@ -746,6 +746,8 @@ function App() {
                   <span className={`ai-badge-chip ai-chip-${aiValidation.appliedAction.toLowerCase()}`}>
                     {aiValidation.appliedAction === 'DOWNGRADED'
                       ? `Downgraded (${aiValidation.originalRiskBand} ➔ ${aiValidation.adjustedRiskBand})`
+                      : aiValidation.appliedAction === 'UPGRADED'
+                      ? `Upgraded (${aiValidation.originalRiskBand} ➔ ${aiValidation.adjustedRiskBand})`
                       : aiValidation.appliedAction === 'HARD_BLOCKED'
                       ? 'Hard Block Preserved'
                       : 'Verdict Retained'}
@@ -1383,6 +1385,8 @@ function App() {
                         <span className={`intel-status-pill ai-action-pill ${aiValidation.appliedAction.toLowerCase()}`}>
                           {aiValidation.appliedAction === 'DOWNGRADED'
                             ? `Downgraded (${aiValidation.originalRiskBand} ➔ ${aiValidation.adjustedRiskBand})`
+                            : aiValidation.appliedAction === 'UPGRADED'
+                            ? `Upgraded (${aiValidation.originalRiskBand} ➔ ${aiValidation.adjustedRiskBand})`
                             : aiValidation.appliedAction === 'HARD_BLOCKED'
                             ? 'Hard Block Preserved'
                             : 'Verdict Retained'}

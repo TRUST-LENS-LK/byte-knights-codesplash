@@ -51,16 +51,16 @@ export function isHardBlockedFromAiDowngrade(decision, intelligenceOverlay) {
 /**
  * Formats a clean prompt for Gemini API focusing on context evaluation.
  */
-function buildGeminiPrompt(text = '', findings = [], languageHint = '') {
+function buildGeminiPrompt(text = '', findings = [], languageHint = '', riskBand = 'LOW') {
   const safeText = String(text || '')
   const truncatedText = safeText.slice(0, MAX_TEXT_LENGTH)
   const safeFindings = Array.isArray(findings) ? findings : []
   const findingsSummary = safeFindings.length > 0
     ? safeFindings.map((f) => `- ${f?.canonicalSignal || f?.category || 'signal'} (strength: ${f?.strength || 0.5}): ${f?.evidence || 'detected'}`).join('\n')
-    : '- No high-risk threat signals flagged by deterministic rule engine (Preliminary risk: LOW).'
+    : '- No high-risk threat signals flagged by deterministic rule engine.'
 
   return `You are a Sri Lankan cyber threat and scam detection expert for TrustLens LK.
-A deterministic rule engine analyzed a user message and extracted preliminary findings.
+A deterministic rule engine analyzed a user message and reached a preliminary risk level of: ${riskBand}
 
 MESSAGE TO ANALYZE:
 """
@@ -72,9 +72,10 @@ RULE ENGINE FINDINGS:
 ${findingsSummary}
 
 TASK:
-Analyze the full context of the message. Is this message safe/benign, or is it a scam, phishing attempt, or social engineering attack targeting the reader?
-- If high-risk signals were flagged (e.g. "OTP", "payment", "fee", "verify", "account"), evaluate whether they are used in a benign, official, informational context where the reader is NOT being tricked.
-- If no threat signals were flagged, confirm if the message is genuinely safe and harmless.
+Analyze the full context of the message. The rule engine assigned it a risk level of ${riskBand}. Do you AGREE or DISAGREE with this overall risk level?
+- If the rule engine evaluated it as HIGH/MEDIUM risk, but you determine the context is actually safe/benign (e.g. an official bank warning), output "DISAGREE".
+- If the rule engine evaluated it as LOW risk, but you determine the message is actually a dangerous scam/phishing attempt, output "DISAGREE".
+- Otherwise, if your assessment aligns with the rule engine's risk level, output "AGREE".
 
 Respond STRICTLY in valid JSON matching this exact structure (no Markdown block wrappers, no preamble):
 {
@@ -153,7 +154,7 @@ export async function evaluateContextWithAi({ text = '', decision, languageHint 
   const safeText = String(text || '').trim()
   if (!safeText) return null
 
-  const prompt = buildGeminiPrompt(safeText, decision.findings || [], languageHint)
+  const prompt = buildGeminiPrompt(safeText, decision.findings || [], languageHint, decision.riskBand)
 
   // Use Promise.any to race the top 3 models concurrently to reduce latency
   const modelsToRace = GEMINI_MODELS.slice(0, 3)
@@ -202,26 +203,39 @@ export function applyAiVerdict(decision, aiResult, intelligenceOverlay = null) {
     }
   }
 
-  // Handle DISAGREE (Soft Downgrade)
+  // Handle DISAGREE (Soft Downgrade or Upgrade)
   if (aiResult.verdict === 'DISAGREE' && aiResult.confidence >= 0.75) {
     let newRiskBand = originalRiskBand
+    let action = 'DOWNGRADED'
+    
+    // Downgrade logic
     if (originalRiskBand === 'HIGH') {
       newRiskBand = 'MEDIUM'
     } else if (originalRiskBand === 'MEDIUM') {
       newRiskBand = 'LOW'
+    } 
+    // Upgrade logic
+    else if (originalRiskBand === 'LOW') {
+      newRiskBand = 'HIGH'
+      action = 'UPGRADED'
     }
 
     if (newRiskBand !== originalRiskBand) {
-      trace.push(`[AI Context Layer]: AI context analysis detected benign language usage ("${aiResult.reasoning}"). Risk band downgraded from ${originalRiskBand} to ${newRiskBand}.`)
+      if (action === 'UPGRADED') {
+        trace.push(`[AI Context Layer]: AI context analysis detected hidden threat not caught by rules ("${aiResult.reasoning}"). Risk band UPGRADED from ${originalRiskBand} to ${newRiskBand}.`)
+        decision.recommendation = 'STOP_AND_AVOID'
+        decision.overridesApplied = [...(decision.overridesApplied || []), 'ai_context_upgrade']
+      } else {
+        trace.push(`[AI Context Layer]: AI context analysis detected benign language usage ("${aiResult.reasoning}"). Risk band DOWNGRADED from ${originalRiskBand} to ${newRiskBand}.`)
+        if (newRiskBand === 'MEDIUM') {
+          decision.recommendation = 'PROCEED_WITH_CAUTION'
+        } else if (newRiskBand === 'LOW') {
+          decision.recommendation = 'SAFE_TO_PROCEED'
+        }
+        decision.overridesApplied = [...(decision.overridesApplied || []), 'ai_context_downgrade']
+      }
 
       decision.riskBand = newRiskBand
-      decision.overridesApplied = [...(decision.overridesApplied || []), 'ai_context_downgrade']
-
-      if (newRiskBand === 'MEDIUM') {
-        decision.recommendation = 'PROCEED_WITH_CAUTION'
-      } else if (newRiskBand === 'LOW') {
-        decision.recommendation = 'SAFE_TO_PROCEED'
-      }
 
       return {
         ...decision,
@@ -230,7 +244,7 @@ export function applyAiVerdict(decision, aiResult, intelligenceOverlay = null) {
           ...aiResult,
           originalRiskBand,
           adjustedRiskBand: newRiskBand,
-          appliedAction: 'DOWNGRADED',
+          appliedAction: action,
         },
       }
     }
