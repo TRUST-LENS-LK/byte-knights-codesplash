@@ -4,9 +4,9 @@ const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/
 const REQUEST_TIMEOUT_MS = 8_000
 const MAX_TEXT_LENGTH = 2_000
 
-// In-memory rate limit / failure cooldown guard (60 seconds)
+// In-memory failure cooldown guard (5 seconds)
 let lastFailureTimestamp = 0
-const COOLDOWN_MS = 60_000
+const COOLDOWN_MS = 5_000
 
 /**
  * Checks whether Layer 5 AI context validation is configured and healthy.
@@ -82,8 +82,8 @@ Respond STRICTLY in valid JSON matching this exact structure (no Markdown block 
 }
 
 const GEMINI_MODELS = [
-  'gemini-3.5-flash-lite',
   'gemini-3.6-flash',
+  'gemini-3.5-flash-lite',
   'gemini-3.1-flash-lite',
   'gemini-3.5-flash',
 ]

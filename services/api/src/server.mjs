@@ -765,7 +765,7 @@ const server = createServer(async (req, res) => {
       }
     }
 
-    const decision = analyze(finalScanText)
+    let decision = analyze(finalScanText)
     if (urlEntities._pendingLimitations) {
       decision.limitations.push(...urlEntities._pendingLimitations)
     }
@@ -862,6 +862,7 @@ const server = createServer(async (req, res) => {
       ...(aiValidation ? { aiValidation } : {}),
     }, requestId)
   } catch (error) {
+    console.error('[Analyze Exception]:', error)
     return send(res, error instanceof SyntaxError ? 400 : 502, {
       code: error instanceof SyntaxError ? 'INVALID_JSON' : 'PERSISTENCE_ERROR',
       message: error instanceof SyntaxError ? 'Request body must be valid JSON.' : 'Analysis completed, but persistence is temporarily unavailable.',
