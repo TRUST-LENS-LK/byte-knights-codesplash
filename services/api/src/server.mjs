@@ -29,6 +29,7 @@ import {
   getEngineSettings,
   updateEngineSettings,
   isVerifiedIntelEnabled,
+  isAiValidationEnabled,
   AUDIT_RETENTION_DAYS,
   getModerationAuditLogs,
   purgeExpiredAuditLogs,
@@ -836,15 +837,17 @@ const server = createServer(async (req, res) => {
 
     // ── Layer 5: AI Context Validation Engine ──────────────────────────
     let aiValidation = null
-    const aiResult = await evaluateContextWithAi({
-      text,
-      decision,
-      languageHint: body.language || body.languageHint || null,
-    }).catch(() => null)
+    if (isAiValidationEnabled()) {
+      const aiResult = await evaluateContextWithAi({
+        text,
+        decision,
+        languageHint: body.language || body.languageHint || null,
+      }).catch(() => null)
 
-    if (aiResult) {
-      decision = applyAiVerdict(decision, aiResult, intelligenceOverlay)
-      aiValidation = decision.aiValidation
+      if (aiResult) {
+        decision = applyAiVerdict(decision, aiResult, intelligenceOverlay)
+        aiValidation = decision.aiValidation
+      }
     }
 
     const submissionId = await persistIfConsented({ ...body, text }, decision, entities)
