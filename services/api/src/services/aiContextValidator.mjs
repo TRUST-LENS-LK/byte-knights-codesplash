@@ -1,6 +1,6 @@
 import { GEMINI_API_KEY } from '../config/env.mjs'
 
-const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent'
+const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent'
 const REQUEST_TIMEOUT_MS = 8_000
 const MAX_TEXT_LENGTH = 2_000
 
@@ -51,9 +51,11 @@ export function isHardBlockedFromAiDowngrade(decision, intelligenceOverlay) {
 /**
  * Formats a clean prompt for Gemini API focusing on context evaluation.
  */
-function buildGeminiPrompt(text, findings, languageHint) {
-  const truncatedText = text.slice(0, MAX_TEXT_LENGTH)
-  const findingsSummary = findings.map((f) => `- ${f.canonicalSignal || f.category} (strength: ${f.strength || 0.5}): ${f.evidence || 'detected'}`).join('\n')
+function buildGeminiPrompt(text = '', findings = [], languageHint = '') {
+  const safeText = String(text || '')
+  const truncatedText = safeText.slice(0, MAX_TEXT_LENGTH)
+  const safeFindings = Array.isArray(findings) ? findings : []
+  const findingsSummary = safeFindings.map((f) => `- ${f?.canonicalSignal || f?.category || 'signal'} (strength: ${f?.strength || 0.5}): ${f?.evidence || 'detected'}`).join('\n')
 
   return `You are a Sri Lankan cyber threat and scam detection expert for TrustLens LK.
 A deterministic rule engine analyzed a user message and flagged threat signals.
@@ -79,71 +81,71 @@ Respond STRICTLY in valid JSON matching this exact structure (no Markdown block 
 }`
 }
 
+const GEMINI_MODELS = ['gemini-3.5-flash', 'gemini-3.6-flash', 'gemini-2.5-flash']
+
 /**
  * Calls the Google Gemini API to evaluate context.
  * Fails open: Returns null on timeout, missing key, or API errors.
  */
-export async function evaluateContextWithAi({ text, decision, languageHint = null }) {
+export async function evaluateContextWithAi({ text = '', decision, languageHint = null }) {
   if (!isAiValidationConfigured()) return null
 
   // Skip AI evaluation for LOW risk messages to minimize latency and API cost
   if (!decision || decision.riskBand === 'LOW') return null
 
-  // Cooldown check if recent call failed
-  if (Date.now() - lastFailureTimestamp < COOLDOWN_MS) {
+  const safeText = String(text || '').trim()
+  if (!safeText) return null
+
+  // Cooldown check if all models failed recently
+  if (lastFailureTimestamp > 0 && Date.now() - lastFailureTimestamp < COOLDOWN_MS) {
     return null
   }
 
-  try {
-    const prompt = buildGeminiPrompt(text, decision.findings || [], languageHint)
-    const url = `${GEMINI_API_URL}?key=${encodeURIComponent(GEMINI_API_KEY)}`
+  const prompt = buildGeminiPrompt(safeText, decision.findings || [], languageHint)
 
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [{ text: prompt }],
+  for (const modelName of GEMINI_MODELS) {
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${encodeURIComponent(GEMINI_API_KEY)}`
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            temperature: 0.1,
+            responseMimeType: 'application/json',
           },
-        ],
-        generationConfig: {
-          temperature: 0.1,
-          responseMimeType: 'application/json',
-        },
-      }),
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    })
+        }),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      })
 
-    if (!response.ok) {
-      lastFailureTimestamp = Date.now()
-      return null
+      if (!response.ok) continue
+
+      const data = await response.json()
+      const contentText = data?.candidates?.[0]?.content?.parts?.[0]?.text
+      if (!contentText) continue
+
+      const parsed = JSON.parse(contentText)
+      const validVerdicts = ['AGREE', 'DISAGREE', 'UNCERTAIN']
+      const verdict = validVerdicts.includes(parsed.verdict) ? parsed.verdict : 'UNCERTAIN'
+      const confidence = typeof parsed.confidence === 'number' ? Math.min(1, Math.max(0, parsed.confidence)) : 0.5
+      const reasoning = parsed.reasoning || 'AI context evaluation complete.'
+
+      lastFailureTimestamp = 0
+      return {
+        verdict,
+        confidence,
+        reasoning,
+        evaluatedAt: new Date().toISOString(),
+      }
+    } catch {
+      continue
     }
-
-    const data = await response.json()
-    const contentText = data?.candidates?.[0]?.content?.parts?.[0]?.text
-    if (!contentText) {
-      return null
-    }
-
-    const parsed = JSON.parse(contentText)
-    const validVerdicts = ['AGREE', 'DISAGREE', 'UNCERTAIN']
-    const verdict = validVerdicts.includes(parsed.verdict) ? parsed.verdict : 'UNCERTAIN'
-    const confidence = typeof parsed.confidence === 'number' ? Math.min(1, Math.max(0, parsed.confidence)) : 0.5
-    const reasoning = parsed.reasoning || 'AI context evaluation complete.'
-
-    return {
-      verdict,
-      confidence,
-      reasoning,
-      evaluatedAt: new Date().toISOString(),
-    }
-  } catch (error) {
-    lastFailureTimestamp = Date.now()
-    return null
   }
+
+  lastFailureTimestamp = Date.now()
+  return null
 }
 
 /**
