@@ -699,21 +699,23 @@ function App() {
                 <span className="verdict-subheading">Assessment Clearance</span>
                 <h2 className="verdict-primary-title">{risk}</h2>
                 <p className="verdict-explanation">
-                  {isOfficialEntity
-                    ? `This domain is verified in the official Sri Lankan national registry as the digital property of ${intelligenceOverlay?.officialOrganization || 'an approved institution'}.`
-                    : isImpersonation
-                      ? 'CRITICAL ALERT: Although this message references a verified entity, it requests credentials or advance payment. Threat actors frequently impersonate legitimate organizations.'
-                      : isVerifiedSafe
-                        ? 'This content has been reviewed and verified as legitimate by community moderators and the TrustLens intelligence network.'
-                        : isConfirmedScam
-                          ? 'This content matches confirmed threat intelligence verified by community moderators.'
-                          : isConflicted
-                            ? 'Community intelligence submissions are divided. Under fail-closed security policy, it is treated as HIGH RISK until resolved.'
-                            : decision.riskBand === 'HIGH'
-                              ? 'This message contains aggressive social engineering or deceptive patterns typical of online financial fraud.'
-                              : decision.riskBand === 'MEDIUM'
-                                ? 'Several warning signs were detected. The sender or link should not be trusted without independent phone verification.'
-                                : 'No active phishing, OTP harvesting, or extortion signatures were identified.'}
+                  {aiValidation?.reasoning
+                    ? aiValidation.reasoning
+                    : isOfficialEntity
+                      ? `This domain is verified in the official Sri Lankan national registry as the digital property of ${intelligenceOverlay?.officialOrganization || 'an approved institution'}.`
+                      : isImpersonation
+                        ? 'CRITICAL ALERT: Although this message references a verified entity, it requests credentials or advance payment. Threat actors frequently impersonate legitimate organizations.'
+                        : isVerifiedSafe
+                          ? 'This content has been reviewed and verified as legitimate by community moderators and the TrustLens intelligence network.'
+                          : isConfirmedScam
+                            ? 'This content matches confirmed threat intelligence verified by community moderators.'
+                            : isConflicted
+                              ? 'Community intelligence submissions are divided. Under fail-closed security policy, it is treated as HIGH RISK until resolved.'
+                              : decision.riskBand === 'HIGH'
+                                ? 'This message contains aggressive social engineering or deceptive patterns typical of online financial fraud.'
+                                : decision.riskBand === 'MEDIUM'
+                                  ? 'Several warning signs were detected. The sender or link should not be trusted without independent phone verification.'
+                                  : 'No active phishing, OTP harvesting, or extortion signatures were identified.'}
                 </p>
               </div>
 
@@ -732,6 +734,30 @@ function App() {
                 </button>
               </div>
             </div>
+
+            {/* Layer 5 AI Context Evaluation Spotlight Box */}
+            {aiValidation && (
+              <div className="verdict-ai-spotlight">
+                <div className="ai-spotlight-header">
+                  <div className="ai-spotlight-title">
+                    <Sparkles size={16} color="#8B5CF6" />
+                    <span>Layer 5: AI Context Evaluation (Google Gemini)</span>
+                  </div>
+                  <span className={`ai-badge-chip ai-chip-${aiValidation.appliedAction.toLowerCase()}`}>
+                    {aiValidation.appliedAction === 'DOWNGRADED'
+                      ? `Downgraded (${aiValidation.originalRiskBand} ➔ ${aiValidation.adjustedRiskBand})`
+                      : aiValidation.appliedAction === 'HARD_BLOCKED'
+                      ? 'Hard Block Preserved'
+                      : 'Verdict Retained'}
+                  </span>
+                </div>
+                <p className="ai-spotlight-quote">"{aiValidation.reasoning}"</p>
+                <div className="ai-spotlight-meta">
+                  <span>AI Context Verdict: <strong>{aiValidation.verdict}</strong></span>
+                  <span>Confidence: <strong>{Math.round(aiValidation.confidence * 100)}%</strong></span>
+                </div>
+              </div>
+            )}
 
             {/* High-Contrast Action Callout */}
             {decision.safeActions && decision.safeActions.length > 0 && (
