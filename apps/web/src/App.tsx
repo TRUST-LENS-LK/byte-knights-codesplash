@@ -42,6 +42,17 @@ import {
 } from './components/LandingSections'
 import './App.css'
 import './components/NavSentinelDock.css'
+import { Sparkles } from 'lucide-react'
+
+interface AiValidation {
+  verdict: 'AGREE' | 'DISAGREE' | 'UNCERTAIN'
+  confidence: number
+  reasoning: string
+  originalRiskBand: 'LOW' | 'MEDIUM' | 'HIGH' | 'UNKNOWN'
+  adjustedRiskBand: 'LOW' | 'MEDIUM' | 'HIGH' | 'UNKNOWN'
+  appliedAction: 'DOWNGRADED' | 'HARD_BLOCKED' | 'RETAINED'
+  evaluatedAt?: string
+}
 
 interface IntelligenceOverlay {
   netVerdict: 'CONFIRMED_SCAM' | 'VERIFIED_SAFE' | 'CONFLICTED' | 'OFFICIAL_ENTITY' | 'POSSIBLE_IMPERSONATION' | 'NO_INTEL'
@@ -170,8 +181,8 @@ function App() {
   const [, setApiMode] = useState<'local' | 'api'>('local')
   const [inputType, setInputType] = useState<'message' | 'screenshot'>('message')
   const [intelligenceOverlay, setIntelligenceOverlay] = useState<IntelligenceOverlay | null>(null)
+  const [aiValidation, setAiValidation] = useState<AiValidation | null>(null)
 
-  // Results Dashboard Tabs & UI states (defaults to 'all' so users see complete evidence at once)
   const [activeTab, setActiveTab] = useState<'all' | 'signals' | 'sandbox' | 'intel'>('all')
   const [copiedKey, setCopiedKey] = useState<string | null>(null)
   const [selectedScreenshot, setSelectedScreenshot] = useState<string | null>(null)
@@ -275,12 +286,16 @@ function App() {
 
     setIsAnalyzing(true)
     setIntelligenceOverlay(null)
+    setAiValidation(null)
     try {
       const result = await analyzeWithApi(targetText, finalType)
       setApiAnalysis(result)
       setApiMode('api')
       if ((result as Record<string, unknown>).intelligenceOverlay) {
         setIntelligenceOverlay((result as Record<string, unknown>).intelligenceOverlay as IntelligenceOverlay)
+      }
+      if ((result as Record<string, unknown>).aiValidation) {
+        setAiValidation((result as Record<string, unknown>).aiValidation as AiValidation)
       }
       setChecked(true)
       setActiveTab('all')
@@ -1331,6 +1346,32 @@ function App() {
                     </div>
                   )}
 
+                  {/* Layer 5: AI Context Evaluation Box */}
+                  {aiValidation && (
+                    <div className="intel-card-box ai-context-card">
+                      <div className="intel-box-header">
+                        <div className="intel-box-title-group">
+                          <Sparkles size={18} color="#8B5CF6" />
+                          <h3>Layer 5: AI Context Evaluation (Gemini 3.5 Flash)</h3>
+                        </div>
+                        <span className={`intel-status-pill ai-action-pill ${aiValidation.appliedAction.toLowerCase()}`}>
+                          {aiValidation.appliedAction === 'DOWNGRADED'
+                            ? `Downgraded (${aiValidation.originalRiskBand} ➔ ${aiValidation.adjustedRiskBand})`
+                            : aiValidation.appliedAction === 'HARD_BLOCKED'
+                            ? 'Hard Block Preserved'
+                            : 'Verdict Retained'}
+                        </span>
+                      </div>
+                      <div className="ai-context-content">
+                        <p className="ai-reasoning-quote">"{aiValidation.reasoning}"</p>
+                        <div className="ai-context-meta">
+                          <span>Verdict: <strong>{aiValidation.verdict}</strong></span>
+                          <span>Confidence: <strong>{Math.round(aiValidation.confidence * 100)}%</strong></span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Technical Audit Trace (Collapsible Accordion) */}
                   <div className="intel-card-box collapsible">
                     <button
@@ -1346,22 +1387,26 @@ function App() {
                       {showTechnicalTrace ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
                     </button>
 
-                    {showTechnicalTrace && (
-                      <div className="accordion-body">
-                        {intelligenceOverlay?.reconciliationTrace && intelligenceOverlay.reconciliationTrace.length > 0 ? (
-                          <div className="trace-terminal-view">
-                            {intelligenceOverlay.reconciliationTrace.map((line, tIdx) => (
-                              <div key={tIdx} className="trace-line">
-                                <span className="trace-prefix">&gt;</span>
-                                <span className="trace-text">{line}</span>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <p className="no-trace-text">Standard heuristic decision pipeline executed without conflict.</p>
-                        )}
-                      </div>
-                    )}
+                    {showTechnicalTrace && (() => {
+                      const decTrace = (decision as Record<string, unknown>).reconciliationTrace as string[] | undefined
+                      const activeTrace = (decTrace && decTrace.length > 0) ? decTrace : (intelligenceOverlay?.reconciliationTrace || [])
+                      return (
+                        <div className="accordion-body">
+                          {activeTrace.length > 0 ? (
+                            <div className="trace-terminal-view">
+                              {activeTrace.map((line: string, tIdx: number) => (
+                                <div key={tIdx} className="trace-line">
+                                  <span className="trace-prefix">&gt;</span>
+                                  <span className="trace-text">{line}</span>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="no-trace-text">Standard heuristic decision pipeline executed without conflict.</p>
+                          )}
+                        </div>
+                      )
+                    })()}
                   </div>
 
                 </div>
