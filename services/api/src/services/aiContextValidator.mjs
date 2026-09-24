@@ -81,7 +81,12 @@ Respond STRICTLY in valid JSON matching this exact structure (no Markdown block 
 }`
 }
 
-const GEMINI_MODELS = ['gemini-3.5-flash', 'gemini-3.6-flash', 'gemini-2.5-flash']
+const GEMINI_MODELS = [
+  'gemini-3.5-flash-lite',
+  'gemini-3.6-flash',
+  'gemini-3.1-flash-lite',
+  'gemini-3.5-flash',
+]
 
 /**
  * Calls the Google Gemini API to evaluate context.
@@ -120,13 +125,24 @@ export async function evaluateContextWithAi({ text = '', decision, languageHint 
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       })
 
-      if (!response.ok) continue
+      if (!response.ok) {
+        console.error(`[AI Validator] Model ${modelName} returned status ${response.status} ${response.statusText}`)
+        continue
+      }
 
       const data = await response.json()
       const contentText = data?.candidates?.[0]?.content?.parts?.[0]?.text
-      if (!contentText) continue
+      if (!contentText) {
+        console.error(`[AI Validator] Model ${modelName} returned empty candidate text`)
+        continue
+      }
 
-      const parsed = JSON.parse(contentText)
+      let cleanJsonText = contentText.trim()
+      if (cleanJsonText.startsWith('```')) {
+        cleanJsonText = cleanJsonText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim()
+      }
+
+      const parsed = JSON.parse(cleanJsonText)
       const validVerdicts = ['AGREE', 'DISAGREE', 'UNCERTAIN']
       const verdict = validVerdicts.includes(parsed.verdict) ? parsed.verdict : 'UNCERTAIN'
       const confidence = typeof parsed.confidence === 'number' ? Math.min(1, Math.max(0, parsed.confidence)) : 0.5
@@ -139,7 +155,8 @@ export async function evaluateContextWithAi({ text = '', decision, languageHint 
         reasoning,
         evaluatedAt: new Date().toISOString(),
       }
-    } catch {
+    } catch (err) {
+      console.error(`[AI Validator Exception] Model ${modelName}:`, err.message)
       continue
     }
   }
