@@ -1,7 +1,7 @@
 import { GEMINI_API_KEY } from '../config/env.mjs'
 
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent'
-const REQUEST_TIMEOUT_MS = 8_000
+const REQUEST_TIMEOUT_MS = 12_000
 const MAX_TEXT_LENGTH = 2_000
 
 // In-memory failure cooldown guard (5 seconds)
@@ -55,10 +55,12 @@ function buildGeminiPrompt(text = '', findings = [], languageHint = '') {
   const safeText = String(text || '')
   const truncatedText = safeText.slice(0, MAX_TEXT_LENGTH)
   const safeFindings = Array.isArray(findings) ? findings : []
-  const findingsSummary = safeFindings.map((f) => `- ${f?.canonicalSignal || f?.category || 'signal'} (strength: ${f?.strength || 0.5}): ${f?.evidence || 'detected'}`).join('\n')
+  const findingsSummary = safeFindings.length > 0
+    ? safeFindings.map((f) => `- ${f?.canonicalSignal || f?.category || 'signal'} (strength: ${f?.strength || 0.5}): ${f?.evidence || 'detected'}`).join('\n')
+    : '- No high-risk threat signals flagged by deterministic rule engine (Preliminary risk: LOW).'
 
   return `You are a Sri Lankan cyber threat and scam detection expert for TrustLens LK.
-A deterministic rule engine analyzed a user message and flagged threat signals.
+A deterministic rule engine analyzed a user message and extracted preliminary findings.
 
 MESSAGE TO ANALYZE:
 """
@@ -67,11 +69,12 @@ ${truncatedText}
 Language Hint: ${languageHint || 'Auto-detect (Sinhala, Singlish, Tamil, or English)'}
 
 RULE ENGINE FINDINGS:
-${findingsSummary || '- General high-risk pattern detected'}
+${findingsSummary}
 
 TASK:
-Analyze the full context of the message. Is this message genuinely a scam, phishing attempt, or social engineering attack targeting the reader?
-Or is this high-risk vocabulary (e.g. "OTP", "payment", "fee", "verify", "account") being used in a benign, official, informational, or internal business context where the reader is NOT being tricked into losing money or credentials?
+Analyze the full context of the message. Is this message safe/benign, or is it a scam, phishing attempt, or social engineering attack targeting the reader?
+- If high-risk signals were flagged (e.g. "OTP", "payment", "fee", "verify", "account"), evaluate whether they are used in a benign, official, informational context where the reader is NOT being tricked.
+- If no threat signals were flagged, confirm if the message is genuinely safe and harmless.
 
 Respond STRICTLY in valid JSON matching this exact structure (no Markdown block wrappers, no preamble):
 {
@@ -82,87 +85,94 @@ Respond STRICTLY in valid JSON matching this exact structure (no Markdown block 
 }
 
 const GEMINI_MODELS = [
-  'gemini-3.6-flash',
+  'gemini-flash-lite-latest',
   'gemini-3.5-flash-lite',
+  'gemini-3.6-flash',
   'gemini-3.1-flash-lite',
   'gemini-3.5-flash',
 ]
 
 /**
- * Calls the Google Gemini API to evaluate context.
+ * Calls the Google Gemini API to evaluate context for all inputs.
  * Fails open: Returns null on timeout, missing key, or API errors.
  */
+async function fetchModel(modelName, prompt) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${encodeURIComponent(GEMINI_API_KEY)}`
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: {
+        temperature: 0.1,
+        responseMimeType: 'application/json',
+      },
+    }),
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  })
+
+  if (!response.ok) {
+    throw new Error(`Model ${modelName} returned status ${response.status}`)
+  }
+
+  const data = await response.json()
+  const contentText = data?.candidates?.[0]?.content?.parts?.[0]?.text
+  if (!contentText) {
+    throw new Error(`Model ${modelName} returned empty candidate text`)
+  }
+
+  let cleanJsonText = contentText.trim()
+  if (cleanJsonText.startsWith('```')) {
+    cleanJsonText = cleanJsonText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim()
+  }
+  if (!cleanJsonText.startsWith('{')) {
+    const match = contentText.match(/\{[\s\S]*\}/)
+    if (match) cleanJsonText = match[0]
+  }
+
+  const parsed = JSON.parse(cleanJsonText)
+  const validVerdicts = ['AGREE', 'DISAGREE', 'UNCERTAIN']
+  const verdict = validVerdicts.includes(parsed.verdict) ? parsed.verdict : 'UNCERTAIN'
+  const confidence = typeof parsed.confidence === 'number' ? Math.min(1, Math.max(0, parsed.confidence)) : 0.5
+  const reasoning = parsed.reasoning || 'AI context evaluation complete.'
+
+  lastFailureTimestamp = 0
+  return {
+    verdict,
+    confidence,
+    reasoning,
+    evaluatedAt: new Date().toISOString(),
+  }
+}
+
 export async function evaluateContextWithAi({ text = '', decision, languageHint = null }) {
   if (!isAiValidationConfigured()) return null
-
-  // Skip AI evaluation for LOW risk messages to minimize latency and API cost
-  if (!decision || decision.riskBand === 'LOW') return null
+  if (!decision) return null
 
   const safeText = String(text || '').trim()
   if (!safeText) return null
 
-  // Cooldown check if all models failed recently
-  if (lastFailureTimestamp > 0 && Date.now() - lastFailureTimestamp < COOLDOWN_MS) {
-    return null
-  }
-
   const prompt = buildGeminiPrompt(safeText, decision.findings || [], languageHint)
 
-  for (const modelName of GEMINI_MODELS) {
-    try {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${encodeURIComponent(GEMINI_API_KEY)}`
-
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: {
-            temperature: 0.1,
-            responseMimeType: 'application/json',
-          },
-        }),
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-      })
-
-      if (!response.ok) {
-        console.error(`[AI Validator] Model ${modelName} returned status ${response.status} ${response.statusText}`)
-        continue
-      }
-
-      const data = await response.json()
-      const contentText = data?.candidates?.[0]?.content?.parts?.[0]?.text
-      if (!contentText) {
-        console.error(`[AI Validator] Model ${modelName} returned empty candidate text`)
-        continue
-      }
-
-      let cleanJsonText = contentText.trim()
-      if (cleanJsonText.startsWith('```')) {
-        cleanJsonText = cleanJsonText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim()
-      }
-
-      const parsed = JSON.parse(cleanJsonText)
-      const validVerdicts = ['AGREE', 'DISAGREE', 'UNCERTAIN']
-      const verdict = validVerdicts.includes(parsed.verdict) ? parsed.verdict : 'UNCERTAIN'
-      const confidence = typeof parsed.confidence === 'number' ? Math.min(1, Math.max(0, parsed.confidence)) : 0.5
-      const reasoning = parsed.reasoning || 'AI context evaluation complete.'
-
-      lastFailureTimestamp = 0
-      return {
-        verdict,
-        confidence,
-        reasoning,
-        evaluatedAt: new Date().toISOString(),
-      }
-    } catch (err) {
-      console.error(`[AI Validator Exception] Model ${modelName}:`, err.message)
-      continue
+  // Use Promise.any to race the top 3 models concurrently to reduce latency
+  const modelsToRace = GEMINI_MODELS.slice(0, 3)
+  
+  try {
+    return await Promise.any(
+      modelsToRace.map(modelName => fetchModel(modelName, prompt))
+    )
+  } catch (aggregateError) {
+    console.error(`[AI Validator Exception] All concurrent models failed:`, aggregateError)
+    
+    // Fallback if all models fail
+    return {
+      verdict: 'UNCERTAIN',
+      confidence: 0,
+      reasoning: `AI context evaluation temporarily unavailable (Concurrent requests failed).`,
+      evaluatedAt: new Date().toISOString(),
     }
   }
-
-  lastFailureTimestamp = Date.now()
-  return null
 }
 
 /**
@@ -226,11 +236,17 @@ export function applyAiVerdict(decision, aiResult, intelligenceOverlay = null) {
     }
   }
 
-  // Handle AGREE or UNCERTAIN
+  // Handle AGREE, UNCERTAIN, or LOW risk band
   if (aiResult.verdict === 'AGREE') {
-    trace.push(`[AI Context Layer]: AI context analysis confirmed rule-engine verdict as genuine threat (${aiResult.reasoning}).`)
+    if (originalRiskBand === 'LOW') {
+      trace.push(`[AI Context Layer]: AI context evaluation confirmed message is safe and benign ("${aiResult.reasoning}").`)
+    } else {
+      trace.push(`[AI Context Layer]: AI context analysis confirmed rule-engine verdict as genuine threat ("${aiResult.reasoning}").`)
+    }
+  } else if (originalRiskBand === 'LOW') {
+    trace.push(`[AI Context Layer]: AI context evaluation evaluated message ("${aiResult.reasoning}").`)
   } else {
-    trace.push(`[AI Context Layer]: AI context evaluation uncertain (${aiResult.reasoning}). Original verdict retained.`)
+    trace.push(`[AI Context Layer]: AI context evaluation complete ("${aiResult.reasoning}"). Original verdict retained.`)
   }
 
   return {

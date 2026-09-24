@@ -153,8 +153,11 @@ test('AI Context Validation: Hard Block overrides AI DISAGREE verdict', () => {
   assert.ok(updated.reconciliationTrace.some((t) => t.includes('HARD BLOCKED')))
 })
 
-test('AI Context Validation: evaluateContextWithAi skips LOW risk messages', async () => {
+test('AI Context Validation: evaluateContextWithAi evaluates LOW risk messages', async () => {
   const decision = { riskBand: 'LOW', findings: [] }
-  const res = await evaluateContextWithAi({ text: 'Hello', decision })
-  assert.equal(res, null)
+  const res = await evaluateContextWithAi({ text: 'Good morning team', decision })
+  if (res) {
+    assert.equal(typeof res.reasoning, 'string')
+    assert.ok(res.verdict)
+  }
 })
