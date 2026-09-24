@@ -1,4 +1,5 @@
-import React, { useEffect, useState, useCallback } from 'react'
+import React, { useEffect, useState, useCallback, useMemo } from 'react'
+import { createPortal } from 'react-dom'
 import {
   ShieldAlert,
   AlertTriangle,
@@ -9,7 +10,18 @@ import {
   Copy,
   Check,
   Send,
-  ShieldCheck,
+  Hash,
+  Lock,
+  DollarSign,
+  Briefcase,
+  Download,
+  UserX,
+  AlertCircle,
+  Landmark,
+  Store,
+  MessageCircle,
+  FileText,
+  Pencil,
 } from 'lucide-react'
 import {
   type CreatedReport,
@@ -28,68 +40,191 @@ export interface ReportModalProps {
   submissionId?: string | null
 }
 
-const REPORT_TYPE_CONFIG: Record<
-  ReportType,
+export interface ThreatCategoryOption {
+  id: string
+  label: string
+  sublabel: string
+  icon: React.ComponentType<{ size?: number; className?: string; 'aria-hidden'?: boolean | 'true' | 'false' }>
+  color: string
+}
+
+const REPORT_TYPE_TABS: Array<{
+  type: ReportType
+  label: string
+  icon: React.ComponentType<{ size?: number; 'aria-hidden'?: boolean | 'true' | 'false' }>
+  badgeClass: string
+}> = [
   {
-    icon: React.ComponentType<{ size?: number; 'aria-hidden'?: boolean | 'true' | 'false' }>
-    title: string
-    desc: string
-    color: string
-    typeClass: string
-  }
-> = {
-  suspicious: {
+    type: 'suspicious',
+    label: 'Unreported Threat',
     icon: ShieldAlert,
-    title: 'Unreported Threat',
-    desc: 'Phishing, bank fraud, fake job, or malicious link',
-    color: '#e11d48',
-    typeClass: 'is-threat',
+    badgeClass: 'tab-threat',
   },
-  false_positive: {
+  {
+    type: 'false_positive',
+    label: 'False Alarm',
     icon: AlertTriangle,
-    title: 'False Alarm',
-    desc: 'Legitimate message incorrectly flagged as risky',
-    color: '#d97706',
-    typeClass: 'is-alarm',
+    badgeClass: 'tab-alarm',
   },
-  false_negative: {
+  {
+    type: 'false_negative',
+    label: 'Evaded Detection',
     icon: Search,
-    title: 'Evaded Detection',
-    desc: 'Dangerous scam that bypassed safety filters',
-    color: '#0284c7',
-    typeClass: 'is-evaded',
+    badgeClass: 'tab-evaded',
   },
+]
+
+const THREAT_CATEGORIES: ThreatCategoryOption[] = [
+  {
+    id: 'phishing',
+    label: 'Phishing',
+    sublabel: 'Credential / OTP Theft',
+    icon: Lock,
+    color: '#EF4444',
+  },
+  {
+    id: 'financial_scam',
+    label: 'Financial Scam',
+    sublabel: 'Utility, Lottery, Advance Fee',
+    icon: DollarSign,
+    color: '#F59E0B',
+  },
+  {
+    id: 'job_scam',
+    label: 'Fake Job Scam',
+    sublabel: 'Task & Hiring Fraud',
+    icon: Briefcase,
+    color: '#0066FF',
+  },
+  {
+    id: 'malware',
+    label: 'Malware / APK',
+    sublabel: 'Malicious App Download',
+    icon: Download,
+    color: '#8B5CF6',
+  },
+  {
+    id: 'impersonation',
+    label: 'Impersonation',
+    sublabel: 'Brand or Entity Spoofing',
+    icon: UserX,
+    color: '#EC4899',
+  },
+  {
+    id: 'other',
+    label: 'Other Threat',
+    sublabel: 'Suspicious Content',
+    icon: AlertCircle,
+    color: '#64748B',
+  },
+]
+
+const FALSE_ALARM_CATEGORIES: ThreatCategoryOption[] = [
+  {
+    id: 'official_institution',
+    label: 'Official Institution',
+    sublabel: 'Official Organization or Utility',
+    icon: Landmark,
+    color: '#10B981',
+  },
+  {
+    id: 'legitimate_business',
+    label: 'Legitimate Merchant',
+    sublabel: 'Store, Service, Delivery',
+    icon: Store,
+    color: '#0284C7',
+  },
+  {
+    id: 'personal_message',
+    label: 'Personal Message',
+    sublabel: 'Known Safe Contact',
+    icon: MessageCircle,
+    color: '#6366F1',
+  },
+  {
+    id: 'public_information',
+    label: 'Public / Advisory',
+    sublabel: 'News, Notice or General Content',
+    icon: FileText,
+    color: '#64748B',
+  },
+]
+
+function detectDefaultThreat(text: string, domain?: string | null): string {
+  const t = `${domain || ''} ${text}`.toLowerCase()
+  if (/bank|banking|financial|account|card|debit|credit|login|verify|credential|pin|otp|password|security/.test(t)) {
+    return 'phishing'
+  }
+  if (/job|earn|part-time|salary|hiring|advance|task|telegram/.test(t)) {
+    return 'job_scam'
+  }
+  if (/\.apk|download|install|app|update|trojan|malware/.test(t)) {
+    return 'malware'
+  }
+  if (/electricity|utility|water|bill|telecom|carrier|provider|payment|lottery|prize|won|lucky|cash|gift|reward|offer/.test(t)) {
+    return 'financial_scam'
+  }
+  return 'phishing'
 }
 
 export const ReportModal: React.FC<ReportModalProps> = ({
   isOpen,
   onClose,
-  content,
+  content = '',
   reportedDomain,
   submissionId,
 }) => {
+  const safeContent = typeof content === 'string' ? content : ''
   const [reportType, setReportType] = useState<ReportType>('suspicious')
+  const [threatCategory, setThreatCategory] = useState<string>('phishing')
   const [notes, setNotes] = useState('')
   const [sha256, setSha256] = useState<string>('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [successReport, setSuccessReport] = useState<CreatedReport | null>(null)
   const [copiedId, setCopiedId] = useState(false)
+  const [isEditingTarget, setIsEditingTarget] = useState(false)
 
-  const detectedTarget =
-    reportedDomain ||
-    content.match(/https?:\/\/[^\s/$.?#].[^\s]*/i)?.[0] ||
-    content.match(/[a-zA-Z0-9-]+\.[a-zA-Z]{2,}(?:\/[^\s]*)?/i)?.[0] ||
-    ''
+  const detectedTarget = useMemo(() => {
+    return (
+      reportedDomain ||
+      safeContent.match(/https?:\/\/[^\s/$.?#].[^\s]*/i)?.[0] ||
+      safeContent.match(/[a-zA-Z0-9-]+\.[a-zA-Z]{2,}(?:\/[^\s]*)?/i)?.[0] ||
+      ''
+    )
+  }, [reportedDomain, safeContent])
+
   const [manualIndicator, setManualIndicator] = useState<string | null>(null)
   const targetIndicator = manualIndicator !== null ? manualIndicator : detectedTarget
 
-  // Compute client-side SHA-256
   useEffect(() => {
-    if (content && isOpen) {
-      computeSha256(content).then(setSha256).catch(() => setSha256(''))
+    if (isOpen && !content.trim() && !reportedDomain) {
+      setIsEditingTarget(true)
     }
-  }, [content, isOpen])
+  }, [isOpen, content, reportedDomain])
+
+  // Compute client-side SHA-256 (falls back to targetIndicator or notes if content is empty)
+  useEffect(() => {
+    if (isOpen) {
+      const payloadToHash =
+        safeContent.trim() ||
+        (targetIndicator && targetIndicator.trim()) ||
+        (notes && notes.trim()) ||
+        'citizen-threat-submission'
+      computeSha256(payloadToHash).then(setSha256).catch(() => setSha256(''))
+    }
+  }, [safeContent, targetIndicator, notes, isOpen])
+
+  // Intelligently pre-select the most relevant threat category when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      if (reportType === 'false_positive') {
+        setThreatCategory('official_institution')
+      } else {
+        setThreatCategory(detectDefaultThreat(safeContent, targetIndicator))
+      }
+    }
+  }, [isOpen, reportType, safeContent, targetIndicator])
 
   const handleClose = useCallback(() => {
     if (isSubmitting) return
@@ -98,6 +233,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({
     setNotes('')
     setManualIndicator(null)
     setCopiedId(false)
+    setIsEditingTarget(false)
     onClose()
   }, [isSubmitting, onClose])
 
@@ -112,6 +248,17 @@ export const ReportModal: React.FC<ReportModalProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [isOpen, isSubmitting, handleClose])
 
+  // Prevent background page from scrolling when modal is open
+  useEffect(() => {
+    if (isOpen) {
+      const originalOverflow = document.body.style.overflow
+      document.body.style.overflow = 'hidden'
+      return () => {
+        document.body.style.overflow = originalOverflow
+      }
+    }
+  }, [isOpen])
+
   const handleCopyId = (id: string) => {
     navigator.clipboard.writeText(id)
     setCopiedId(true)
@@ -122,7 +269,28 @@ export const ReportModal: React.FC<ReportModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!sha256) {
+
+    if (!targetIndicator.trim() && !content.trim() && !notes.trim()) {
+      setError('Please provide a suspicious link, phone number, or description of the scam.')
+      return
+    }
+
+    let effectiveSha = sha256
+    if (!effectiveSha) {
+      const payloadToHash =
+        (content && content.trim()) ||
+        (targetIndicator && targetIndicator.trim()) ||
+        (notes && notes.trim()) ||
+        'citizen-threat-submission'
+      try {
+        effectiveSha = await computeSha256(payloadToHash)
+        setSha256(effectiveSha)
+      } catch {
+        effectiveSha = ''
+      }
+    }
+
+    if (!effectiveSha) {
       setError('Cryptographic fingerprint could not be computed for this content.')
       return
     }
@@ -132,15 +300,16 @@ export const ReportModal: React.FC<ReportModalProps> = ({
 
     try {
       const finalTarget = targetIndicator.trim() ? defangIndicator(targetIndicator.trim()) : null
-      const excerpt = content.trim().length > 300 ? content.trim().slice(0, 297) + '...' : content.trim()
+      const excerpt = content && content.trim().length > 250 ? content.trim().slice(0, 247) + '...' : (content?.trim() || null)
 
       const res = await submitUserReport({
         reportType,
-        contentSha256: sha256,
+        threatCategory,
+        contentSha256: effectiveSha,
         reportedDomain: finalTarget,
         notes: notes.trim() || null,
         submissionId: submissionId || null,
-        rawExcerpt: excerpt || null,
+        rawExcerpt: excerpt,
       })
 
       if (res.success && res.report) {
@@ -156,10 +325,24 @@ export const ReportModal: React.FC<ReportModalProps> = ({
   }
 
   const defangedPreview = targetIndicator.trim() ? defangIndicator(targetIndicator.trim()) : ''
+  const availableCategories = reportType === 'false_positive' ? FALSE_ALARM_CATEGORIES : THREAT_CATEGORIES
 
-  return (
+  return createPortal(
     <div
       className="modal-backdrop"
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 999999,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: 'rgba(15, 23, 42, 0.65)',
+        backdropFilter: 'blur(8px)',
+        WebkitBackdropFilter: 'blur(8px)',
+        padding: '16px',
+        boxSizing: 'border-box',
+      }}
       onClick={(e) => {
         if (e.target === e.currentTarget && !isSubmitting) {
           handleClose()
@@ -173,7 +356,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({
         aria-modal="true"
         aria-labelledby="modal-title"
       >
-        {/* Subtle Brand Accent Bar */}
+        {/* Accent Bar */}
         <div className="modal-top-accent" aria-hidden="true" />
 
         {successReport ? (
@@ -183,15 +366,15 @@ export const ReportModal: React.FC<ReportModalProps> = ({
             </div>
 
             <div className="success-text-block">
-              <h4 id="modal-title">Threat Report Submitted</h4>
+              <h4 id="modal-title">Report Submitted to Threat Queue</h4>
               <p>
-                Thank you for protecting Sri Lankan citizens. Your report is now in the TrustLens moderation pipeline.
+                Thank you for contributing to Sri Lanka's scam defense network. Your report has been dispatched to community moderators for validation.
               </p>
             </div>
 
             <div className="success-ref-card">
               <div className="success-ref-item">
-                <span className="success-ref-tag">INCIDENT REFERENCE</span>
+                <span className="success-ref-tag">INCIDENT REFERENCE ID</span>
                 <button
                   type="button"
                   className="success-copy-ref-btn"
@@ -199,20 +382,33 @@ export const ReportModal: React.FC<ReportModalProps> = ({
                   title="Copy Reference ID"
                 >
                   <code>{successReport.id}</code>
-                  {copiedId ? <Check size={12} color="#10b981" /> : <Copy size={12} />}
+                  {copiedId ? <Check size={13} color="#10B981" /> : <Copy size={13} />}
                 </button>
               </div>
 
               <div className="success-meta-row">
-                <span className="meta-label">Classification</span>
+                <span className="meta-label">Intent</span>
                 <span className="meta-badge">
-                  {REPORT_TYPE_CONFIG[successReport.report_type]?.title || successReport.report_type}
+                  {reportType === 'suspicious'
+                    ? 'Unreported Threat'
+                    : reportType === 'false_positive'
+                      ? 'False Alarm'
+                      : 'Evaded Detection'}
                 </span>
               </div>
 
+              {threatCategory && (
+                <div className="success-meta-row">
+                  <span className="meta-label">Classification</span>
+                  <span className="meta-badge threat">
+                    {availableCategories.find((c) => c.id === threatCategory)?.label || threatCategory}
+                  </span>
+                </div>
+              )}
+
               {successReport.reported_domain && (
                 <div className="success-meta-row">
-                  <span className="meta-label">Defanged Target</span>
+                  <span className="meta-label">Target Indicator</span>
                   <code className="meta-defanged">{successReport.reported_domain}</code>
                 </div>
               )}
@@ -231,11 +427,16 @@ export const ReportModal: React.FC<ReportModalProps> = ({
           </div>
         ) : (
           <>
-            {/* Modal Header */}
+            {/* Header */}
             <div className="modal-header">
-              <div className="modal-header-text">
-                <h3 id="modal-title">Report Threat or False Alarm</h3>
-                <p>Help improve TrustLens detection for Sri Lankan fraud patterns.</p>
+              <div className="modal-header-left">
+                <div className="modal-header-icon">
+                  <ShieldAlert size={20} aria-hidden="true" />
+                </div>
+                <div className="modal-header-text">
+                  <h3 id="modal-title">Report Suspicious Content</h3>
+                  <p>Help calibrate Sri Lankan fraud defenses by flagging new threats or false alarms.</p>
+                </div>
               </div>
               <button
                 type="button"
@@ -244,7 +445,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({
                 aria-label="Close dialog"
                 disabled={isSubmitting}
               >
-                <X size={17} aria-hidden="true" />
+                <X size={16} aria-hidden="true" />
               </button>
             </div>
 
@@ -256,114 +457,150 @@ export const ReportModal: React.FC<ReportModalProps> = ({
             )}
 
             <form onSubmit={handleSubmit} className="report-form">
-              {/* 1. Reason Selection Cards */}
-              <div className="form-group">
-                <label className="form-label" id="reason-label">
-                  Reason for Reporting
-                </label>
+              {/* ── Section 1: Unified Scanned Target Preview ──────────────── */}
+              <div className="clean-preview-strip">
+                <div className="clean-preview-top">
+                  <div className="clean-preview-target">
+                    {defangedPreview ? (
+                      <span className="target-pill">
+                        <Globe size={12} aria-hidden="true" />
+                        <code title={targetIndicator}>{defangedPreview}</code>
+                      </span>
+                    ) : (
+                      <span className="target-pill message">
+                        <FileText size={12} aria-hidden="true" />
+                        <span>Message Text</span>
+                      </span>
+                    )}
 
-                <div
-                  className="reason-grid"
-                  role="radiogroup"
-                  aria-labelledby="reason-label"
-                >
-                  {(Object.keys(REPORT_TYPE_CONFIG) as ReportType[]).map((type) => {
-                    const cfg = REPORT_TYPE_CONFIG[type]
-                    const IconComponent = cfg.icon
-                    const isSelected = reportType === type
+                    <button
+                      type="button"
+                      className="btn-edit-target"
+                      onClick={() => setIsEditingTarget((prev) => !prev)}
+                      title="Edit target indicator"
+                    >
+                      <Pencil size={11} aria-hidden="true" />
+                      <span>{isEditingTarget ? 'Close' : 'Edit Target'}</span>
+                    </button>
+                  </div>
+
+                  {sha256 && (
+                    <span className="fingerprint-pill" title={`SHA-256: ${sha256}`}>
+                      <Hash size={11} aria-hidden="true" />
+                      <span>{sha256.slice(0, 10)}...</span>
+                    </span>
+                  )}
+                </div>
+
+                {isEditingTarget && (
+                  <div className="inline-target-input-row">
+                    <input
+                      type="text"
+                      value={targetIndicator}
+                      onChange={(e) => setManualIndicator(e.target.value)}
+                      placeholder="e.g. suspicious-site.com or login-portal.top"
+                      className="clean-target-input"
+                    />
+                  </div>
+                )}
+
+                {content && (
+                  <div className="clean-snippet-quote">
+                    "{content.length > 120 ? content.slice(0, 118) + '...' : content}"
+                  </div>
+                )}
+              </div>
+
+              {/* ── Section 2: Report Intent (Segmented 3-Pill Switch) ────── */}
+              <div className="form-group">
+                <label className="clean-section-label">1. Reason for Reporting</label>
+                <div className="clean-intent-pills" role="radiogroup" aria-label="Reason for reporting">
+                  {REPORT_TYPE_TABS.map((tab) => {
+                    const isSelected = reportType === tab.type
+                    const TabIcon = tab.icon
                     return (
                       <button
                         type="button"
-                        key={type}
-                        className={`reason-card ${cfg.typeClass} ${isSelected ? 'selected' : ''}`}
+                        key={tab.type}
+                        className={`clean-intent-pill ${isSelected ? 'active selected' : ''}`}
                         role="radio"
                         aria-checked={isSelected}
-                        onClick={() => setReportType(type)}
+                        onClick={() => {
+                          setReportType(tab.type)
+                          if (tab.type === 'false_positive') {
+                            setThreatCategory('official_institution')
+                          } else if (threatCategory === 'official_institution' || threatCategory === 'legitimate_business' || threatCategory === 'personal_message' || threatCategory === 'public_information') {
+                            setThreatCategory('phishing')
+                          }
+                        }}
                       >
-                        <div className="reason-header">
-                          <div className={`reason-icon-box ${cfg.typeClass}`}>
-                            <IconComponent size={17} aria-hidden="true" />
-                          </div>
-                          <div className={`reason-radio ${isSelected ? 'active' : ''}`} aria-hidden="true">
-                            {isSelected && <Check size={10} strokeWidth={3} />}
-                          </div>
-                        </div>
-                        <div className="reason-text">
-                          <span className="reason-title">{cfg.title}</span>
-                          <span className="reason-desc">{cfg.desc}</span>
-                        </div>
+                        <TabIcon size={14} aria-hidden="true" />
+                        <span>{tab.label}</span>
                       </button>
                     )
                   })}
                 </div>
               </div>
 
-              {/* 2. Scanned Snippet & Target URL (Clean, side-by-side or stacked cleanly) */}
-              <div className="form-row-compact">
-                {content && (
-                  <div className="snippet-box">
-                    <span className="snippet-label">Scanned Content Snippet</span>
-                    <p className="snippet-text">
-                      "{content.length > 140 ? content.slice(0, 137) + '...' : content}"
-                    </p>
-                  </div>
-                )}
-
-                <div className="target-box">
-                  <div className="target-label-row">
-                    <label htmlFor="target-indicator" className="form-label-inline">
-                      <Globe size={12} aria-hidden="true" />
-                      <span>Target URL / Domain</span>
-                    </label>
-                    {defangedPreview && (
-                      <span className="defanged-pill" title="Indicators are safely defanged before transmission">
-                        <code>{defangedPreview}</code>
-                      </span>
-                    )}
-                  </div>
-                  <input
-                    id="target-indicator"
-                    type="text"
-                    value={targetIndicator}
-                    onChange={(e) => setManualIndicator(e.target.value)}
-                    placeholder="e.g. ceb-online-pay.top"
-                    className="target-input-field"
-                  />
+              {/* ── Section 3: Threat Type Classification Grid ────────────── */}
+              <div className="form-group">
+                <label className="clean-section-label">
+                  2. {reportType === 'false_positive' ? 'Dispute Category' : 'Threat Classification'}
+                </label>
+                <div className="clean-threat-grid" role="radiogroup" aria-label="Threat classification">
+                  {availableCategories.map((cat) => {
+                    const isSelected = threatCategory === cat.id
+                    return (
+                      <button
+                        type="button"
+                        key={cat.id}
+                        className={`clean-threat-card ${isSelected ? 'selected' : ''}`}
+                        role="radio"
+                        aria-checked={isSelected}
+                        onClick={() => setThreatCategory(cat.id)}
+                      >
+                        <div className="clean-threat-text">
+                          <span className="clean-threat-title">{cat.label}</span>
+                          <span className="clean-threat-sub">{cat.sublabel}</span>
+                        </div>
+                        {isSelected && (
+                          <div className="clean-threat-check">
+                            <Check size={11} strokeWidth={3} aria-hidden="true" />
+                          </div>
+                        )}
+                      </button>
+                    )
+                  })}
                 </div>
               </div>
 
-              {/* 3. Additional Context */}
+              {/* ── Section 4: Context Notes (Clean Textarea) ─────────────── */}
               <div className="form-group">
-                <div className="label-with-counter">
-                  <label htmlFor="report-notes" className="form-label">
-                    Additional Context <span className="optional-tag">(Optional)</span>
+                <div className="clean-label-counter-row">
+                  <label htmlFor="report-notes" className="clean-section-label">
+                    3. Additional Context <span className="optional-tag">(Optional)</span>
                   </label>
-                  <span className={`counter-text ${notes.length >= 1950 ? 'limit-near' : ''}`}>
+                  <span className={`clean-counter ${notes.length >= 1950 ? 'near-limit' : ''}`}>
                     {notes.length} / 2000
                   </span>
                 </div>
                 <textarea
                   id="report-notes"
-                  className="notes-textarea"
+                  className="clean-notes-textarea"
                   maxLength={2000}
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
-                  placeholder="e.g. Received via WhatsApp claiming to be Commercial Bank with a reward link."
+                  placeholder="e.g. Sent via WhatsApp from +94 77... claiming to be Commercial Bank with a fake login link."
                   rows={2}
                 />
               </div>
 
-              {/* 4. Footer with Privacy Assurance & Action Buttons */}
-              <div className="modal-footer">
-                <div className="privacy-assurance">
-                  <ShieldCheck size={14} color="#087f8c" aria-hidden="true" />
-                  <span>Zero-PII • Content hashed locally • Submitter anonymous</span>
-                </div>
-
-                <div className="footer-buttons">
+              {/* ── Section 5: Modal Footer with Submit & Cancel ──────────── */}
+              <div className="clean-modal-footer">
+                <div className="clean-footer-actions">
                   <button
                     type="button"
-                    className="btn-cancel"
+                    className="btn-modal-cancel"
                     onClick={handleClose}
                     disabled={isSubmitting}
                   >
@@ -371,8 +608,8 @@ export const ReportModal: React.FC<ReportModalProps> = ({
                   </button>
                   <button
                     type="submit"
-                    className="btn-submit"
-                    disabled={isSubmitting || !sha256}
+                    className="btn-modal-submit"
+                    disabled={isSubmitting}
                   >
                     {isSubmitting ? (
                       <>
@@ -392,6 +629,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({
           </>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }

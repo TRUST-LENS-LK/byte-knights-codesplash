@@ -85,6 +85,14 @@ test.before(async () => {
       if (statusMatch && statusMatch[1] !== 'ALL') {
         allItems = allItems.filter((r) => r.status === statusMatch[1])
       }
+      const hashMatch = req.url.match(/content_sha256=eq\.([a-f0-9]+)/i)
+      if (hashMatch) {
+        allItems = allItems.filter((r) => r.content_sha256 === hashMatch[1].toLowerCase())
+      }
+      const typeMatch = req.url.match(/report_type=eq\.([a-z_]+)/i)
+      if (typeMatch) {
+        allItems = allItems.filter((r) => r.report_type === typeMatch[1])
+      }
 
       const total = allItems.length
       const limitMatch = req.url.match(/limit=(\d+)/)
@@ -112,6 +120,41 @@ test.before(async () => {
       }
       res.writeHead(200, { 'content-type': 'application/json' })
       return res.end(JSON.stringify([{ status: 'ok' }]))
+    }
+
+    if (req.method === 'DELETE' && req.url.startsWith('/rest/v1/user_reports')) {
+      const deletedItems = []
+      for (const [id, report] of mockReports.entries()) {
+        if (report.notes?.includes('DEMO_FIXTURE') || ['phishing-scam.lk', 'fake-ceb-bill.lk', 'suspicious-lottery.lk'].includes(report.reported_domain)) {
+          deletedItems.push(report)
+          mockReports.delete(id)
+        }
+      }
+      res.writeHead(200, { 'content-type': 'application/json' })
+      return res.end(JSON.stringify(deletedItems))
+    }
+
+    if (req.method === 'GET' && req.url.startsWith('/rest/v1/approved_organizations')) {
+      const orgs = [
+        {
+          id: 1,
+          name: 'Sri Lanka Police',
+          official_domain: 'police.lk',
+          category: 'Government / Law Enforcement',
+          active: true,
+          status: 'ACTIVE',
+        },
+        {
+          id: 2,
+          name: 'Central Bank of Sri Lanka',
+          official_domain: 'cbsl.gov.lk',
+          category: 'Banking & Finance',
+          active: true,
+          status: 'ACTIVE',
+        },
+      ]
+      res.writeHead(200, { 'content-type': 'application/json' })
+      return res.end(JSON.stringify(orgs))
     }
 
     // Default REST endpoints simulation
@@ -195,6 +238,46 @@ test('POST /api/reports: successfully creates a user report with PENDING status'
   assert.equal(body.report.report_type, 'suspicious')
   assert.equal(body.report.reported_domain, 'phishing-srilanka-portal.xyz')
   assert.match(body.report.id, /^[0-9a-f-]{36}$/)
+})
+
+test('POST /api/reports: coalesces duplicate pending report within cooldown window instead of creating duplicate rows', async () => {
+  const hash = 'a1'.repeat(32)
+  const payload1 = {
+    reportType: 'suspicious',
+    contentSha256: hash,
+    reportedDomain: 'duplicate-check.lk',
+    notes: 'Initial citizen report about suspicious message.',
+  }
+
+  // 1. First submission creates the report
+  const res1 = await fetch(`http://localhost:${apiPort}/api/reports`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload1),
+  })
+  assert.equal(res1.status, 201)
+  const body1 = await res1.json()
+  assert.ok(body1.report?.id)
+  const initialId = body1.report.id
+
+  // 2. Second submission with the same hash within 15 minutes coalesces
+  const payload2 = {
+    reportType: 'suspicious',
+    contentSha256: hash,
+    reportedDomain: 'duplicate-check.lk',
+    notes: 'Second user reporting the same scam message.',
+  }
+  const res2 = await fetch(`http://localhost:${apiPort}/api/reports`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload2),
+  })
+  assert.equal(res2.status, 201)
+  const body2 = await res2.json()
+  assert.equal(body2.report.id, initialId, 'Should return the same existing report ID')
+  assert.equal(body2.report.coalesced, true, 'Should indicate report was coalesced')
+  assert.equal(body2.report.submission_count, 2, 'Should increment submission count to 2')
+  assert.match(body2.report.notes, /Corroborated Submissions:\s*2/)
 })
 
 test('GET /api/moderation/queue: blocks requests without token', async () => {
@@ -425,3 +508,275 @@ test('POST /api/moderation/seed-demo: populates demo fixtures when called by ver
   assert.ok(Array.isArray(body.seeded))
   assert.equal(body.count, 3)
 })
+
+test('GET & PATCH /api/moderation/settings: manages engine settings dynamically', async () => {
+  // 1. Blocks unauthorized
+  const unauthRes = await fetch(`http://localhost:${apiPort}/api/moderation/settings`)
+  assert.equal(unauthRes.status, 401)
+
+  // 2. GET settings with valid token
+  const getRes = await fetch(`http://localhost:${apiPort}/api/moderation/settings`, {
+    headers: { Authorization: `Bearer ${validModeratorToken}` },
+  })
+  assert.equal(getRes.status, 200)
+  const getBody = await getRes.json()
+  assert.equal(getBody.success, true)
+  assert.equal(typeof getBody.settings.enableVerifiedIntel, 'boolean')
+
+  // 3. PATCH settings to toggle off
+  const patchRes = await fetch(`http://localhost:${apiPort}/api/moderation/settings`, {
+    method: 'PATCH',
+    headers: {
+      'content-type': 'application/json',
+      Authorization: `Bearer ${validModeratorToken}`,
+    },
+    body: JSON.stringify({ enableVerifiedIntel: false }),
+  })
+  assert.equal(patchRes.status, 200)
+  const patchBody = await patchRes.json()
+  assert.equal(patchBody.settings.enableVerifiedIntel, false)
+
+  // 4. PATCH auditRetentionDays
+  const patchRetentionRes = await fetch(`http://localhost:${apiPort}/api/moderation/settings`, {
+    method: 'PATCH',
+    headers: {
+      'content-type': 'application/json',
+      Authorization: `Bearer ${validModeratorToken}`,
+    },
+    body: JSON.stringify({ auditRetentionDays: 60 }),
+  })
+  assert.equal(patchRetentionRes.status, 200)
+  const patchRetentionBody = await patchRetentionRes.json()
+  assert.equal(patchRetentionBody.settings.auditRetentionDays, 60)
+
+  // 5. Restore setting to true and 90 days
+  await fetch(`http://localhost:${apiPort}/api/moderation/settings`, {
+    method: 'PATCH',
+    headers: {
+      'content-type': 'application/json',
+      Authorization: `Bearer ${validModeratorToken}`,
+    },
+    body: JSON.stringify({ enableVerifiedIntel: true, auditRetentionDays: 90 }),
+  })
+})
+
+test('GET & PATCH /api/moderation/intelligence: lists and toggles verified intelligence', async () => {
+  // 1. Blocks unauthorized
+  const unauthRes = await fetch(`http://localhost:${apiPort}/api/moderation/intelligence`)
+  assert.equal(unauthRes.status, 401)
+
+  // 2. GET intelligence with valid token
+  const getRes = await fetch(`http://localhost:${apiPort}/api/moderation/intelligence?status=all&page=1&limit=10`, {
+    headers: { Authorization: `Bearer ${validModeratorToken}` },
+  })
+  assert.equal(getRes.status, 200)
+  const getBody = await getRes.json()
+  assert.equal(getBody.success, true)
+  assert.ok(Array.isArray(getBody.intelligence))
+  assert.ok(getBody.total >= 0)
+
+  // 3. PATCH status if an item exists
+  if (getBody.intelligence.length > 0) {
+    const item = getBody.intelligence[0]
+    const patchRes = await fetch(`http://localhost:${apiPort}/api/moderation/intelligence/${item.id}`, {
+      method: 'PATCH',
+      headers: {
+        'content-type': 'application/json',
+        Authorization: `Bearer ${validModeratorToken}`,
+      },
+      body: JSON.stringify({ active: false, notes: 'Retired for test' }),
+    })
+    assert.equal(patchRes.status, 200)
+    const patchBody = await patchRes.json()
+    assert.equal(patchBody.success, true)
+    assert.equal(patchBody.updated.active, false)
+  }
+})
+
+test('POST /api/moderation/clear-demo: blocks requests without moderator token', async () => {
+  const unauthRes = await fetch(`http://localhost:${apiPort}/api/moderation/clear-demo`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+  })
+  assert.equal(unauthRes.status, 401)
+})
+
+test('POST /api/moderation/clear-demo: clears demo reports when called by verified moderator', async () => {
+  // First ensure there is at least one seed
+  await fetch(`http://localhost:${apiPort}/api/moderation/seed-demo`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      Authorization: `Bearer ${validModeratorToken}`,
+    },
+  })
+
+  // Clear demo data
+  const clearRes = await fetch(`http://localhost:${apiPort}/api/moderation/clear-demo`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      Authorization: `Bearer ${validModeratorToken}`,
+    },
+  })
+
+  assert.equal(clearRes.status, 200)
+  const body = await clearRes.json()
+  assert.equal(body.success, true)
+  assert.ok(typeof body.count === 'number')
+})
+
+test('GET /api/moderation/audit-logs: blocks unauthenticated requests and returns audit trail for moderator', async () => {
+  // 1. Unauthenticated request blocked
+  const unauthRes = await fetch(`http://localhost:${apiPort}/api/moderation/audit-logs`)
+  assert.equal(unauthRes.status, 401)
+
+  // 2. Authenticated query succeeds
+  const authRes = await fetch(`http://localhost:${apiPort}/api/moderation/audit-logs?page=1&limit=10`, {
+    headers: { Authorization: `Bearer ${validModeratorToken}` },
+  })
+  assert.equal(authRes.status, 200)
+  const body = await authRes.json()
+  assert.equal(body.success, true)
+  assert.ok(Array.isArray(body.auditLogs))
+  assert.ok(typeof body.total === 'number')
+  assert.equal(body.retentionDays, 90)
+})
+
+test('GET /api/moderation/audit-logs/stats: returns storage volume and retention health', async () => {
+  const statsRes = await fetch(`http://localhost:${apiPort}/api/moderation/audit-logs/stats`, {
+    headers: { Authorization: `Bearer ${validModeratorToken}` },
+  })
+  assert.equal(statsRes.status, 200)
+  const body = await statsRes.json()
+  assert.equal(body.success, true)
+  assert.ok(body.stats)
+  assert.equal(body.stats.retentionDays, 90)
+  assert.ok(['OPTIMAL', 'WARNING', 'CAPACITY_REACHED'].includes(body.stats.storageStatus))
+})
+
+test('POST /api/moderation/audit-logs/purge: executes retention purge and removes expired records', async () => {
+  const purgeRes = await fetch(`http://localhost:${apiPort}/api/moderation/audit-logs/purge`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      Authorization: `Bearer ${validModeratorToken}`,
+    },
+    body: JSON.stringify({}),
+  })
+  assert.equal(purgeRes.status, 200)
+  const body = await purgeRes.json()
+  assert.equal(body.success, true)
+  assert.ok(typeof body.purgedCount === 'number')
+  assert.equal(body.retentionDays, 90)
+})
+
+test('GET /api/moderation/queue: enriches reports with protected_entity metadata dynamically', async () => {
+  // 1. Submit a report for official domain police.lk
+  const submitRes = await fetch(`http://localhost:${apiPort}/api/reports`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      reportType: 'suspicious',
+      contentSha256: 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2',
+      reportedDomain: 'police.lk',
+      rawExcerpt: 'Suspicious sms claiming to be Sri Lanka police traffic fine',
+    }),
+  })
+  assert.equal(submitRes.status, 201)
+
+  // 2. Fetch moderation queue as moderator
+  const queueRes = await fetch(`http://localhost:${apiPort}/api/moderation/queue`, {
+    headers: { Authorization: `Bearer ${validModeratorToken}` },
+  })
+  assert.equal(queueRes.status, 200)
+  const queueBody = await queueRes.json()
+  assert.equal(queueBody.success, true)
+
+  const policeReport = queueBody.reports.find((r) => r.reported_domain === 'police.lk')
+  assert.ok(policeReport, 'Report for police.lk should be in the queue')
+  assert.ok(policeReport.protected_entity, 'police.lk should have protected_entity metadata')
+  assert.equal(policeReport.protected_entity.isProtected, true)
+  assert.equal(policeReport.protected_entity.type, 'OFFICIAL_NATIONAL')
+  assert.equal(policeReport.protected_entity.name, 'Sri Lanka Police')
+  assert.equal(policeReport.protected_entity.recommendedAction, 'REJECT')
+})
+
+test('POST /api/moderation/review: Circuit Breaker blocks approval of protected entities without override (HTTP 422)', async () => {
+  // 1. Submit a report for global platform facebook.com
+  const submitRes = await fetch(`http://localhost:${apiPort}/api/reports`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      reportType: 'suspicious',
+      contentSha256: 'b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3',
+      reportedDomain: 'facebook.com',
+      rawExcerpt: 'Citizen reported seeing a scam advert on facebook',
+    }),
+  })
+  assert.equal(submitRes.status, 201)
+  const submitBody = await submitRes.json()
+  const reportId = submitBody.report.id
+
+  // 2. Try to APPROVE without overrideProtectedEntity -> HTTP 422 PROTECTED_ENTITY_OVERRIDE_REQUIRED
+  const reviewRes = await fetch(`http://localhost:${apiPort}/api/moderation/review`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      Authorization: `Bearer ${validModeratorToken}`,
+    },
+    body: JSON.stringify({
+      reportId,
+      action: 'APPROVE',
+      category: 'Phishing',
+      notes: 'Trying to approve facebook.com without circuit breaker override',
+    }),
+  })
+
+  assert.equal(reviewRes.status, 422)
+  const reviewBody = await reviewRes.json()
+  assert.equal(reviewBody.code, 'PROTECTED_ENTITY_OVERRIDE_REQUIRED')
+  assert.ok(reviewBody.protectedEntity)
+  assert.equal(reviewBody.protectedEntity.type, 'TOP_GLOBAL')
+})
+
+test('POST /api/moderation/review: Circuit Breaker permits approval when overrideProtectedEntity=true and incidentReason provided', async () => {
+  // 1. Submit a report for cbsl.gov.lk (Central Bank)
+  const submitRes = await fetch(`http://localhost:${apiPort}/api/reports`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      reportType: 'suspicious',
+      contentSha256: 'c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4',
+      reportedDomain: 'cbsl.gov.lk',
+      rawExcerpt: 'Severe defacement or incident',
+    }),
+  })
+  assert.equal(submitRes.status, 201)
+  const submitBody = await submitRes.json()
+  const reportId = submitBody.report.id
+
+  // 2. APPROVE with overrideProtectedEntity: true and incidentReason
+  const overrideRes = await fetch(`http://localhost:${apiPort}/api/moderation/review`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      Authorization: `Bearer ${validModeratorToken}`,
+    },
+    body: JSON.stringify({
+      reportId,
+      action: 'APPROVE',
+      category: 'Compromised Infrastructure',
+      notes: 'Confirmed by CERT emergency incident team',
+      overrideProtectedEntity: true,
+      incidentReason: 'CERT-INC-2026-999: Active DNS Hijack Incident',
+    }),
+  })
+
+  assert.equal(overrideRes.status, 200)
+  const overrideBody = await overrideRes.json()
+  assert.equal(overrideBody.result.success, true)
+  assert.equal(overrideBody.result.status, 'APPROVED')
+})
+
+

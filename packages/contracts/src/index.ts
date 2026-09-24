@@ -38,6 +38,12 @@ export const CANONICAL_SIGNALS = [
   // Verified intelligence (Member 5, supabase verified_intelligence table)
   "confirmed_scam_indicator",
   "verified_safe_indicator",
+
+  // Multi-tier domain verification (services/api/src/services/globalDomains.mjs,
+  // safeBrowsing.mjs, domainAge.mjs)
+  "known_global_domain",
+  "known_malicious_domain",
+  "new_domain_risk",
 ] as const;
 
 export type CanonicalSignal = (typeof CANONICAL_SIGNALS)[number];
@@ -97,6 +103,7 @@ export const findingSchema = z.object({
   ]),
   strength: z.number().min(0).max(1),
   confidence: z.number().min(0).max(1).optional(),
+  reportCount: z.number().int().nonnegative().optional(),
   limitation: z.string().optional(),
   // Identifies which version of the rule or detector produced this finding,
   // so a stored decision trace stays auditable even after the detector logic
@@ -213,6 +220,7 @@ export const userReportStatusSchema = z.enum([
 
 export const createUserReportSchema = z.object({
   reportType: userReportTypeSchema,
+  threatCategory: z.string().max(100).optional().nullable(),
   contentSha256: z
     .string()
     .regex(/^[a-f0-9]{64}$/i, "contentSha256 must be a 64-character hex string"),
@@ -225,6 +233,7 @@ export const createUserReportSchema = z.object({
 export const userReportSchema = z.object({
   id: z.string().uuid(),
   reportType: userReportTypeSchema,
+  threatCategory: z.string().max(100).optional().nullable(),
   contentSha256: z.string(),
   reportedDomain: z.string().nullable().optional(),
   notes: z.string().nullable().optional(),
@@ -233,12 +242,31 @@ export const userReportSchema = z.object({
   reviewedAt: z.string().nullable().optional(),
 });
 
+export const protectedEntityTypeSchema = z.enum([
+  "OFFICIAL_NATIONAL",
+  "TOP_GLOBAL",
+]);
+
+export const protectedEntitySchema = z.object({
+  isProtected: z.boolean(),
+  type: protectedEntityTypeSchema,
+  name: z.string(),
+  badge: z.string(),
+  warning: z.string(),
+  recommendedAction: z.enum(["REJECT", "APPROVE"]),
+});
+
+export type ProtectedEntity = z.infer<typeof protectedEntitySchema>;
+
 export const moderationActionSchema = z.object({
   reportId: z.string().uuid(),
   action: z.enum(["APPROVE", "REJECT", "RETIRE"]),
   notes: z.string().max(1000).optional().nullable(),
   indicatorType: z.enum(["domain", "content_hash", "phone", "url"]).optional(),
   category: z.string().max(100).optional().nullable(),
+  confidence: z.number().min(0.1).max(1.0).optional().nullable(),
+  overrideProtectedEntity: z.boolean().optional().nullable(),
+  incidentReason: z.string().max(500).optional().nullable(),
 });
 
 export const verifiedIntelligenceSchema = z.object({
@@ -255,9 +283,102 @@ export const verifiedIntelligenceSchema = z.object({
   createdAt: z.string(),
 });
 
+export const verifiedIntelligenceQuerySchema = z.object({
+  status: z.enum(["active", "retired", "all"]).default("all"),
+  type: z.enum(["domain", "content_hash", "phone", "url", "all"]).default("all"),
+  riskLevel: z.enum(["CONFIRMED_SCAM", "VERIFIED_SAFE", "all"]).default("all"),
+  search: z.string().optional(),
+  page: z.coerce.number().int().positive().default(1),
+  limit: z.coerce.number().int().positive().max(100).default(20),
+});
+
+export const updateIntelligenceStatusSchema = z.object({
+  active: z.boolean(),
+  notes: z.string().max(1000).optional().nullable(),
+});
+
+export const auditActionSchema = z.enum([
+  "APPROVE",
+  "REJECT",
+  "RETIRE",
+  "TOGGLE_STATUS",
+  "UPDATE_SETTINGS",
+  "PURGE_EXPIRED",
+  "AUTH_LOGIN",
+  "AUTH_FAILED",
+  "DOMAIN_CREATE",
+  "DOMAIN_UPDATE",
+  "DOMAIN_DELETE",
+  "MANUAL_INTEL",
+]);
+
+export const moderationAuditLogSchema = z.object({
+  id: z.union([z.number(), z.string()]),
+  reportId: z.string().uuid().nullable().optional(),
+  action: auditActionSchema,
+  targetIndicator: z.string().nullable().optional(),
+  threatCategory: z.string().nullable().optional(),
+  actorEmail: z.string().nullable().optional(),
+  actorRole: z.string().default("moderator"),
+  confidence: z.number().min(0).max(1).nullable().optional(),
+  moderatorNotes: z.string().nullable().optional(),
+  entryHash: z.string().optional(),
+  prevHash: z.string().nullable().optional(),
+  clientIp: z.string().nullable().optional(),
+  userAgent: z.string().nullable().optional(),
+  createdAt: z.string(),
+  expiresAt: z.string().optional(),
+});
+
+export const auditQuerySchema = z.object({
+  action: z.enum([
+    "APPROVE",
+    "REJECT",
+    "RETIRE",
+    "TOGGLE_STATUS",
+    "UPDATE_SETTINGS",
+    "PURGE_EXPIRED",
+    "AUTH_LOGIN",
+    "AUTH_FAILED",
+    "DOMAIN_CREATE",
+    "DOMAIN_UPDATE",
+    "DOMAIN_DELETE",
+    "MANUAL_INTEL",
+    "REVIEWS",
+    "QUEUE_REVIEWS",
+    "ALL",
+  ]).default("ALL"),
+  search: z.string().optional(),
+  actor: z.string().optional(),
+  fromDate: z.string().optional(),
+  toDate: z.string().optional(),
+  page: z.coerce.number().int().positive().default(1),
+  limit: z.coerce.number().int().positive().max(100).default(20),
+});
+
+export const auditStorageStatsSchema = z.object({
+  totalRecords: z.number().int().nonnegative(),
+  retentionDays: z.number().int().positive(),
+  oldestRecordAt: z.string().nullable(),
+  newestRecordAt: z.string().nullable(),
+  storageStatus: z.enum(["OPTIMAL", "WARNING", "CAPACITY_REACHED"]),
+});
+
+export const engineSettingsSchema = z.object({
+  enableVerifiedIntel: z.boolean().optional(),
+  auditRetentionDays: z.number().int().min(1).max(3650).optional(),
+});
+
 export type UserReportType = z.infer<typeof userReportTypeSchema>;
 export type UserReportStatus = z.infer<typeof userReportStatusSchema>;
 export type CreateUserReport = z.infer<typeof createUserReportSchema>;
 export type UserReport = z.infer<typeof userReportSchema>;
 export type ModerationAction = z.infer<typeof moderationActionSchema>;
 export type VerifiedIntelligence = z.infer<typeof verifiedIntelligenceSchema>;
+export type VerifiedIntelligenceQuery = z.infer<typeof verifiedIntelligenceQuerySchema>;
+export type UpdateIntelligenceStatus = z.infer<typeof updateIntelligenceStatusSchema>;
+export type AuditAction = z.infer<typeof auditActionSchema>;
+export type ModerationAuditLog = z.infer<typeof moderationAuditLogSchema>;
+export type AuditQuery = z.infer<typeof auditQuerySchema>;
+export type AuditStorageStats = z.infer<typeof auditStorageStatsSchema>;
+export type EngineSettings = z.infer<typeof engineSettingsSchema>;
