@@ -2392,15 +2392,7 @@ input[type='file'] { width: 100%; margin-top: .4rem; font-size: .8rem; }
     grid-template-columns: 1fr;
   }
 
-  .dashboard-tabs {
-    flex-direction: column;
-    width: 100%;
-  }
 
-  .tab-btn {
-    width: 100%;
-    justify-content: center;
-  }
 
   .sandbox-metrics-row {
     grid-template-columns: 1fr;
@@ -2553,3 +2545,136 @@ input[type='file'] { width: 100%; margin-top: .4rem; font-size: .8rem; }
   color: #475569;
   border: 1px solid #CBD5E1;
 }
+
+/* ==========================================================================
+   MOBILE RESPONSIVENESS
+   ========================================================================== */
+
+/* Tablet & Smaller Desktop */
+@media (max-width: 900px) {
+  .hero {
+    grid-template-columns: 1fr;
+    gap: 32px;
+  }
+  
+  .tab-grid-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Mobile Devices */
+@media (max-width: 768px) {
+  .app-shell {
+    padding: 0 16px 32px;
+  }
+
+  .nav {
+    padding: 0 16px;
+    margin: 0 -16px 16px;
+  }
+
+  .hero {
+    padding: 24px 0 32px;
+  }
+
+  .hero h1 {
+    font-size: 36px;
+  }
+
+  .dashboard-panel {
+    margin: 0 0 24px 0;
+    padding: 0 12px;
+  }
+
+  /* Analyzer Input Form */
+  .analyzer-input-wrapper {
+    flex-direction: column;
+    padding: 10px;
+    border-radius: 18px;
+  }
+
+  .analyzer-input {
+    width: 100%;
+    min-height: 100px;
+  }
+
+  .btn-analyze {
+    width: 100%;
+    justify-content: center;
+    padding: 14px;
+  }
+
+  /* Dashboard Header (Verdict) */
+  .verdict-ribbon {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 16px;
+    padding: 20px 16px;
+  }
+
+  .verdict-band-indicator {
+    width: 100%;
+    margin-top: 12px;
+  }
+
+  /* Grid Layouts */
+  .at-a-glance-grid,
+  .sandbox-metrics-row {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+  }
+
+  /* Section Headers */
+  .intel-box-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .intel-status-pill,
+  .ai-action-pill {
+    align-self: flex-start;
+  }
+
+  /* Content area adjustment */
+  .dashboard-content-area {
+    padding-right: 0;
+  }
+  
+  /* Tabs */
+  .dashboard-tabs-container {
+    padding-bottom: 16px;
+    margin-bottom: -16px;
+  }
+
+  .tab-btn {
+    padding: 8px 14px;
+    font-size: 13px;
+  }
+  
+  /* Summary Legend */
+  .summary-explanation-box ul {
+    gap: 24px;
+  }
+}
+
+/* Extra small devices (phones, 480px and down) */
+@media (max-width: 480px) {
+  .hero h1 {
+    font-size: 30px;
+  }
+
+  .at-a-glance-grid,
+  .sandbox-metrics-row {
+    grid-template-columns: 1fr;
+  }
+  
+  .pane-card {
+    padding: 16px;
+  }
+  
+  .ioc-card-item {
+    padding: 12px;
+  }
+}
+
