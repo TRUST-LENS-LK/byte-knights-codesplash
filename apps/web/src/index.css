@@ -5,31 +5,26 @@
 
 :root,
 [data-theme="light"] {
-  --font-heading: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-  --font-body: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-heading: 'Inter', 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-body: 'Inter', 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
-  /* Brand Palette — High-Tech Cyber Blue & Vivid Cyan (Matching Moderator Portal) */
+  /* Brand Palette — Kept Exactly As Original */
   --brand-primary: #0066FF;
   --brand-primary-hover: #0052CC;
   --brand-secondary: #00C2FF;
   --brand-accent: #0284c7;
   --brand-gradient: linear-gradient(135deg, #0066FF 0%, #00C2FF 100%);
-  --brand-gradient-glow: linear-gradient(135deg, rgba(0, 102, 255, 0.15) 0%, rgba(0, 194, 255, 0.15) 100%);
+  --brand-gradient-glow: linear-gradient(135deg, rgba(0, 102, 255, 0.10) 0%, rgba(0, 194, 255, 0.10) 100%);
 
-  /* Light Surfaces — Ultra-Pure Frosted Glassmorphism */
+  /* Light Clean Surfaces — Clean Off-White Slate */
   --bg-base: #f8fafc;
-  --bg-surface: rgba(255, 255, 255, 0.88);
-  --bg-surface-elevated: rgba(255, 255, 255, 0.96);
-  --bg-surface-hover: rgba(241, 245, 249, 0.85);
-  --bg-glass: rgba(255, 255, 255, 0.82);
-  --bg-nav: rgba(255, 255, 255, 0.82);
-  --bg-input: rgba(255, 255, 255, 0.95);
-
-  /* Atmospheric ambient blurs */
-  --bg-blob-1: rgba(0, 102, 255, 0.08);
-  --bg-blob-2: rgba(0, 194, 255, 0.08);
-  --bg-grid: rgba(15, 23, 42, 0.02);
+  --bg-surface: #ffffff;
+  --bg-surface-elevated: #ffffff;
+  --bg-surface-hover: #f1f5f9;
+  --bg-glass: rgba(255, 255, 255, 0.95);
+  --bg-nav: rgba(255, 255, 255, 0.92);
+  --bg-input: #ffffff;
 
   /* Typography */
   --text-primary: #0f172a;
@@ -37,42 +32,37 @@
   --text-muted: #64748b;
   --text-inverted: #ffffff;
 
-  /* Borders */
-  --border: rgba(226, 232, 240, 0.85);
-  --border-subtle: rgba(241, 245, 249, 0.9);
-  --border-accent: rgba(0, 102, 255, 0.35);
-  --border-hover: #94a3b8;
+  /* Clean Subdued Borders */
+  --border: #e2e8f0;
+  --border-subtle: #f1f5f9;
+  --border-accent: rgba(0, 102, 255, 0.3);
+  --border-hover: #cbd5e1;
 
-  /* Threat & Status Colors */
+  /* Threat & Status Colors — Kept Exactly As Original */
   --risk-high: #e11d48;
   --risk-high-bg: #fff1f2;
   --risk-high-border: #fecdd3;
   --risk-high-text: #be123c;
-  --risk-high-glow: 0 0 25px rgba(225, 29, 72, 0.08);
 
   --risk-medium: #d97706;
   --risk-medium-bg: #fffbeb;
   --risk-medium-border: #fde68a;
   --risk-medium-text: #b45309;
-  --risk-medium-glow: 0 0 25px rgba(217, 119, 6, 0.08);
 
   --risk-safe: #059669;
   --risk-safe-bg: #f0fdf4;
   --risk-safe-border: #bbf7d0;
   --risk-safe-text: #047857;
-  --risk-safe-glow: 0 0 25px rgba(5, 150, 105, 0.08);
 
   --risk-official: #0066FF;
   --risk-official-bg: #eff6ff;
   --risk-official-border: #bfdbfe;
   --risk-official-text: #1d4ed8;
-  --risk-official-glow: 0 0 25px rgba(0, 102, 255, 0.12);
 
-  /* Shadows with electric blue ambient glow */
-  --shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.04);
-  --shadow-md: 0 4px 20px -2px rgba(15, 23, 42, 0.06);
-  --shadow-lg: 0 24px 60px -12px rgba(15, 23, 42, 0.09), 0 10px 30px -5px rgba(0, 102, 255, 0.06);
-  --shadow-glow: 0 0 40px rgba(0, 102, 255, 0.12);
+  /* Clean Modern Shadows */
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-md: 0 4px 12px -2px rgba(15, 23, 42, 0.05);
+  --shadow-lg: 0 10px 30px -4px rgba(15, 23, 42, 0.06);
 
   color-scheme: light;
 }
@@ -90,19 +80,12 @@ html {
 
 body {
   margin: 0;
-  min-height: 100svh;
+  min-height: 100vh;
   font-family: var(--font-body);
-  font-size: 15px;
-  line-height: 1.6;
-  letter-spacing: -0.011em;
+  font-size: 14.5px;
+  line-height: 1.55;
   color: var(--text-primary);
-  background-color: #FFFFFF;
-  background-image:
-    radial-gradient(ellipse 90% 45% at 50% -10%, rgba(0, 102, 255, 0.05) 0%, transparent 70%),
-    radial-gradient(ellipse 60% 40% at 92% 20%, rgba(0, 194, 255, 0.04) 0%, transparent 60%),
-    radial-gradient(ellipse 55% 45% at 8% 70%, rgba(0, 102, 255, 0.03) 0%, transparent 65%),
-    linear-gradient(180deg, #FFFFFF 0%, #FAFCFF 40%, #F6F9FC 100%);
-  background-attachment: fixed;
+  background-color: var(--bg-base);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
