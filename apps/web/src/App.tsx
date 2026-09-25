@@ -1390,6 +1390,7 @@ function App() {
             {activeTab === 'layer5' && (
               <div className="tab-pane active" id="tab-layer5">
                 {aiValidation ? (
+                  <>
                   <div className="intel-card-box ai-context-card">
                     <div className="intel-box-header">
                       <div className="intel-box-title-group">
@@ -1414,6 +1415,24 @@ function App() {
                       </div>
                     </div>
                   </div>
+
+                  {/* AI Explanation Text */}
+                  <div className="ai-explanation-note" style={{ marginTop: '32px' }}>
+                    <h4 style={{ margin: '0 0 16px 0', fontSize: '15px', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <Sparkles size={16} color="var(--brand-primary)" />
+                      Understanding AI Context Evaluation
+                    </h4>
+                    <p style={{ fontSize: '14px', color: 'var(--text-muted)', lineHeight: '1.6', margin: '0 0 12px 0' }}>
+                      Layer 5 employs advanced large language models (like Gemini 3.5 Flash) to analyze the semantic context, tone, and hidden intent of the message. While traditional scanners look for hardcoded malicious patterns, our AI engine understands nuanced human language, allowing it to accurately detect zero-day phishing attempts or cleverly disguised social engineering.
+                    </p>
+                    <div style={{ padding: '16px', backgroundColor: 'var(--bg-surface-hover)', borderRadius: '10px', borderLeft: '3px solid var(--risk-medium)' }}>
+                      <p style={{ fontSize: '14px', color: 'var(--text-primary)', lineHeight: '1.6', margin: 0 }}>
+                        <strong style={{ color: 'var(--risk-medium)', marginRight: '6px' }}>Choose Wisely:</strong> 
+                        Although the AI boasts high confidence, attackers constantly evolve their tactics. Always use this context alongside the technical evidence provided in other tabs before engaging with unexpected messages.
+                      </p>
+                    </div>
+                  </div>
+                  </>
                 ) : (
                   <div className="empty-sandbox-state">
                     <Sparkles size={40} color="var(--text-muted)" />
