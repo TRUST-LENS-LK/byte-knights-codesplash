@@ -8,7 +8,6 @@ import {
   ExternalLink,
   ChevronDown,
   ArrowRight,
-  AlertOctagon,
   Zap,
   HelpCircle,
   TrendingUp,
