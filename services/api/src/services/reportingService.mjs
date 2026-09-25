@@ -415,6 +415,7 @@ for (const item of initialDemoIntel) {
 
 let engineSettings = {
   enableVerifiedIntel: process.env.ENABLE_VERIFIED_INTEL !== 'false',
+  enableAiValidation: process.env.ENABLE_AI_VALIDATION !== 'false',
   auditRetentionDays: AUDIT_RETENTION_DAYS,
   lastUpdated: new Date().toISOString(),
   updatedBy: 'system',
@@ -422,6 +423,10 @@ let engineSettings = {
 
 export function isVerifiedIntelEnabled() {
   return engineSettings.enableVerifiedIntel
+}
+
+export function isAiValidationEnabled() {
+  return engineSettings.enableAiValidation !== false
 }
 
 export function getEngineSettings() {
@@ -444,6 +449,24 @@ export function updateEngineSettings(newSettings = {}, actor = 'moderator', acto
       moderatorNotes: newSettings.enableVerifiedIntel
         ? 'Threat feedback loop active with real-time community intelligence.'
         : 'Threat feedback loop paused by moderator.',
+    })
+  }
+
+  if (typeof newSettings.enableAiValidation === 'boolean') {
+    engineSettings.enableAiValidation = newSettings.enableAiValidation
+    engineSettings.lastUpdated = new Date().toISOString()
+    engineSettings.updatedBy = actorEmail || actor
+    void recordAuditLog({
+      reportId: null,
+      action: 'UPDATE_SETTINGS',
+      targetIndicator: 'engine.enableAiValidation',
+      threatCategory: null,
+      actorEmail: actorEmail || (actor.includes('@') ? actor : null),
+      actorRole: actor.includes('@') ? 'moderator' : actor,
+      confidence: 1.0,
+      moderatorNotes: newSettings.enableAiValidation
+        ? 'Layer 5 AI context validation active (Gemini API).'
+        : 'Layer 5 AI context validation paused by moderator.',
     })
   }
 

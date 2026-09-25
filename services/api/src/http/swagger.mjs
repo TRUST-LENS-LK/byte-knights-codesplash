@@ -78,6 +78,18 @@ export function getOpenApiSpec() {
             policyVersion: { type: 'string', example: 'rules-v2' },
           },
         },
+        AiValidationResult: {
+          type: 'object',
+          properties: {
+            verdict: { type: 'string', enum: ['AGREE', 'DISAGREE', 'UNCERTAIN'], example: 'DISAGREE' },
+            confidence: { type: 'number', minimum: 0, maximum: 1, example: 0.85 },
+            reasoning: { type: 'string', example: 'The message is an internal IT notification about a system upgrade.' },
+            originalRiskBand: { type: 'string', enum: ['LOW', 'MEDIUM', 'HIGH', 'UNKNOWN'], example: 'HIGH' },
+            adjustedRiskBand: { type: 'string', enum: ['LOW', 'MEDIUM', 'HIGH', 'UNKNOWN'], example: 'MEDIUM' },
+            appliedAction: { type: 'string', enum: ['DOWNGRADED', 'HARD_BLOCKED', 'RETAINED'], example: 'DOWNGRADED' },
+            evaluatedAt: { type: 'string', format: 'date-time' },
+          },
+        },
         AnalyzeResponse: {
           type: 'object',
           required: ['inputType', 'decision', 'entities', 'requestId'],
@@ -87,6 +99,7 @@ export function getOpenApiSpec() {
             decision: { $ref: '#/components/schemas/RiskDecision' },
             entities: { type: 'array', items: { $ref: '#/components/schemas/ExtractedEntity' } },
             requestId: { type: 'string', format: 'uuid' },
+            aiValidation: { $ref: '#/components/schemas/AiValidationResult', nullable: true },
           },
         },
         ScannerPreviewRequest: {
