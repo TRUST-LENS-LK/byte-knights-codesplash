@@ -790,7 +790,7 @@ function App() {
                 onClick={() => setActiveTab('layer5')}
               >
                 <Sparkles size={16} />
-                <span>AI Context Eval</span>
+                <span>AI Context</span>
               </button>
             </nav>
           </div>

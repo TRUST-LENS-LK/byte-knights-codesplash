@@ -1057,12 +1057,21 @@ input[type='file'] { width: 100%; margin-top: .4rem; font-size: .8rem; }
 /* ── 2. Segmented Navigation Tabs ─────────────────────────── */
 .dashboard-tabs-container {
   display: flex;
-  justify-content: center;
   width: 100%;
+  overflow-x: auto;
+  padding-bottom: 20px;
+  margin-bottom: -20px; /* offset padding */
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.dashboard-tabs-container::-webkit-scrollbar {
+  display: none;
 }
 
 .dashboard-tabs {
-  display: inline-flex;
+  display: flex;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 8px;
   padding: 6px;
@@ -1070,11 +1079,15 @@ input[type='file'] { width: 100%; margin-top: .4rem; font-size: .8rem; }
   background: #ffffff;
   border: 1px solid var(--border);
   box-shadow: 0 4px 20px rgba(15, 23, 42, 0.04);
+  margin: 0 auto;
 }
 
 .tab-btn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  flex-shrink: 0;
   gap: 8px;
   padding: 10px 20px;
   border-radius: 11px;
