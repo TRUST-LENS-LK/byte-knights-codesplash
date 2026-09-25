@@ -449,9 +449,30 @@ export const ScamTrendsSection: React.FC<ScamTrendsProps> = ({ onSelectSample })
 
 // ── 3. How It Works Section ──────────────────────────────────────────
 export const HowItWorksSection: React.FC<{ onStartCheck: () => void }> = ({ onStartCheck }) => {
+  const [isVisible, setIsVisible] = React.useState(false);
+  const sectionRef = React.useRef<HTMLElement>(null);
+
+  React.useEffect(() => {
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setIsVisible(true);
+          observer.disconnect();
+        }
+      },
+      { threshold: 0.2 }
+    );
+
+    if (sectionRef.current) {
+      observer.observe(sectionRef.current);
+    }
+
+    return () => observer.disconnect();
+  }, []);
+
   return (
-    <section id="how-it-works" className="landing-section how-it-works-section">
-      <div className="how-it-works-container">
+    <section id="how-it-works" className="landing-section how-it-works-section" ref={sectionRef}>
+      <div className={`how-it-works-container ${isVisible ? 'animate-cards' : ''}`}>
         
         {/* Left Column: Process Steps */}
         <div className="how-it-works-left">
@@ -466,51 +487,51 @@ export const HowItWorksSection: React.FC<{ onStartCheck: () => void }> = ({ onSt
             Got an unexpected SMS, WhatsApp forward, or bank alert? Verify it here before you click the link, reply, or share your OTP.
           </p>
 
-          <div className="process-steps-list">
-            <div className="process-step-item">
+          <div className="process-steps-grid">
+            <div className="process-step-card">
               <div className="step-icon-bubble">
                 <MessageSquare size={20} />
               </div>
               <div className="step-content">
-                <h4 className="step-title">1. Paste the message or upload a screenshot</h4>
+                <h4 className="step-title">1. Submit message</h4>
                 <p className="step-text">
-                  Copy the text from SMS, WhatsApp, or email, paste a suspicious web link, or upload a screenshot directly from your phone.
+                  Paste any suspicious text, link, or upload a screenshot.
                 </p>
               </div>
             </div>
 
-            <div className="process-step-item">
+            <div className="process-step-card">
               <div className="step-icon-bubble">
                 <Search size={20} />
               </div>
               <div className="step-content">
-                <h4 className="step-title">2. We inspect domain age & hidden traps</h4>
+                <h4 className="step-title">2. AI Analysis</h4>
                 <p className="step-text">
-                  We check official Sri Lankan utility and bank registries, inspect domain creation dates, and check for hidden credential-harvesting forms.
+                  Our system instantly checks for hidden scam signals.
                 </p>
               </div>
             </div>
 
-            <div className="process-step-item">
+            <div className="process-step-card">
               <div className="step-icon-bubble">
                 <ShieldCheck size={20} />
               </div>
               <div className="step-content">
-                <h4 className="step-title">3. Get a plain-English verdict and next steps</h4>
+                <h4 className="step-title">3. Get a verdict</h4>
                 <p className="step-text">
-                  You get an immediate, clear verdict showing whether it's safe or dangerous, the exact red flags detected, and verified numbers to contact.
+                  Receive a clear answer on whether it's safe or a scam.
                 </p>
               </div>
             </div>
 
-            <div className="process-step-item">
+            <div className="process-step-card">
               <div className="step-icon-bubble">
                 <Globe size={20} />
               </div>
               <div className="step-content">
-                <h4 className="step-title">4. Help protect fellow Sri Lankans</h4>
+                <h4 className="step-title">4. Protect others</h4>
                 <p className="step-text">
-                  Each verified scam helps warn citizens across the country and can be reported directly to Sri Lanka CERT (1937).
+                  Every check helps block threats for the community.
                 </p>
               </div>
             </div>
@@ -522,62 +543,6 @@ export const HowItWorksSection: React.FC<{ onStartCheck: () => void }> = ({ onSt
               <span>Check a Message Now</span>
             </button>
             <span className="no-signup-note">Free public service — no sign-up or download needed</span>
-          </div>
-        </div>
-
-        {/* Right Column: Realistic Preview Card */}
-        <div className="how-it-works-right">
-          <div className="sample-verdict-card">
-            <div className="sample-verdict-header">
-              <div className="sample-verdict-badge">
-                <AlertOctagon size={18} />
-                <span>Confirmed Scam</span>
-              </div>
-              <span className="sample-category-tag">CEB Impersonation</span>
-            </div>
-
-            <p className="sample-threat-summary">
-              This message impersonates the <strong>Ceylon Electricity Board (CEB)</strong> with a fake power cut threat designed to steal debit card credentials.
-            </p>
-
-            <div className="sample-breakdown-box">
-              <h5 className="breakdown-title">
-                <ShieldAlert size={15} />
-                <span>Why this is dangerous</span>
-              </h5>
-              <p className="breakdown-text">
-                Points to an unverified domain (<strong>ceb-bill-payment-lk.online</strong>) registered in Iceland 3 days ago, instead of the official <strong>ceb.lk</strong> portal.
-              </p>
-              <p className="breakdown-text">
-                Contains deceptive form fields attempting to harvest debit card CVVs and bank SMS OTP verification codes.
-              </p>
-            </div>
-
-            <div className="sample-next-steps-box">
-              <h5 className="next-steps-title">
-                <CheckCircle2 size={15} />
-                <span>What you should do</span>
-              </h5>
-              <ul className="next-steps-list">
-                <li>
-                  <span className="step-num">1</span>
-                  <span><strong>Do not click the link</strong> or enter any banking or card details.</span>
-                </li>
-                <li>
-                  <span className="step-num">2</span>
-                  <span><strong>Never share your SMS OTP</strong> with anyone, even someone claiming to be CEB staff.</span>
-                </li>
-                <li>
-                  <span className="step-num">3</span>
-                  <span>To check your real electricity account, visit <strong>ceb.lk</strong> or call CEB directly on <strong>1987</strong>.</span>
-                </li>
-              </ul>
-            </div>
-
-            <div className="sample-card-footer">
-              <span className="sample-confidence">Verified with Sri Lanka Threat Intelligence</span>
-              <span className="sample-hotline-pill">Hotline: 1937</span>
-            </div>
           </div>
         </div>
 
@@ -692,13 +657,36 @@ export const AboutMissionSection: React.FC<{ onStartCheck: () => void }> = ({ on
           <ShieldCheck size={14} />
           <span>PUBLIC CYBER DEFENSE INITIATIVE</span>
         </div>
-        <h2 className="mission-title">Scams are becoming more convincing. Knowing what's real shouldn't be hard.</h2>
-        <p className="mission-lead">
-          Thousands of Sri Lankans receive misleading text messages every week — from fake electricity disconnection warnings to urgent bank security alerts.
-        </p>
-        <p className="mission-body">
-          TrustLens LK was built to give everyday citizens, families, and elders a quick, reliable way to double-check any message before sharing passwords, bank details, or OTPs. Together with verified national directories and public reports, we help make the internet safer for everyone.
-        </p>
+        <h2 className="mission-title">Scams are evolving. Your protection should too.</h2>
+        <div className="mission-grid">
+          <div className="mission-grid-item">
+            <div className="mission-icon-box">
+              <AlertTriangle size={20} />
+            </div>
+            <div className="mission-text-content">
+              <h4>The Growing Threat</h4>
+              <p>Thousands of Sri Lankans lose money daily to deceptive SMS alerts, fake investment schemes, and spoofed bank portals.</p>
+            </div>
+          </div>
+          <div className="mission-grid-item">
+            <div className="mission-icon-box">
+              <Search size={20} />
+            </div>
+            <div className="mission-text-content">
+              <h4>A Free Second Opinion</h4>
+              <p>We provide families, elders, and banking consumers a secure platform to verify messages when something doesn't feel right.</p>
+            </div>
+          </div>
+          <div className="mission-grid-item">
+            <div className="mission-icon-box">
+              <ShieldCheck size={20} />
+            </div>
+            <div className="mission-text-content">
+              <h4>Collective Defense</h4>
+              <p>Together with community vigilance and national threat intelligence, we are building digital resilience for Sri Lanka.</p>
+            </div>
+          </div>
+        </div>
 
         <div className="mission-actions">
           <button type="button" className="btn-primary-action mission-btn-primary" onClick={onStartCheck}>
