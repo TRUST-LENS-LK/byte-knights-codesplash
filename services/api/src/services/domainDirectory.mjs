@@ -97,6 +97,19 @@ export async function createDomainDirectoryEntry(data, reviewer) {
   })
   if (!response.ok) {
     const text = await response.text().catch(() => '')
+    try {
+      const err = JSON.parse(text)
+      if (err.code === '23505' || err.message?.includes('duplicate key') || err.message?.includes('unique constraint')) {
+        const domainMatch = err.details?.match(/\((?:official_domain|domain)\)=\(([^)]+)\)/)
+        const domainName = domainMatch ? domainMatch[1] : data.officialDomain
+        throw new Error(`Domain "${domainName}" already exists in the official directory.`)
+      }
+      if (err.message) {
+        throw new Error(err.message)
+      }
+    } catch (e) {
+      if (!e.message.startsWith('Failed to create')) throw e
+    }
     throw new Error(`Failed to create domain directory entry: ${text.slice(0, 300)}`)
   }
   const [row] = await response.json()
@@ -135,6 +148,17 @@ export async function updateDomainDirectoryEntry(id, updates, reviewer) {
   })
   if (!response.ok) {
     const text = await response.text().catch(() => '')
+    try {
+      const err = JSON.parse(text)
+      if (err.code === '23505' || err.message?.includes('duplicate key') || err.message?.includes('unique constraint')) {
+        throw new Error('A domain entry with this official domain already exists.')
+      }
+      if (err.message) {
+        throw new Error(err.message)
+      }
+    } catch (e) {
+      if (!e.message.startsWith('Failed to update')) throw e
+    }
     throw new Error(`Failed to update domain directory entry: ${text.slice(0, 300)}`)
   }
   const rows = await response.json()

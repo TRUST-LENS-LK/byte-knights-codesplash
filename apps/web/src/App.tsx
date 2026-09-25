@@ -484,24 +484,24 @@ function App() {
       <section className="hero">
         <div className="hero-copy">
           <div className="hero-eyebrow">
-            <span>Sri Lanka Scam Decision Support</span>
+            <span>Sri Lanka Scam & Threat Verifier</span>
           </div>
-          <h1>Does this message deserve your trust?</h1>
+          <h1>Not sure if a message is real? Check it before you trust it.</h1>
           <p className="hero-description">
-            Verify suspicious SMS, WhatsApp messages, payment requests, or links. TrustLens securely scans and analyzes content to protect you from scams and digital threats.
+            Instantly check suspicious SMS alerts, WhatsApp forwards, electricity bills, and payment links against verified Sri Lankan entity registries and active scam databases.
           </p>
           <div className="hero-trust-strip">
             <div className="trust-item">
               <ShieldCheck size={16} className="trust-icon" />
-              <span>Real-Time Sandbox Inspection</span>
+              <span>Live Link & Form Inspection</span>
             </div>
             <div className="trust-item">
               <CheckCircle2 size={16} className="trust-icon" />
-              <span>Verified LK Bank & Utility Directory</span>
+              <span>Official LK Bank & Utility Directory</span>
             </div>
             <div className="trust-item">
               <Lock size={16} className="trust-icon" />
-              <span>Zero-Log Privacy Guard</span>
+              <span>Zero-Log Privacy Protection</span>
             </div>
           </div>
         </div>

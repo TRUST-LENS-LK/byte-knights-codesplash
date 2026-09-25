@@ -5,8 +5,8 @@
 
 :root,
 [data-theme="light"] {
-  --font-heading: 'Sora', -apple-system, BlinkMacSystemFont, sans-serif;
-  --font-body: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-heading: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-body: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
   /* Brand Palette — High-Tech Cyber Blue & Vivid Cyan (Matching Moderator Portal) */
@@ -94,6 +94,7 @@ body {
   font-family: var(--font-body);
   font-size: 15px;
   line-height: 1.6;
+  letter-spacing: -0.011em;
   color: var(--text-primary);
   background-color: #FFFFFF;
   background-image:
@@ -105,6 +106,7 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
+  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
   position: relative;
   overflow-x: hidden;
 }
@@ -129,7 +131,8 @@ h1, h2, h3, h4, h5, h6 {
   color: var(--text-primary);
   margin: 0;
   font-weight: 700;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.025em;
+  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
 }
 
 p {
