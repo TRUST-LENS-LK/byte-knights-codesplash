@@ -448,115 +448,124 @@ export const ReviewDecisionModal: React.FC<ReviewDecisionModalProps> = ({
             </div>
 
             <div className="neo-intel-history-body">
-              {/* Active Intelligence Status & Decision Counts Grid */}
-              <div className="neo-intel-grid">
-                <div className="neo-intel-grid-col">
-                  <span className="neo-intel-col-label">Active Intelligence Status</span>
-                  <div className="neo-intel-status-row">
-                    {intelContext?.hasActiveIntel && intelContext.activeIntel ? (
-                      <div className={`neo-intel-status-chip ${intelContext.activeIntel.risk_level === 'CONFIRMED_SCAM' ? 'threat' : 'safe'}`}>
-                        {intelContext.activeIntel.risk_level === 'CONFIRMED_SCAM' ? (
-                          <ShieldAlert size={13} strokeWidth={2.2} />
+              {loadingContext ? (
+                <div className="neo-intel-skeleton-grid" aria-busy="true" aria-label="Loading intelligence radar">
+                  <div className="neo-intel-skeleton-box shimmer" />
+                  <div className="neo-intel-skeleton-box shimmer" />
+                </div>
+              ) : (
+                <div className="neo-intel-content-reveal">
+                  {/* Active Intelligence Status & Decision Counts Grid */}
+                  <div className="neo-intel-grid">
+                    <div className="neo-intel-grid-col">
+                      <span className="neo-intel-col-label">Active Intelligence Status</span>
+                      <div className="neo-intel-status-row">
+                        {intelContext?.hasActiveIntel && intelContext.activeIntel ? (
+                          <div className={`neo-intel-status-chip ${intelContext.activeIntel.risk_level === 'CONFIRMED_SCAM' ? 'threat' : 'safe'}`}>
+                            {intelContext.activeIntel.risk_level === 'CONFIRMED_SCAM' ? (
+                              <ShieldAlert size={13} strokeWidth={2.2} />
+                            ) : (
+                              <ShieldCheck size={13} strokeWidth={2.2} />
+                            )}
+                            <span className="neo-intel-chip-text">
+                              {intelContext.activeIntel.risk_level === 'CONFIRMED_SCAM' ? 'Confirmed Threat IoC' : 'Verified Legitimate Entity'}
+                            </span>
+                            <span className="neo-intel-chip-meta">
+                              {(intelContext.activeIntel.confidence * 100).toFixed(0)}% Conf • {intelContext.activeIntel.report_count} Report{intelContext.activeIntel.report_count > 1 ? 's' : ''}
+                            </span>
+                          </div>
                         ) : (
-                          <ShieldCheck size={13} strokeWidth={2.2} />
+                          <div className="neo-intel-status-chip clean">
+                            <Sparkles size={13} strokeWidth={2.2} />
+                            <span className="neo-intel-chip-text">Fresh Target Indicator</span>
+                            <span className="neo-intel-chip-meta">No prior verified intelligence</span>
+                          </div>
                         )}
-                        <span className="neo-intel-chip-text">
-                          {intelContext.activeIntel.risk_level === 'CONFIRMED_SCAM' ? 'Confirmed Threat IoC' : 'Verified Legitimate Entity'}
-                        </span>
-                        <span className="neo-intel-chip-meta">
-                          {(intelContext.activeIntel.confidence * 100).toFixed(0)}% Conf • {intelContext.activeIntel.report_count} Report{intelContext.activeIntel.report_count > 1 ? 's' : ''}
-                        </span>
                       </div>
-                    ) : (
-                      <div className="neo-intel-status-chip clean">
-                        <Sparkles size={13} strokeWidth={2.2} />
-                        <span className="neo-intel-chip-text">Fresh Target Indicator</span>
-                        <span className="neo-intel-chip-meta">No prior verified intelligence</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
+                    </div>
 
-                <div className="neo-intel-grid-col">
-                  <span className="neo-intel-col-label">Prior Decisions on this Indicator</span>
-                  <div className="neo-intel-status-row">
-                    {intelContext?.priorDecisions && intelContext.priorDecisions.totalPriorEvents > 0 ? (
-                      <div className="neo-intel-history-pills">
-                        {intelContext.priorDecisions.totalRejections > 0 && (
-                          <span className="neo-intel-history-pill reject" title="Number of past rejected reports for this target">
-                            {intelContext.priorDecisions.totalRejections} Rejected
-                          </span>
-                        )}
-                        {intelContext.priorDecisions.totalApprovals > 0 && (
-                          <span className="neo-intel-history-pill approve" title="Number of past approved reports for this target">
-                            {intelContext.priorDecisions.totalApprovals} Approved
-                          </span>
-                        )}
-                        {intelContext.priorDecisions.totalRetirements > 0 && (
-                          <span className="neo-intel-history-pill retire" title="Number of past indicator retirements or reclassifications">
-                            {intelContext.priorDecisions.totalRetirements} Retired
-                          </span>
+                    <div className="neo-intel-grid-col">
+                      <span className="neo-intel-col-label">Prior Decisions on this Indicator</span>
+                      <div className="neo-intel-status-row">
+                        {intelContext?.priorDecisions && intelContext.priorDecisions.totalPriorEvents > 0 ? (
+                          <div className="neo-intel-history-pills">
+                            {intelContext.priorDecisions.totalRejections > 0 && (
+                              <span className="neo-intel-history-pill reject" title="Number of past rejected reports for this target">
+                                {intelContext.priorDecisions.totalRejections} Rejected
+                              </span>
+                            )}
+                            {intelContext.priorDecisions.totalApprovals > 0 && (
+                              <span className="neo-intel-history-pill approve" title="Number of past approved reports for this target">
+                                {intelContext.priorDecisions.totalApprovals} Approved
+                              </span>
+                            )}
+                            {intelContext.priorDecisions.totalRetirements > 0 && (
+                              <span className="neo-intel-history-pill retire" title="Number of past indicator retirements or reclassifications">
+                                {intelContext.priorDecisions.totalRetirements} Retired
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="neo-intel-dim-text">No previous moderator decisions on file</span>
                         )}
                       </div>
-                    ) : (
-                      <span className="neo-intel-dim-text">No previous moderator decisions on file</span>
-                    )}
+                    </div>
                   </div>
-                </div>
-              </div>
 
-              {/* Conflict Alert Box if Opposing Signals Exist */}
-              {intelContext?.isConflict && (
-                <div className="neo-intel-conflict-alert">
-                  <div className="neo-intel-conflict-header">
-                    <AlertTriangle size={15} color="#DC2626" strokeWidth={2.4} />
-                    <span className="neo-intel-conflict-title">Intelligence Conflict Alert</span>
-                  </div>
-                  <p className="neo-intel-conflict-desc">{intelContext.conflictExplanation}</p>
-                  <div className="neo-intel-conflict-consequence">
-                    <Info size={13} color="#D97706" />
-                    <span>{intelContext.revocationConsequence}</span>
-                  </div>
-                  {isPending && (
-                    <label className="neo-intel-conflict-confirm-label">
-                      <input
-                        type="checkbox"
-                        checked={confirmRevocation}
-                        onChange={(e) => {
-                          setConfirmRevocation(e.target.checked)
-                          setGuardrailError(null)
-                        }}
-                      />
-                      <span>I authorize revoking the opposing active intelligence record upon approval.</span>
-                    </label>
+                  {/* Conflict Alert Box if Opposing Signals Exist */}
+                  {intelContext?.isConflict && (
+                    <div className="neo-intel-conflict-alert">
+                      <div className="neo-intel-conflict-header">
+                        <AlertTriangle size={15} color="#DC2626" strokeWidth={2.4} />
+                        <span className="neo-intel-conflict-title">Intelligence Conflict Alert</span>
+                      </div>
+                      <p className="neo-intel-conflict-desc">{intelContext.conflictExplanation}</p>
+                      <div className="neo-intel-conflict-consequence">
+                        <Info size={13} color="#D97706" />
+                        <span>{intelContext.revocationConsequence}</span>
+                      </div>
+                      {isPending && (
+                        <label className="neo-intel-conflict-confirm-label">
+                          <input
+                            type="checkbox"
+                            checked={confirmRevocation}
+                            onChange={(e) => {
+                              setConfirmRevocation(e.target.checked)
+                              setGuardrailError(null)
+                            }}
+                          />
+                          <span>I authorize revoking the opposing active intelligence record upon approval.</span>
+                        </label>
+                      )}
+                    </div>
                   )}
-                </div>
-              )}
 
-              {/* Corroboration Alert Box if Agreeing Signals Exist */}
-              {intelContext?.isCorroborating && !intelContext?.isConflict && (
-                <div className="neo-intel-corroboration-alert">
-                  <div className="neo-intel-corroboration-header">
-                    <TrendingUp size={14} color="#0284C7" strokeWidth={2.2} />
-                    <span>Threat Corroboration Detected</span>
-                  </div>
-                  <p className="neo-intel-corroboration-desc">{intelContext.corroborationSummary}</p>
-                </div>
-              )}
+                  {/* Corroboration Alert Box if Agreeing Signals Exist */}
+                  {intelContext?.isCorroborating && !intelContext?.isConflict && (
+                    <div className="neo-intel-corroboration-alert">
+                      <div className="neo-intel-corroboration-header">
+                        <TrendingUp size={14} color="#0284C7" strokeWidth={2.2} />
+                        <span>Threat Corroboration Detected</span>
+                      </div>
+                      <p className="neo-intel-corroboration-desc">{intelContext.corroborationSummary}</p>
+                    </div>
+                  )}
 
-              {/* Prior Rejection Notes Callout if applicable */}
-              {intelContext?.priorDecisions?.latestRejection && (
-                <div className="neo-intel-past-rejection-callout">
-                  <div className="neo-intel-rejection-header">
-                    <History size={13} color="#64748B" />
-                    <span>Past Moderator Rejection Context</span>
-                    <span className="neo-intel-rejection-time">
-                      {formatRelativeTime(intelContext.priorDecisions.latestRejection.createdAt)}
-                    </span>
-                  </div>
-                  <p className="neo-intel-rejection-notes">
-                    "{intelContext.priorDecisions.latestRejection.notes || 'Dismissed without notes'}"
-                  </p>
+                  {/* Prior Rejection Notes Callout if applicable */}
+                  {intelContext?.priorDecisions?.latestRejection && (
+                    <div className="neo-intel-past-rejection-callout">
+                      <div className="neo-intel-rejection-header">
+                        <History size={13} color="#64748B" />
+                        <span>Past Moderator Rejection Context</span>
+                        <span className="neo-intel-rejection-time">
+                          {formatRelativeTime(intelContext.priorDecisions.latestRejection.createdAt)}
+                        </span>
+                      </div>
+                      <p className="neo-intel-rejection-notes">
+                        "{intelContext.priorDecisions.latestRejection.notes || 'Dismissed without notes'}"
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

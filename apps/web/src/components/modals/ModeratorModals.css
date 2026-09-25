@@ -465,13 +465,18 @@
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .neo-modal-btn-subtle:hover {
   background: #F1F5F9;
   color: #0F172A;
   border-color: #CBD5E1;
+  transform: translateY(-1px);
+}
+
+.neo-modal-btn-subtle:active {
+  transform: translateY(0) scale(0.98);
 }
 
 .neo-modal-btn-action-lime {
@@ -496,6 +501,11 @@
   box-shadow: 0 6px 18px rgba(0, 102, 255, 0.38);
 }
 
+.neo-modal-btn-action-lime:active:not(:disabled) {
+  transform: translateY(0) scale(0.98);
+  box-shadow: 0 2px 8px rgba(0, 102, 255, 0.24);
+}
+
 .neo-modal-btn-action-lime:disabled {
   opacity: 0.65;
   cursor: wait;
@@ -510,13 +520,18 @@
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .neo-modal-btn-reject:hover:not(:disabled) {
   background: #FEE2E2;
   border-color: #F87171;
   transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.12);
+}
+
+.neo-modal-btn-reject:active:not(:disabled) {
+  transform: translateY(0) scale(0.98);
 }
 
 .neo-modal-btn-reject:disabled {
@@ -1135,4 +1150,65 @@
   font-style: italic;
   line-height: 1.4;
 }
+
+/* ── Skeleton Loading for Intelligence Radar ────────────────────────── */
+.neo-intel-skeleton-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  padding: 4px 0;
+}
+
+.neo-intel-skeleton-box {
+  min-height: 52px;
+  border-radius: 10px;
+  background: linear-gradient(90deg, #F1F5F9 0%, #E2E8F0 50%, #F1F5F9 100%);
+  background-size: 200% 100%;
+  animation: neoSkeletonShimmer 1.5s infinite ease-in-out;
+}
+
+@keyframes neoSkeletonShimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* Smooth reveal container once radar async fetch resolves */
+.neo-intel-content-reveal {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  animation: neoFadeInUp 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
+  will-change: opacity, transform;
+}
+
+@keyframes neoFadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Accessibility: Respect Reduced Motion Preference */
+@media (prefers-reduced-motion: reduce) {
+  .neo-modal-backdrop,
+  .neo-modal-dialog,
+  .neo-intel-content-reveal,
+  .neo-intel-skeleton-box,
+  .neo-modal-btn-subtle,
+  .neo-modal-btn-action-lime,
+  .neo-modal-btn-reject {
+    animation: none !important;
+    transition: none !important;
+    transform: none !important;
+  }
+}
+
 

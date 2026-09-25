@@ -2707,12 +2707,12 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                   <div className="neo-audit-action-buttons">
                     <button
                       type="button"
-                      className={`neo-btn-toolbar-verify ${chainVerificationResult ? (chainVerificationResult.verified ? 'verified-active' : 'tampered-active') : ''}`}
+                      className={`neo-btn-toolbar-verify ${isVerifyingChain ? 'is-verifying' : ''} ${chainVerificationResult ? (chainVerificationResult.verified ? 'verified-active' : 'tampered-active') : ''}`}
                       onClick={handleVerifyChain}
                       disabled={isVerifyingChain}
                       title="Cryptographically verify SHA-256 hash chaining across all audit records"
                     >
-                      <ShieldCheck size={13} aria-hidden="true" />
+                      <ShieldCheck size={13} className={isVerifyingChain ? 'neo-spin-icon' : ''} aria-hidden="true" />
                       <span>
                         {isVerifyingChain
                           ? 'Verifying Chain...'
@@ -3466,7 +3466,7 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
           {/* VIEW 5: OFFICIAL DOMAIN DIRECTORY MANAGEMENT (Member 3)                   */}
           {/* ========================================================================= */}
           {activeNav === 'DOMAINS' && (
-            <section className="neo-queue-view-layout" aria-label="Official Domain Directory Management">
+            <section key="DOMAINS" className="neo-queue-view-layout neo-view-transition" aria-label="Official Domain Directory Management">
               <div className="neo-intel-metrics-row">
                 <div className="neo-intel-stat-card">
                   <div className="neo-intel-stat-top">
