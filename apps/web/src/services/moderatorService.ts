@@ -372,8 +372,9 @@ export async function reviewModerationItem(
 }
 
 export async function seedDemoReports(
-  token: string
-): Promise<{ success: boolean; count?: number; error?: string }> {
+  token: string,
+  options: { forceStatic?: boolean } = {}
+): Promise<{ success: boolean; count?: number; generator?: string; error?: string }> {
   try {
     const response = await fetch(`${API_BASE}/api/moderation/seed-demo`, {
       method: 'POST',
@@ -381,7 +382,7 @@ export async function seedDemoReports(
         'content-type': 'application/json',
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({}),
+      body: JSON.stringify(options),
     })
 
     const data = await response.json()
@@ -396,6 +397,7 @@ export async function seedDemoReports(
     return {
       success: true,
       count: data.count,
+      generator: data.generator || 'static',
     }
   } catch (error) {
     return {

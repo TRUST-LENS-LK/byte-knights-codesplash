@@ -493,8 +493,13 @@ const server = createServer(async (req, res) => {
       return send(res, 401, { code: 'UNAUTHORIZED', message: auth.error || 'Moderator access required.', requestId }, requestId)
     }
     try {
-      const seeded = await seedDemoQueue()
-      return send(res, 200, { seeded, count: seeded.length, requestId }, requestId)
+      const seeded = await seedDemoQueue(body)
+      return send(res, 200, {
+        seeded,
+        count: seeded.length,
+        generator: seeded.generator || 'static',
+        requestId,
+      }, requestId)
     } catch (error) {
       return send(res, 502, { code: 'SEED_FAILED', message: error.message, requestId }, requestId)
     }

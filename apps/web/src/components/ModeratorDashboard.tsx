@@ -1101,7 +1101,8 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
     const res = await seedDemoReports(token)
     setIsSeeding(false)
     if (res.success) {
-      showToast(`✓ Seeded ${res.count ?? 3} realistic Sri Lankan scam reports for evaluation.`)
+      const modeLabel = res.generator === 'gemini' ? 'via Gemini AI' : 'from fixtures'
+      showToast(`✓ Seeded ${res.count ?? 3} realistic Sri Lankan scam reports for evaluation (${modeLabel}).`)
       void loadReports(true)
     } else {
       showToast(`Seed failed: ${res.error}`)

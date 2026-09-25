@@ -1,6 +1,6 @@
 import { randomUUID, createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { SUPABASE_SERVICE_ROLE_KEY, SUPABASE_URL } from '../config/env.mjs'
+import { SUPABASE_SERVICE_ROLE_KEY, SUPABASE_URL, GEMINI_API_KEY } from '../config/env.mjs'
 import { DEMO_REPORTS } from '../fixtures/demoReports.mjs'
 import { analyzeMessage } from '@trustlens/rules'
 import { isTopGlobalDomain } from '@trustlens/domain'
@@ -121,7 +121,15 @@ export function isTestEnvironment() {
     process.env.NODE_ENV === 'test' ||
     process.env.npm_lifecycle_event === 'test' ||
     (Array.isArray(process.execArgv) && process.execArgv.some((arg) => arg.includes('--test'))) ||
-    (Array.isArray(process.argv) && process.argv.some((arg) => arg.includes('--test') || arg.includes('test/')))
+    (Array.isArray(process.argv) &&
+      process.argv.some(
+        (arg) =>
+          arg.includes('--test') ||
+          arg.includes('test/') ||
+          arg.includes('test\\') ||
+          arg.endsWith('.test.mjs') ||
+          arg.endsWith('.test.js')
+      ))
   )
 }
 
@@ -509,6 +517,10 @@ export function updateEngineSettings(newSettings = {}, actor = 'moderator', acto
 }
 
 export function isSupabaseConfigured() {
+  // Never write mock/test data to remote Supabase database during automated test runs
+  if (isTestEnvironment() && SUPABASE_URL && !SUPABASE_URL.includes('127.0.0.1') && !SUPABASE_URL.includes('localhost')) {
+    return false
+  }
   return Boolean(SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY)
 }
 
@@ -1558,7 +1570,7 @@ export async function recordAuditLog({
 
   const logEntry = candidate
 
-  if (isSupabaseConfigured()) {
+  if (isSupabaseConfigured() && !isTestEnvironment()) {
     try {
       // Attempt 1: Full insert with all enriched columns and cryptographic hash chaining
       const res = await fetch(`${SUPABASE_URL}/rest/v1/moderation_audit_logs`, {
@@ -2491,19 +2503,135 @@ export async function createManualIntelligenceEntry(
   return { ...record, report_count: 1 }
 }
 
-export async function seedDemoQueue() {
+const GEMINI_SEED_MODELS = [
+  'gemini-flash-lite-latest',
+  'gemini-1.5-flash',
+  'gemini-2.0-flash',
+]
+
+/**
+ * Generates synthetic Sri Lankan cyber-threat scam reports using Google Gemini API.
+ * Fails safely: Returns null on timeout, missing key, or API errors to seamlessly trigger static fallback.
+ */
+export async function fetchGeminiDemoReports(options = {}) {
+  // During automated tests, avoid outbound network calls unless explicitly opted-in
+  if (!GEMINI_API_KEY || (isTestEnvironment() && !options.allowAiInTest)) {
+    return null
+  }
+
+  const prompt = `You are an expert Sri Lankan cyber-threat intelligence analyst for TrustLens LK.
+Generate exactly 3 realistic, highly authentic citizen-reported cyber scam or threat messages for moderator queue evaluation in Sri Lanka.
+Include:
+1. One SMS or WhatsApp phishing scam targeting a Sri Lankan telecom or utility (e.g. Dialog Star Points, SLT-Mobitel, CEB electricity bill, e-Channelling).
+2. One banking / financial KYC phishing or OTP theft alert targeting a major Sri Lankan bank (e.g. Commercial Bank, Bank of Ceylon, Sampath Bank, People's Bank).
+3. One government notice or false-positive where a citizen reported a lookalike or legitimate .gov.lk site (e.g. Inland Revenue tax refund, Department of Immigration passport appointment, or MoHE university portal).
+
+Return STRICTLY a valid JSON array of 3 objects with NO markdown code fences and NO preamble, matching this exact JSON schema:
+[
+  {
+    "report_type": "suspicious" | "false_positive",
+    "reported_domain": "example-scam.xyz",
+    "raw_excerpt": "Full text of the message in English or Singlish",
+    "notes": "Brief submitter notes explaining where received and why flagged"
+  }
+]`
+
+  for (const model of GEMINI_SEED_MODELS) {
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(GEMINI_API_KEY)}`
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            responseMimeType: 'application/json',
+            temperature: 0.7,
+          },
+        }),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      })
+
+      if (!res.ok) continue
+
+      const data = await res.json()
+      const contentText = data?.candidates?.[0]?.content?.parts?.[0]?.text
+      if (!contentText) continue
+
+      let cleanJson = contentText.trim()
+      if (cleanJson.startsWith('```')) {
+        cleanJson = cleanJson.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim()
+      }
+      if (!cleanJson.startsWith('[')) {
+        const match = cleanJson.match(/\[[\s\S]*\]/)
+        if (match) cleanJson = match[0]
+      }
+
+      const parsed = JSON.parse(cleanJson)
+      if (Array.isArray(parsed) && parsed.length >= 1) {
+        return parsed.slice(0, 3).map((item) => ({
+          report_type: ['suspicious', 'false_positive', 'false_negative'].includes(item.report_type)
+            ? item.report_type
+            : 'suspicious',
+          reported_domain: (item.reported_domain || 'unknown-scam.xyz')
+            .toLowerCase()
+            .replace(/^https?:\/\//i, '')
+            .split('/')[0]
+            .trim(),
+          raw_excerpt: String(item.raw_excerpt || item.notes || 'Suspicious message received').trim(),
+          notes: String(item.notes || 'Citizen reported potential scam').trim(),
+          isAiGenerated: true,
+        }))
+      }
+    } catch {
+      // Continue to next model or fallback
+    }
+  }
+
+  return null
+}
+
+export async function seedDemoQueue(options = {}) {
+  let reportsToSeed = null
+  let generatorType = 'static'
+
+  if (!options.forceStatic) {
+    try {
+      const aiReports = await fetchGeminiDemoReports(options)
+      if (aiReports && aiReports.length > 0) {
+        reportsToSeed = aiReports
+        generatorType = 'gemini'
+      }
+    } catch {
+      // Fallback
+    }
+  }
+
+  if (!reportsToSeed || reportsToSeed.length === 0) {
+    reportsToSeed = DEMO_REPORTS.map((r) => ({
+      ...r,
+      isAiGenerated: false,
+    }))
+    generatorType = 'static'
+  }
+
   const seeded = []
-  for (const demo of DEMO_REPORTS) {
+  for (const demo of reportsToSeed) {
     const freshId = randomUUID()
+    const rawExcerpt = demo.raw_excerpt || demo.notes || ''
+    const contentHash = demo.content_sha256 || createHash('sha256').update(rawExcerpt.trim()).digest('hex')
+    const aiTag = demo.isAiGenerated ? '[DEMO_FIXTURE:GEMINI]' : '[DEMO_FIXTURE:STATIC]'
+
     const dbPayload = {
       id: freshId,
       report_type: demo.report_type,
-      content_sha256: demo.content_sha256,
+      content_sha256: contentHash,
       reported_domain: demo.reported_domain,
-      notes: `[Reported Message Excerpt]: "${demo.raw_excerpt}"\n\n[Submitter Context]: ${demo.notes} [DEMO_FIXTURE]`,
-      status: demo.status,
+      notes: `[Reported Message Excerpt]: "${rawExcerpt}"\n\n[Submitter Context]: ${demo.notes} ${aiTag} [DEMO_FIXTURE]`,
+      status: demo.status || 'PENDING',
       created_at: new Date().toISOString(),
     }
+
     if (isSupabaseConfigured()) {
       try {
         const res = await fetch(`${SUPABASE_URL}/rest/v1/user_reports`, {
@@ -2538,6 +2666,7 @@ export async function seedDemoQueue() {
     }
   }
 
+  seeded.generator = generatorType
   return seeded
 }
 
