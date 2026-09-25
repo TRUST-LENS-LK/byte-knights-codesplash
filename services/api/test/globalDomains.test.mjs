@@ -60,7 +60,7 @@ test('a top-20k globally known domain is recognized via L1 without ever querying
     // zero queries overall, but we can assert this specific finding came
     // from L1 by checking the evidence text.
     const finding = body.decision.findings.find((f) => f.canonicalSignal === 'known_global_domain')
-    assert.match(finding.evidence, /L1 cache hit/)
+    assert.ok(finding.cacheTier === 'L1' || /L1 cache hit/.test(finding.evidence))
   })
 })
 
@@ -75,7 +75,7 @@ test('a domain not in L1 but present in the L2 database is recognized as globall
     assert.equal(response.status, 200)
     const finding = body.decision.findings.find((f) => f.canonicalSignal === 'known_global_domain')
     assert.ok(finding, 'expected a known_global_domain finding from the L2 fallback')
-    assert.match(finding.evidence, /L2 cache hit/)
+    assert.ok(finding.cacheTier === 'L2' || /L2 cache hit/.test(finding.evidence))
   })
 })
 

@@ -253,6 +253,6 @@ test('Tier 3 L2 database fallback is queried when L1 cache misses', async () => 
     assert.ok(queriedTables.has('global_trusted_domains'), 'L2 database should have been queried')
     assert.ok(signals.includes('known_global_domain'), 'L2 hit should produce known_global_domain finding')
     const finding = data.decision.findings.find((f) => f.canonicalSignal === 'known_global_domain')
-    assert.match(finding.evidence, /L2 cache hit/, 'Evidence should indicate L2 cache hit')
+    assert.ok(finding.cacheTier === 'L2' || /L2 cache hit/.test(finding.evidence), 'Finding should indicate L2 cache hit')
   })
 })

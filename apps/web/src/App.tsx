@@ -905,7 +905,7 @@ function App() {
 
                               <div className="signal-evidence-quote">
                                 <span className="quote-label">Observed text evidence:</span>
-                                <p className="quote-content">"{finding.evidence}"</p>
+                                <p className="quote-content">"{finding.evidence?.replace(/\s*\([^)]*cache hit[^)]*\)/gi, '').replace(/\s*\(Tranco[^)]*\)/gi, '')}"</p>
                               </div>
 
                               {finding.limitation && (

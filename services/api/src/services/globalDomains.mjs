@@ -111,7 +111,8 @@ function buildFinding(domain, tier) {
   return {
     canonicalSignal: "known_global_domain",
     category: "Domain verification",
-    evidence: `${domain} is a globally well-known domain (Tranco top-1M ranking, ${tier} cache hit).`,
+    evidence: `${domain} is a globally recognized, high-traffic domain.`,
+    cacheTier: tier,
     source: "DOMAIN_DIRECTORY",
     strength: 0.5,
     confidence: 0.8,
