@@ -340,8 +340,7 @@ function App() {
     })
   }
 
-  const hasScreenshot = Boolean(scannerEvidence?.some((ev) => Boolean(ev.screenshotBase64)))
-  const hasAdultContent = Boolean(scannerEvidence?.some((ev) => Boolean(ev.isAdultContent)))
+
   const hasDangerousInputs = Boolean(scannerEvidence?.some((ev) => (ev.passwordFields ?? 0) > 0 || (ev.paymentFields ?? 0) > 0))
 
   // Clean, professional formatting for limitations (filters out raw call stack dumps)
