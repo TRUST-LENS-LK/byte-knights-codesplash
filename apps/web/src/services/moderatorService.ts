@@ -908,6 +908,55 @@ export async function fetchDomainDirectoryEntries(token: string): Promise<Domain
   }
 }
 
+export function formatApiErrorMessage(rawError: unknown, fallback = 'Operation failed'): string {
+  if (!rawError) return fallback
+
+  let msg = typeof rawError === 'string' ? rawError.trim() : String(rawError)
+
+  // Extract embedded JSON if present (e.g. Supabase REST error string)
+  const jsonMatch = msg.match(/\{[\s\S]*"code"[\s\S]*\}|\{[\s\S]*"message"[\s\S]*\}/)
+  if (jsonMatch) {
+    try {
+      const parsed = JSON.parse(jsonMatch[0])
+      if (
+        parsed.code === '23505' ||
+        parsed.message?.toLowerCase().includes('unique constraint') ||
+        parsed.message?.toLowerCase().includes('duplicate key')
+      ) {
+        const detailMatch = parsed.details?.match(/\((?:official_domain|indicator_value|domain)\)=\(([^)]+)\)/i)
+        if (detailMatch) {
+          return `Domain "${detailMatch[1]}" already exists in the official directory.`
+        }
+        return 'This entry already exists in the directory.'
+      }
+      if (parsed.message) {
+        msg = parsed.message
+      } else if (parsed.details) {
+        msg = parsed.details
+      }
+    } catch {
+      // not valid JSON, proceed with string sanitization
+    }
+  }
+
+  // Check for raw SQL / constraint text patterns
+  if (/23505|unique constraint|duplicate key/i.test(msg)) {
+    const valMatch = msg.match(/\((?:official_domain|indicator_value|domain)\)=\(([^)]+)\)/i)
+    if (valMatch) {
+      return `Domain "${valMatch[1]}" already exists in the official directory.`
+    }
+    return 'This entry already exists and cannot be duplicated.'
+  }
+
+  // Remove redundant stacked prefixes like "Failed to add domain: Failed to create domain directory entry: "
+  msg = msg.replace(/^((Failed|Error|Action failed|Approval failed)\s*(to|for)?\s*[^:]*:\s*)+/gi, '')
+
+  msg = msg.trim()
+  if (!msg) return fallback
+
+  return msg.charAt(0).toUpperCase() + msg.slice(1)
+}
+
 export async function createDomainDirectoryEntry(
   token: string,
   data: { name: string; officialDomain: string; category?: string; sourceUrl?: string }
@@ -918,9 +967,9 @@ export async function createDomainDirectoryEntry(
       headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify(data),
     })
-    const body = await res.json()
+    const body = await res.json().catch(() => ({}))
     if (!res.ok) {
-      return { success: false, error: body.message || `Failed to create domain entry (${res.status})` }
+      return { success: false, error: formatApiErrorMessage(body.message || body.error, `Failed to create domain entry (${res.status})`) }
     }
     return { success: true, entry: body.entry }
   } catch (err) {
@@ -939,9 +988,9 @@ export async function updateDomainDirectoryEntry(
       headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify(updates),
     })
-    const body = await res.json()
+    const body = await res.json().catch(() => ({}))
     if (!res.ok) {
-      return { success: false, error: body.message || `Failed to update domain entry (${res.status})` }
+      return { success: false, error: formatApiErrorMessage(body.message || body.error, `Failed to update domain entry (${res.status})`) }
     }
     return { success: true, updated: body.updated }
   } catch (err) {

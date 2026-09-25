@@ -2456,6 +2456,15 @@ export async function createManualIntelligenceEntry(
       })
       if (!insertRes.ok) {
         const text = await insertRes.text().catch(() => '')
+        try {
+          const err = JSON.parse(text)
+          if (err.code === '23505' || err.message?.includes('duplicate key') || err.message?.includes('unique constraint')) {
+            throw new Error(`Indicator "${record.indicator_value}" is already registered in verified intelligence.`)
+          }
+          if (err.message) throw new Error(err.message)
+        } catch (e) {
+          if (!e.message.startsWith('Failed to create')) throw e
+        }
         throw new Error(`Failed to create intelligence entry: ${text.slice(0, 300)}`)
       }
       const [saved] = await insertRes.json().catch(() => [])

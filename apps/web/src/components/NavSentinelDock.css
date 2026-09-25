@@ -61,7 +61,7 @@
 }
 
 .nav-brand-title {
-  font-family: var(--font-heading, 'Sora', sans-serif);
+  font-family: var(--font-heading, 'Inter', sans-serif);
   font-size: 21px;
   font-weight: 800;
   color: #0f172a;
@@ -94,7 +94,7 @@
 
 .nav-link {
   position: relative;
-  font-family: var(--font-heading, 'Sora', sans-serif);
+  font-family: var(--font-heading, 'Inter', sans-serif);
   font-size: 14px;
   font-weight: 600;
   color: #475569;
@@ -145,7 +145,7 @@
   background: #fee2e2;
   border: 1.5px solid #fca5a5;
   color: #b91c1c;
-  font-family: var(--font-heading, 'Sora', sans-serif);
+  font-family: var(--font-heading, 'Inter', sans-serif);
   font-size: 13px;
   font-weight: 750;
   cursor: pointer;
