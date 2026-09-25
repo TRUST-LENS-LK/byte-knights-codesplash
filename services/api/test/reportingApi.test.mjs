@@ -11,6 +11,8 @@ const regularUserToken = 'regular-citizen-jwt-token-abc'
 let child
 let mockSupabaseServer
 const mockReports = new Map()
+const mockIntel = new Map()
+const mockAuditLogs = []
 
 function waitForStartup(processChild, port, label = 'Reporting API') {
   return new Promise((resolve, reject) => {
@@ -155,6 +157,81 @@ test.before(async () => {
       ]
       res.writeHead(200, { 'content-type': 'application/json' })
       return res.end(JSON.stringify(orgs))
+    }
+
+    if (req.method === 'POST' && req.url.startsWith('/rest/v1/verified_intelligence')) {
+      const data = JSON.parse(raw || '{}')
+      mockIntel.set(data.id, data)
+      res.writeHead(201, { 'content-type': 'application/json' })
+      return res.end(JSON.stringify([data]))
+    }
+
+    if (req.method === 'GET' && req.url.startsWith('/rest/v1/verified_intelligence')) {
+      const decodedUrl = decodeURIComponent(req.url)
+      let items = Array.from(mockIntel.values())
+      const idMatch = decodedUrl.match(/id=eq\.([a-f0-9-]+)/i)
+      if (idMatch) {
+        items = items.filter((i) => i.id === idMatch[1])
+        res.writeHead(200, { 'content-type': 'application/json' })
+        return res.end(JSON.stringify(items))
+      }
+      const indMatch = decodedUrl.match(/indicator_value=eq\.([^&]+)/)
+      if (indMatch) {
+        const decoded = indMatch[1].toLowerCase()
+        items = items.filter((i) => (i.indicator_value || '').toLowerCase() === decoded)
+      }
+      const inMatch = decodedUrl.match(/indicator_value\.in\.\(([^)]+)\)/)
+      if (inMatch) {
+        const allowed = inMatch[1].split(',').map((s) => s.replace(/^"|"$/g, '').toLowerCase().trim())
+        items = items.filter((i) => allowed.includes((i.indicator_value || '').toLowerCase()) || allowed.includes((i.defanged_value || '').toLowerCase()))
+      }
+      if (decodedUrl.includes('active=eq.true')) {
+        items = items.filter((i) => i.active === true)
+      } else if (decodedUrl.includes('active=eq.false')) {
+        items = items.filter((i) => i.active === false)
+      }
+      items.sort((a, b) => {
+        if (Boolean(a.active) !== Boolean(b.active)) return a.active ? -1 : 1
+        return new Date(b.updated_at || b.created_at || 0).getTime() - new Date(a.updated_at || a.created_at || 0).getTime()
+      })
+      res.writeHead(200, { 'content-type': 'application/json' })
+      return res.end(JSON.stringify(items))
+    }
+
+    if (req.method === 'PATCH' && req.url.startsWith('/rest/v1/verified_intelligence')) {
+      const match = req.url.match(/id=eq\.([a-f0-9-]+)/i)
+      if (match && mockIntel.has(match[1])) {
+        const existing = mockIntel.get(match[1])
+        const updates = JSON.parse(raw || '{}')
+        const merged = { ...existing, ...updates }
+        mockIntel.set(match[1], merged)
+        res.writeHead(200, { 'content-type': 'application/json' })
+        return res.end(JSON.stringify([merged]))
+      }
+      res.writeHead(200, { 'content-type': 'application/json' })
+      return res.end(JSON.stringify([{ status: 'ok' }]))
+    }
+
+    if (req.method === 'POST' && req.url.startsWith('/rest/v1/moderation_audit_logs')) {
+      const data = JSON.parse(raw || '{}')
+      mockAuditLogs.unshift(data)
+      res.writeHead(201, { 'content-type': 'application/json' })
+      return res.end(JSON.stringify([data]))
+    }
+
+    if (req.method === 'GET' && req.url.startsWith('/rest/v1/moderation_audit_logs')) {
+      const decodedUrl = decodeURIComponent(req.url)
+      let items = [...mockAuditLogs]
+      const inMatch = decodedUrl.match(/target_indicator\.in\.\(([^)]+)\)/)
+      if (inMatch) {
+        const allowed = inMatch[1].split(',').map((s) => s.replace(/^"|"$/g, '').toLowerCase().trim())
+        items = items.filter((l) => {
+          const target = (l.target_indicator || l.raw_target_indicator || '').toLowerCase().trim()
+          return allowed.includes(target)
+        })
+      }
+      res.writeHead(200, { 'content-type': 'application/json' })
+      return res.end(JSON.stringify(items))
     }
 
     // Default REST endpoints simulation
@@ -778,5 +855,612 @@ test('POST /api/moderation/review: Circuit Breaker permits approval when overrid
   assert.equal(overrideBody.result.success, true)
   assert.equal(overrideBody.result.status, 'APPROVED')
 })
+
+test('GET /api/moderation/reports/:id/context: Blocks requests without token or with non-moderator token (HTTP 401)', async () => {
+  // 1. Unauthenticated request
+  const unauthRes = await fetch(`http://localhost:${apiPort}/api/moderation/reports/any-uuid/context`)
+  assert.equal(unauthRes.status, 401)
+  const unauthBody = await unauthRes.json()
+  assert.equal(unauthBody.code, 'UNAUTHORIZED')
+
+  // 2. Regular citizen token (non-moderator)
+  const userRes = await fetch(`http://localhost:${apiPort}/api/moderation/reports/any-uuid/context`, {
+    headers: { Authorization: `Bearer ${regularUserToken}` },
+  })
+  assert.equal(userRes.status, 401)
+})
+
+test('GET /api/moderation/reports/:id/context: Returns HTTP 404 for non-existent report ID', async () => {
+  const missingRes = await fetch(`http://localhost:${apiPort}/api/moderation/reports/00000000-0000-0000-0000-000000000000/context`, {
+    headers: { Authorization: `Bearer ${validModeratorToken}` },
+  })
+  assert.equal(missingRes.status, 404)
+  const missingBody = await missingRes.json()
+  assert.equal(missingBody.code, 'NOT_FOUND')
+})
+
+test('GET /api/moderation/reports/:id/context: Delivers context radar for fresh report with no prior history', async () => {
+  // 1. Submit a fresh report
+  const submitRes = await fetch(`http://localhost:${apiPort}/api/reports`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      reportType: 'suspicious',
+      contentSha256: 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a101',
+      reportedDomain: 'brand-new-unknown-domain.top',
+      rawExcerpt: 'Fresh scam target',
+    }),
+  })
+  assert.equal(submitRes.status, 201)
+  const { report } = await submitRes.json()
+
+  // 2. Query intelligence context
+  const ctxRes = await fetch(`http://localhost:${apiPort}/api/moderation/reports/${report.id}/context`, {
+    headers: { Authorization: `Bearer ${validModeratorToken}` },
+  })
+  assert.equal(ctxRes.status, 200)
+  const ctxBody = await ctxRes.json()
+  assert.equal(ctxBody.success, true)
+  assert.equal(ctxBody.context.hasActiveIntel, false)
+  assert.equal(ctxBody.context.isConflict, false)
+  assert.equal(ctxBody.context.isCorroborating, false)
+  assert.equal(ctxBody.context.priorDecisions.totalPriorEvents, 0)
+})
+
+test('GET /api/moderation/reports/:id/context: Surfaces past rejections for indicator', async () => {
+  // 1. Submit a report for spammy-domain.xyz and REJECT it
+  const submit1 = await fetch(`http://localhost:${apiPort}/api/reports`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      reportType: 'suspicious',
+      contentSha256: 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a102',
+      reportedDomain: 'spammy-domain.xyz',
+      rawExcerpt: 'Fake alarm',
+    }),
+  })
+  const { report: rep1 } = await submit1.json()
+
+  const rejectRes = await fetch(`http://localhost:${apiPort}/api/moderation/review`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      Authorization: `Bearer ${validModeratorToken}`,
+    },
+    body: JSON.stringify({
+      reportId: rep1.id,
+      action: 'REJECT',
+      notes: 'No malicious indicators detected. Citizen dispute.',
+    }),
+  })
+  assert.equal(rejectRes.status, 200)
+
+  // 2. Submit second report for the same domain
+  const submit2 = await fetch(`http://localhost:${apiPort}/api/reports`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      reportType: 'suspicious',
+      contentSha256: 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a103',
+      reportedDomain: 'spammy-domain.xyz',
+      rawExcerpt: 'Second report',
+    }),
+  })
+  const { report: rep2 } = await submit2.json()
+
+  // 3. Context query should show 1 prior rejection with notes
+  const ctxRes = await fetch(`http://localhost:${apiPort}/api/moderation/reports/${rep2.id}/context`, {
+    headers: { Authorization: `Bearer ${validModeratorToken}` },
+  })
+  assert.equal(ctxRes.status, 200)
+  const { context } = await ctxRes.json()
+  assert.equal(context.priorDecisions.totalRejections, 1)
+  assert.ok(context.priorDecisions.latestRejection)
+  assert.equal(context.priorDecisions.latestRejection.notes, 'No malicious indicators detected. Citizen dispute.')
+})
+
+test('GET /api/moderation/reports/:id/context: Detects conflict when false alarm is submitted against confirmed threat', async () => {
+  // 1. Submit and APPROVE a scam report for malicious-gateway.biz
+  const submitScam = await fetch(`http://localhost:${apiPort}/api/reports`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      reportType: 'suspicious',
+      contentSha256: 'b1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6b101',
+      reportedDomain: 'malicious-gateway.biz',
+      rawExcerpt: 'Fake gateway harvesting cards',
+    }),
+  })
+  const { report: scamReport } = await submitScam.json()
+
+  const approveScamRes = await fetch(`http://localhost:${apiPort}/api/moderation/review`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      Authorization: `Bearer ${validModeratorToken}`,
+    },
+    body: JSON.stringify({
+      reportId: scamReport.id,
+      action: 'APPROVE',
+      category: 'Banking Phishing',
+      confidence: 0.95,
+      notes: 'Active credential theft site',
+    }),
+  })
+  assert.equal(approveScamRes.status, 200)
+
+  // 2. Submit a false_positive report for the same domain
+  const submitFalseAlarm = await fetch(`http://localhost:${apiPort}/api/reports`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      reportType: 'false_positive',
+      contentSha256: 'b1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6b102',
+      reportedDomain: 'malicious-gateway.biz',
+      rawExcerpt: 'Dispute: this is legitimate',
+    }),
+  })
+  const { report: falseAlarmReport } = await submitFalseAlarm.json()
+
+  // 3. Inspect context: must report conflict!
+  const ctxRes = await fetch(`http://localhost:${apiPort}/api/moderation/reports/${falseAlarmReport.id}/context`, {
+    headers: { Authorization: `Bearer ${validModeratorToken}` },
+  })
+  assert.equal(ctxRes.status, 200)
+  const { context } = await ctxRes.json()
+  assert.equal(context.hasActiveIntel, true)
+  assert.equal(context.activeIntel.risk_level, 'CONFIRMED_SCAM')
+  assert.equal(context.isConflict, true)
+  assert.equal(context.conflictType, 'FALSE_ALARM_AGAINST_SCAM')
+  assert.ok(context.conflictExplanation.includes('Active Intelligence already classifies this domain as a CONFIRMED SCAM'))
+  assert.ok(context.revocationConsequence.includes('Approving this report will REVOKE'))
+})
+
+test('POST /api/moderation/review: Approving false alarm revokes threat indicator and reclassifies target as VERIFIED_SAFE', async () => {
+  // 1. Submit false alarm on malicious-gateway.biz
+  const submitFalseAlarm = await fetch(`http://localhost:${apiPort}/api/reports`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      reportType: 'false_positive',
+      contentSha256: 'c1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6c101',
+      reportedDomain: 'malicious-gateway.biz',
+      rawExcerpt: 'Site clean audit complete',
+    }),
+  })
+  const { report: falseAlarmReport } = await submitFalseAlarm.json()
+
+  // 2. Moderator APPROVES the false alarm
+  const approveRes = await fetch(`http://localhost:${apiPort}/api/moderation/review`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      Authorization: `Bearer ${validModeratorToken}`,
+    },
+    body: JSON.stringify({
+      reportId: falseAlarmReport.id,
+      action: 'APPROVE',
+      category: 'False Alarm',
+      confidence: 1.0,
+      notes: 'Cleared after verified security patch',
+    }),
+  })
+  assert.equal(approveRes.status, 200)
+
+  // 3. Re-query context: active threat indicator must be superseded by VERIFIED_SAFE
+  const ctxRes = await fetch(`http://localhost:${apiPort}/api/moderation/reports/${falseAlarmReport.id}/context`, {
+    headers: { Authorization: `Bearer ${validModeratorToken}` },
+  })
+  assert.equal(ctxRes.status, 200)
+  const { context } = await ctxRes.json()
+  assert.equal(context.activeIntel.risk_level, 'VERIFIED_SAFE')
+  assert.equal(context.isConflict, false)
+})
+
+test('GET /api/moderation/reports/:id/context: Rejects empty report ID with HTTP 400', async () => {
+  const badIdRes = await fetch(`http://localhost:${apiPort}/api/moderation/reports//context`, {
+    headers: { Authorization: `Bearer ${validModeratorToken}` },
+  })
+  assert.equal(badIdRes.status, 400)
+  const body = await badIdRes.json()
+  assert.equal(body.code, 'INVALID_ID')
+})
+
+test('GET /api/moderation/reports/:id/context: Detects reverse conflict (SCAM_AGAINST_SAFE) and revocation consequence', async () => {
+  // 1. Submit and APPROVE a false_positive report for verified-clean-firm.lk (creating active VERIFIED_SAFE indicator)
+  const fpRes = await fetch(`http://localhost:${apiPort}/api/reports`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      reportType: 'false_positive',
+      contentSha256: 'd1d2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6d101',
+      reportedDomain: 'verified-clean-firm.lk',
+      rawExcerpt: 'Legitimate business domain dispute',
+    }),
+  })
+  assert.equal(fpRes.status, 201)
+  const { report: fpReport } = await fpRes.json()
+
+  const approveFp = await fetch(`http://localhost:${apiPort}/api/moderation/review`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      Authorization: `Bearer ${validModeratorToken}`,
+    },
+    body: JSON.stringify({
+      reportId: fpReport.id,
+      action: 'APPROVE',
+      category: 'False Alarm',
+      confidence: 1.0,
+      notes: 'Verified legitimate enterprise domain',
+    }),
+  })
+  assert.equal(approveFp.status, 200)
+
+  // 2. Submit a suspicious scam report against verified-clean-firm.lk
+  const scamRes = await fetch(`http://localhost:${apiPort}/api/reports`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      reportType: 'suspicious',
+      contentSha256: 'd1d2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6d102',
+      reportedDomain: 'verified-clean-firm.lk',
+      rawExcerpt: 'Recent compromise detected hosting phishing kit',
+    }),
+  })
+  assert.equal(scamRes.status, 201)
+  const { report: scamReport } = await scamRes.json()
+
+  // 3. Query context for the new suspicious report
+  const ctxRes = await fetch(`http://localhost:${apiPort}/api/moderation/reports/${scamReport.id}/context`, {
+    headers: { Authorization: `Bearer ${validModeratorToken}` },
+  })
+  assert.equal(ctxRes.status, 200)
+  const { context } = await ctxRes.json()
+  assert.equal(context.hasActiveIntel, true)
+  assert.equal(context.activeIntel.risk_level, 'VERIFIED_SAFE')
+  assert.equal(context.isConflict, true)
+  assert.equal(context.conflictType, 'SCAM_AGAINST_SAFE')
+  assert.ok(context.conflictExplanation.includes('VERIFIED SAFE'))
+  assert.ok(context.revocationConsequence.includes('REVOKE the VERIFIED_SAFE status and escalate the domain to CONFIRMED_SCAM'))
+})
+
+test('POST /api/moderation/review: Approving scam against safe indicator deactivates safe intel and records RECLASSIFY_INDICATOR audit log', async () => {
+  // 1. Submit a suspicious scam report on verified-clean-firm.lk (which is currently active VERIFIED_SAFE)
+  const scamRes = await fetch(`http://localhost:${apiPort}/api/reports`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      reportType: 'suspicious',
+      contentSha256: 'e1d2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6e101',
+      reportedDomain: 'verified-clean-firm.lk',
+      rawExcerpt: 'Phishing credential harvester detected on subpath',
+    }),
+  })
+  assert.equal(scamRes.status, 201)
+  const { report: scamReport } = await scamRes.json()
+
+  // 2. Moderator overrides and approves the scam report
+  const approveScam = await fetch(`http://localhost:${apiPort}/api/moderation/review`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      Authorization: `Bearer ${validModeratorToken}`,
+    },
+    body: JSON.stringify({
+      reportId: scamReport.id,
+      action: 'APPROVE',
+      category: 'Credential Harvesting',
+      confidence: 0.95,
+      notes: 'Investigated: domain DNS was hijacked, now serving malicious malware',
+    }),
+  })
+  assert.equal(approveScam.status, 200)
+
+  // 3. Verify context now reflects CONFIRMED_SCAM
+  const ctxRes = await fetch(`http://localhost:${apiPort}/api/moderation/reports/${scamReport.id}/context`, {
+    headers: { Authorization: `Bearer ${validModeratorToken}` },
+  })
+  assert.equal(ctxRes.status, 200)
+  const { context } = await ctxRes.json()
+  assert.equal(context.hasActiveIntel, true)
+  assert.equal(context.activeIntel.risk_level, 'CONFIRMED_SCAM')
+  assert.equal(context.isConflict, false)
+
+  // 4. Verify audit log captures RECLASSIFY_INDICATOR
+  const auditRes = await fetch(`http://localhost:${apiPort}/api/moderation/audit-logs`, {
+    headers: { Authorization: `Bearer ${validModeratorToken}` },
+  })
+  assert.equal(auditRes.status, 200)
+  const auditBody = await auditRes.json()
+  const reclassifyLog = auditBody.auditLogs.find((l) => l.action === 'RECLASSIFY_INDICATOR')
+  assert.ok(reclassifyLog, 'RECLASSIFY_INDICATOR audit log must be recorded')
+  assert.match(reclassifyLog.moderator_notes, /REVOKED & RECLASSIFIED/i)
+})
+
+test('GET /api/moderation/reports/:id/context: Projects corroboration report count and Bayesian confidence scaling for repeated threat report', async () => {
+  // 1. Create and approve a scam report for repeat-scam-lanka.com with base confidence 0.85
+  const rep1 = await fetch(`http://localhost:${apiPort}/api/reports`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      reportType: 'suspicious',
+      contentSha256: 'f1d2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6f101',
+      reportedDomain: 'repeat-scam-lanka.com',
+      rawExcerpt: 'Fake lottery winning message',
+    }),
+  })
+  const { report: report1 } = await rep1.json()
+
+  const approve1 = await fetch(`http://localhost:${apiPort}/api/moderation/review`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      Authorization: `Bearer ${validModeratorToken}`,
+    },
+    body: JSON.stringify({
+      reportId: report1.id,
+      action: 'APPROVE',
+      category: 'Financial Scam',
+      confidence: 0.85,
+      notes: 'Initial confirmation of fake lottery lure',
+    }),
+  })
+  assert.equal(approve1.status, 200)
+
+  // 2. Submit second independent report for the same domain
+  const rep2 = await fetch(`http://localhost:${apiPort}/api/reports`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      reportType: 'suspicious',
+      contentSha256: 'f1d2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6f102',
+      reportedDomain: 'repeat-scam-lanka.com',
+      rawExcerpt: 'Second citizen reporting lottery scam',
+    }),
+  })
+  const { report: report2 } = await rep2.json()
+
+  // 3. Inspect context: should show corroboration projection
+  const ctxRes = await fetch(`http://localhost:${apiPort}/api/moderation/reports/${report2.id}/context`, {
+    headers: { Authorization: `Bearer ${validModeratorToken}` },
+  })
+  assert.equal(ctxRes.status, 200)
+  const { context } = await ctxRes.json()
+  assert.equal(context.hasActiveIntel, true)
+  assert.equal(context.isCorroborating, true)
+  assert.equal(context.isConflict, false)
+  assert.equal(context.projectedCount, 2)
+  assert.ok(context.projectedConfidence > 0.85, 'Projected confidence should be greater than base 0.85')
+  assert.ok(context.corroborationSummary.includes('already verified as an active threat'))
+})
+
+test('POST /api/moderation/review: Approving corroborating threat updates existing intelligence with incremented report count and Bayesian confidence', async () => {
+  // 1. Submit a 2nd report for repeat-scam-lanka.com
+  const rep2 = await fetch(`http://localhost:${apiPort}/api/reports`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      reportType: 'suspicious',
+      contentSha256: 'f1d2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6f103',
+      reportedDomain: 'repeat-scam-lanka.com',
+      rawExcerpt: 'Third report corroborating lottery scam',
+    }),
+  })
+  const { report: report2 } = await rep2.json()
+
+  // 2. Moderator approves the corroborating report
+  const approve2 = await fetch(`http://localhost:${apiPort}/api/moderation/review`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      Authorization: `Bearer ${validModeratorToken}`,
+    },
+    body: JSON.stringify({
+      reportId: report2.id,
+      action: 'APPROVE',
+      category: 'Financial Scam',
+      confidence: 0.90,
+      notes: 'Corroborated by independent user evidence',
+    }),
+  })
+  assert.equal(approve2.status, 200)
+
+  // 3. Check updated active intelligence via context
+  const ctxRes = await fetch(`http://localhost:${apiPort}/api/moderation/reports/${report2.id}/context`, {
+    headers: { Authorization: `Bearer ${validModeratorToken}` },
+  })
+  assert.equal(ctxRes.status, 200)
+  const { context } = await ctxRes.json()
+  assert.equal(context.hasActiveIntel, true)
+  assert.equal(context.activeIntel.report_count, 2)
+  assert.ok(context.activeIntel.confidence >= 0.90)
+})
+
+test('POST /api/moderation/review: Rejecting a conflicting dispute preserves existing threat intelligence intact and logs rejection', async () => {
+  // 1. Submit and approve scam for malware-host-domain.net
+  const scamRes = await fetch(`http://localhost:${apiPort}/api/reports`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      reportType: 'suspicious',
+      contentSha256: '11d2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f61101',
+      reportedDomain: 'malware-host-domain.net',
+      rawExcerpt: 'Malicious payload dropper',
+    }),
+  })
+  const { report: scamReport } = await scamRes.json()
+
+  const approveRes = await fetch(`http://localhost:${apiPort}/api/moderation/review`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      Authorization: `Bearer ${validModeratorToken}`,
+    },
+    body: JSON.stringify({
+      reportId: scamReport.id,
+      action: 'APPROVE',
+      category: 'Malware Distribution',
+      confidence: 0.95,
+      notes: 'Confirmed dropper domain',
+    }),
+  })
+  assert.equal(approveRes.status, 200)
+
+  // 2. Someone files a false_positive dispute
+  const disputeRes = await fetch(`http://localhost:${apiPort}/api/reports`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      reportType: 'false_positive',
+      contentSha256: '11d2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f61102',
+      reportedDomain: 'malware-host-domain.net',
+      rawExcerpt: 'Unblock request from domain registrant',
+    }),
+  })
+  const { report: disputeReport } = await disputeRes.json()
+
+  // 3. Moderator reviews the dispute and REJECTS it
+  const rejectRes = await fetch(`http://localhost:${apiPort}/api/moderation/review`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      Authorization: `Bearer ${validModeratorToken}`,
+    },
+    body: JSON.stringify({
+      reportId: disputeReport.id,
+      action: 'REJECT',
+      notes: 'Dispute investigated and denied. Active ransomware payload still hosted.',
+    }),
+  })
+  assert.equal(rejectRes.status, 200)
+  const rejectBody = await rejectRes.json()
+  assert.equal(rejectBody.result.status, 'REJECTED')
+
+  // 4. Query context: CONFIRMED_SCAM must remain active, and rejection recorded
+  const ctxRes = await fetch(`http://localhost:${apiPort}/api/moderation/reports/${disputeReport.id}/context`, {
+    headers: { Authorization: `Bearer ${validModeratorToken}` },
+  })
+  assert.equal(ctxRes.status, 200)
+  const { context } = await ctxRes.json()
+  assert.equal(context.hasActiveIntel, true)
+  assert.equal(context.activeIntel.risk_level, 'CONFIRMED_SCAM')
+  assert.equal(context.priorDecisions.totalRejections, 1)
+  assert.equal(context.priorDecisions.totalApprovals, 1)
+  assert.equal(context.priorDecisions.latestRejection.notes, 'Dispute investigated and denied. Active ransomware payload still hosted.')
+})
+
+test('GET /api/moderation/reports/:id/context: Resolves subdomain variants to parent domain active threat intelligence', async () => {
+  // 1. Submit and approve threat on apex domain bank-phish-alert.lk
+  const apexRes = await fetch(`http://localhost:${apiPort}/api/reports`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      reportType: 'suspicious',
+      contentSha256: '22d2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f62201',
+      reportedDomain: 'bank-phish-alert.lk',
+      rawExcerpt: 'Fake bank portal apex',
+    }),
+  })
+  const { report: apexReport } = await apexRes.json()
+
+  const approveApex = await fetch(`http://localhost:${apiPort}/api/moderation/review`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      Authorization: `Bearer ${validModeratorToken}`,
+    },
+    body: JSON.stringify({
+      reportId: apexReport.id,
+      action: 'APPROVE',
+      category: 'Banking Phishing',
+      confidence: 0.95,
+      notes: 'Malicious domain targeted at bank users',
+    }),
+  })
+  assert.equal(approveApex.status, 200)
+
+  // 2. Submit report for a subdomain: online.secure.bank-phish-alert.lk
+  const subRes = await fetch(`http://localhost:${apiPort}/api/reports`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      reportType: 'suspicious',
+      contentSha256: '22d2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f62202',
+      reportedDomain: 'online.secure.bank-phish-alert.lk',
+      rawExcerpt: 'Subdomain phishing lure',
+    }),
+  })
+  const { report: subReport } = await subRes.json()
+
+  // 3. Query context for the subdomain report: should link to apex intelligence
+  const ctxRes = await fetch(`http://localhost:${apiPort}/api/moderation/reports/${subReport.id}/context`, {
+    headers: { Authorization: `Bearer ${validModeratorToken}` },
+  })
+  assert.equal(ctxRes.status, 200)
+  const { context } = await ctxRes.json()
+  assert.equal(context.hasActiveIntel, true)
+  assert.equal(context.activeIntel.risk_level, 'CONFIRMED_SCAM')
+  assert.equal(context.isCorroborating, true)
+})
+
+test('GET /api/moderation/reports/:id/context: Matches and tracks threat intelligence for pure contentSha256 hash without domain', async () => {
+  const pureHash = '33d2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f63301'
+
+  // 1. Submit text scam with no domain
+  const sms1 = await fetch(`http://localhost:${apiPort}/api/reports`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      reportType: 'suspicious',
+      contentSha256: pureHash,
+      notes: 'SMS claiming prize money, call 0770000000',
+    }),
+  })
+  const { report: report1 } = await sms1.json()
+
+  // 2. Approve with indicatorType content_hash
+  const approveHash = await fetch(`http://localhost:${apiPort}/api/moderation/review`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      Authorization: `Bearer ${validModeratorToken}`,
+    },
+    body: JSON.stringify({
+      reportId: report1.id,
+      action: 'APPROVE',
+      indicatorType: 'content_hash',
+      category: 'SMS Scams',
+      confidence: 0.90,
+      notes: 'Confirmed prize scam SMS template',
+    }),
+  })
+  assert.equal(approveHash.status, 200)
+
+  // 3. Second report with the same hash
+  const sms2 = await fetch(`http://localhost:${apiPort}/api/reports`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      reportType: 'suspicious',
+      contentSha256: pureHash,
+      notes: 'Another recipient of the same scam message',
+    }),
+  })
+  const { report: report2 } = await sms2.json()
+
+  // 4. Query context: should match by contentSha256
+  const ctxRes = await fetch(`http://localhost:${apiPort}/api/moderation/reports/${report2.id}/context`, {
+    headers: { Authorization: `Bearer ${validModeratorToken}` },
+  })
+  assert.equal(ctxRes.status, 200)
+  const { context } = await ctxRes.json()
+  assert.equal(context.hasActiveIntel, true)
+  assert.equal(context.activeIntel.risk_level, 'CONFIRMED_SCAM')
+  assert.equal(context.targetIndicator, pureHash)
+  assert.equal(context.isCorroborating, true)
+})
+
+
 
 

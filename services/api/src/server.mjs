@@ -36,6 +36,7 @@ import {
   getAuditStorageStats,
   verifyAuditChainIntegrity,
   recordAuditLog,
+  getIndicatorIntelligenceContext,
 } from './services/reportingService.mjs'
 import { reconcileDecision } from './services/reconcileIntelligence.mjs'
 import { applyAiVerdict, evaluateContextWithAi } from './services/aiContextValidator.mjs'
@@ -181,6 +182,27 @@ const server = createServer(async (req, res) => {
       )
     } catch (error) {
       return send(res, 502, { code: 'QUEUE_FETCH_ERROR', message: error.message, requestId }, requestId)
+    }
+  }
+
+  // Route: GET /api/moderation/reports/:id/context (Protected — Indicator Intelligence & Decision History)
+  if (req.method === 'GET' && pathname.startsWith('/api/moderation/reports/') && pathname.endsWith('/context')) {
+    const auth = await authorizeModerator(req)
+    if (!auth.authorized) {
+      return send(res, 401, { code: 'UNAUTHORIZED', message: auth.error || 'Moderator access required.', requestId }, requestId)
+    }
+    const reportId = pathname.slice('/api/moderation/reports/'.length, -'/context'.length)
+    if (!reportId) {
+      return send(res, 400, { code: 'INVALID_ID', message: 'Report ID is required.', requestId }, requestId)
+    }
+    try {
+      const context = await getIndicatorIntelligenceContext(reportId)
+      if (!context) {
+        return send(res, 404, { code: 'NOT_FOUND', message: 'Report not found.', requestId }, requestId)
+      }
+      return send(res, 200, { success: true, context, requestId }, requestId)
+    } catch (error) {
+      return send(res, 502, { code: 'CONTEXT_FETCH_ERROR', message: error.message, requestId }, requestId)
     }
   }
 

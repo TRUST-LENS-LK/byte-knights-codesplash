@@ -105,6 +105,48 @@ export interface ModerationQueueResponse {
   error?: string
 }
 
+export interface IndicatorHistoryContext {
+  reportId: string
+  targetIndicator: string
+  hasActiveIntel: boolean
+  activeIntel: {
+    id: string
+    risk_level: 'CONFIRMED_SCAM' | 'VERIFIED_SAFE'
+    category: string
+    confidence: number
+    report_count: number
+    notes: string | null
+    created_at: string
+    updated_at: string
+  } | null
+  isConflict: boolean
+  conflictType: 'FALSE_ALARM_AGAINST_SCAM' | 'SCAM_AGAINST_SAFE' | 'NONE'
+  conflictExplanation: string | null
+  revocationConsequence: string | null
+  isCorroborating: boolean
+  corroborationSummary: string | null
+  projectedConfidence: number | null
+  projectedCount: number | null
+  priorDecisions: {
+    totalRejections: number
+    totalApprovals: number
+    totalRetirements: number
+    totalPriorEvents: number
+    latestRejection: {
+      actorEmail: string | null
+      actorRole: string
+      notes: string | null
+      createdAt: string
+    } | null
+    latestAction: {
+      action: string
+      actorEmail: string | null
+      notes: string | null
+      createdAt: string
+    } | null
+  }
+}
+
 export interface ModerationStatsResponse {
   success: boolean
   stats?: ModerationStats
@@ -114,6 +156,29 @@ export interface ModerationStatsResponse {
 const TOKEN_KEY = 'trustlens_mod_token'
 const USER_KEY = 'trustlens_mod_user'
 const API_BASE = 'http://localhost:8787'
+
+export async function fetchIndicatorIntelligenceContext(
+  token: string,
+  reportId: string
+): Promise<{ success: boolean; context?: IndicatorHistoryContext; error?: string }> {
+  try {
+    const response = await fetch(`${API_BASE}/api/moderation/reports/${encodeURIComponent(reportId)}/context`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+    const data = await response.json()
+    if (!response.ok) {
+      return { success: false, error: data.message || 'Failed to fetch intelligence context' }
+    }
+    return { success: true, context: data.context }
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Network error fetching indicator context',
+    }
+  }
+}
 
 export function getStoredSession(): { token: string | null; user: ModeratorUser | null } {
   try {

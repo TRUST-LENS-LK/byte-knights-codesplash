@@ -2446,24 +2446,9 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                                     <span className="neo-target-domain" title={item.reported_domain || 'Message-only'}>
                                       {formatCleanIndicator(item.reported_domain)}
                                     </span>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap', marginTop: '2px' }}>
-                                      <span className="neo-target-type">
-                                        {item.reported_domain ? 'Domain' : 'Message'}
-                                      </span>
-                                      {item.protected_entity?.isProtected && (
-                                        <span
-                                          className={`neo-protected-entity-pill ${item.protected_entity.type === 'OFFICIAL_NATIONAL' ? 'national' : 'global'}`}
-                                          title={item.protected_entity.warning}
-                                        >
-                                          {item.protected_entity.badge}
-                                        </span>
-                                      )}
-                                    </div>
-                                    {item.protected_entity?.isProtected && item.status === 'PENDING' && (
-                                      <span className="neo-protected-queue-recommendation" title="Guardrail recommendation">
-                                        {item.report_type === 'false_positive' ? '✓ Disputed Safe' : '⚡ Recom: REJECT'}
-                                      </span>
-                                    )}
+                                    <span className="neo-target-type">
+                                      {item.reported_domain ? 'Domain' : 'Message'}
+                                    </span>
                                   </div>
                                 </div>
                               </td>
@@ -2637,7 +2622,7 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                       { id: 'ALL', label: `All (${auditTotal})` },
                       {
                         id: 'REVIEWS',
-                        label: `Queue Reviews (${(auditStorageStats?.actionBreakdown?.approve || 0) + (auditStorageStats?.actionBreakdown?.reject || 0) + (auditStorageStats?.actionBreakdown?.retire || 0)})`,
+                        label: 'Queue Reviews',
                       },
                       { id: 'AUTH_LOGIN', label: 'Auth Logs' },
                       { id: 'DOMAIN_CREATE', label: 'Domains' },

@@ -133,6 +133,46 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
+}
+
+.neo-report-id-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: #F1F5F9;
+  border: 1px solid #E2E8F0;
+  border-radius: 5px;
+  padding: 1.5px 6px;
+  font-size: 11.5px;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-family: inherit;
+  line-height: 1.3;
+}
+
+.neo-report-id-copy-btn:hover {
+  background: #E2E8F0;
+  color: #0F172A;
+  border-color: #CBD5E1;
+}
+
+.neo-report-id-label {
+  color: #64748B;
+  font-weight: 500;
+}
+
+.neo-report-id-code {
+  font-family: 'SF Mono', Monaco, Inconsolata, 'Fira Code', monospace;
+  font-weight: 600;
+  color: #0F172A;
+}
+
+.neo-report-id-copy-btn .neo-copied-text {
+  color: #10B981;
+  font-weight: 700;
+  font-size: 11px;
 }
 
 .neo-modal-btn-close {
@@ -198,6 +238,7 @@
   border: 1px solid #E2E8F0;
   border-radius: 16px;
   padding: 16px 20px;
+  flex-shrink: 0;
 }
 
 .neo-modal-meta-item {
@@ -261,6 +302,7 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+  flex-shrink: 0;
 }
 
 .neo-modal-text-header {
@@ -336,6 +378,7 @@
   display: flex;
   flex-direction: column;
   gap: 16px;
+  flex-shrink: 0;
 }
 
 .neo-modal-decision-grid {
@@ -498,25 +541,30 @@
 
 /* ── Protected Entity Guardrail Banner ──────────────────────────── */
 .neo-protected-entity-banner {
-  background: #FFFBEB;
-  border: 1px solid #FCD34D;
-  border-radius: 16px;
-  padding: 16px 20px;
-  margin-bottom: 20px;
+  background: #FAFAFC;
+  border: 1px solid #E2E8F0;
+  border-radius: 14px;
+  padding: 16px 18px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.08);
+  gap: 12px;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
+  position: relative;
+  flex-shrink: 0;
+  min-height: fit-content;
+  box-sizing: border-box;
 }
 
 .neo-protected-entity-banner.national {
-  background: #FEF3C7;
-  border-color: #F59E0B;
+  background: linear-gradient(180deg, #FDFBF7 0%, #FAF8F5 100%);
+  border: 1px solid #F1E5D1;
+  border-left: 4px solid #D97706;
 }
 
 .neo-protected-entity-banner.global {
-  background: #EFF6FF;
-  border-color: #93C5FD;
+  background: linear-gradient(180deg, #F8FAFC 0%, #F1F5F9 100%);
+  border: 1px solid #CBD5E1;
+  border-left: 4px solid #2563EB;
 }
 
 .neo-protected-banner-header {
@@ -524,32 +572,30 @@
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 10px;
 }
 
 .neo-protected-badge-lg {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 700;
-  padding: 4px 10px;
-  border-radius: 8px;
-  background: #FFFFFF;
-  border: 1px solid #E2E8F0;
-  color: #0F172A;
+  padding: 3.5px 9px;
+  border-radius: 6px;
+  letter-spacing: 0.01em;
 }
 
 .neo-protected-entity-banner.national .neo-protected-badge-lg {
-  border-color: #F59E0B;
+  border: 1px solid #FDE68A;
   color: #92400E;
   background: #FEF3C7;
 }
 
 .neo-protected-entity-banner.global .neo-protected-badge-lg {
-  border-color: #60A5FA;
+  border: 1px solid #BFDBFE;
   color: #1E40AF;
-  background: #DBEAFE;
+  background: #EFF6FF;
 }
 
 .neo-protected-entity-title {
@@ -558,72 +604,130 @@
   color: #0F172A;
 }
 
+.neo-protected-domain-pill {
+  font-size: 11px;
+  font-family: 'SF Mono', Monaco, Inconsolata, 'Fira Code', monospace;
+  font-weight: 600;
+  color: #475569;
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+
 .neo-protected-warning-text {
   margin: 0;
   font-size: 12.5px;
-  line-height: 1.5;
-  color: #78350F;
+  line-height: 1.55;
+  color: #475569;
+}
+
+.neo-protected-entity-banner.national .neo-protected-warning-text {
+  color: #57534E;
 }
 
 .neo-protected-entity-banner.global .neo-protected-warning-text {
-  color: #1E3A8A;
+  color: #334155;
 }
 
-.neo-protected-recommendation-box {
+/* ── Modern Recommendation Card (Inner Box) ───────────────────── */
+.neo-protected-recommendation-card {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 16px;
   background: #FFFFFF;
-  border: 1px solid #FDE68A;
-  border-radius: 12px;
-  padding: 10px 14px;
-  flex-wrap: wrap;
+  border: 1px solid #E2E8F0;
+  border-radius: 10px;
+  padding: 12px 16px;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
 }
 
-.neo-protected-entity-banner.global .neo-protected-recommendation-box {
-  border-color: #BFDBFE;
+.neo-protected-entity-banner.national .neo-protected-recommendation-card {
+  border-color: #E7DFD5;
 }
 
-.neo-recommendation-tag {
+.neo-recom-left {
+  flex: 1;
+  min-width: 0;
+}
+
+.neo-recom-tag-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.neo-recom-pill {
   display: inline-flex;
   align-items: center;
+  gap: 4px;
   font-size: 10.5px;
   font-weight: 800;
-  letter-spacing: 0.05em;
-  padding: 3px 8px;
-  border-radius: 6px;
-  background: #EF4444;
-  color: #FFFFFF;
+  letter-spacing: 0.04em;
+  padding: 2.5px 8px;
+  border-radius: 5px;
   text-transform: uppercase;
 }
 
-.neo-recommendation-text {
+.neo-recom-pill.reject {
+  background: #FEF2F2;
+  color: #B91C1C;
+  border: 1px solid #FECACA;
+}
+
+.neo-recom-pill.safe {
+  background: #ECFDF5;
+  color: #047857;
+  border: 1px solid #A7F3D0;
+}
+
+.neo-recom-desc {
+  margin: 5px 0 0 0;
   font-size: 12px;
-  font-weight: 600;
-  color: #0F172A;
-  flex: 1;
+  line-height: 1.45;
+  color: #334155;
+  font-weight: 500;
+}
+
+.neo-recom-right {
+  flex-shrink: 0;
 }
 
 .neo-btn-dismiss-recommended {
   background: #059669;
   color: #FFFFFF;
-  border: none;
-  border-radius: 10px;
-  padding: 6px 14px;
+  border: 1px solid #047857;
+  border-radius: 8px;
+  padding: 8px 14px;
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   gap: 6px;
   transition: all 0.15s ease;
   white-space: nowrap;
+  box-shadow: 0 1px 2px rgba(5, 150, 105, 0.15);
 }
 
 .neo-btn-dismiss-recommended:hover:not(:disabled) {
   background: #047857;
   transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(5, 150, 105, 0.2);
+}
+
+@media (max-width: 680px) {
+  .neo-protected-recommendation-card {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .neo-btn-dismiss-recommended {
+    justify-content: center;
+    width: 100%;
+  }
 }
 
 /* ── Circuit Breaker Card ───────────────────────────────────────── */
@@ -689,3 +793,346 @@
   gap: 8px;
   margin-top: 10px;
 }
+
+/* ── Intelligence Radar & Historical Decisions Card ─────────────── */
+.neo-intel-history-card {
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 14px;
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.04);
+  flex-shrink: 0;
+  min-height: fit-content;
+  box-sizing: border-box;
+}
+
+.neo-intel-history-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #F1F5F9;
+}
+
+.neo-intel-history-title-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.neo-intel-icon-wrapper {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: #F1F5F9;
+  color: #475569;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.neo-intel-title {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #0F172A;
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+
+.neo-intel-subtitle {
+  font-size: 11.5px;
+  color: #64748B;
+  margin: 2px 0 0 0;
+  line-height: 1.35;
+}
+
+.neo-intel-target-pill {
+  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  background: #F8FAFC;
+  border: 1px solid #CBD5E1;
+  color: #334155;
+  border-radius: 6px;
+  letter-spacing: 0.02em;
+}
+
+.neo-intel-loading-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #64748B;
+  background: #F8FAFC;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid #E2E8F0;
+}
+
+.neo-intel-loading-pill .spinner-sm {
+  width: 10px;
+  height: 10px;
+  border: 2px solid #CBD5E1;
+  border-top-color: #0066FF;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.neo-intel-history-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.neo-intel-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+@media (max-width: 600px) {
+  .neo-intel-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.neo-intel-grid-col {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.neo-intel-col-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #64748B;
+}
+
+.neo-intel-status-row {
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+}
+
+.neo-intel-status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 11px;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.neo-intel-status-chip.threat {
+  background: #FFF1F2;
+  border: 1px solid #FECDD3;
+  color: #BE123C;
+}
+
+.neo-intel-status-chip.safe {
+  background: #ECFDF5;
+  border: 1px solid #A7F3D0;
+  color: #047857;
+}
+
+.neo-intel-status-chip.clean {
+  background: #F8FAFC;
+  border: 1px solid #E2E8F0;
+  color: #475569;
+}
+
+.neo-intel-chip-meta {
+  font-size: 10.5px;
+  font-weight: 600;
+  opacity: 0.85;
+  margin-left: 2px;
+}
+
+.neo-intel-history-pills {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.neo-intel-history-pill {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 6px;
+  letter-spacing: 0.01em;
+}
+
+.neo-intel-history-pill.reject {
+  background: #FEF2F2;
+  border: 1px solid #FECACA;
+  color: #B91C1C;
+}
+
+.neo-intel-history-pill.approve {
+  background: #EFF6FF;
+  border: 1px solid #BFDBFE;
+  color: #1D4ED8;
+}
+
+.neo-intel-history-pill.retire {
+  background: #F8FAFC;
+  border: 1px solid #CBD5E1;
+  color: #475569;
+}
+
+.neo-intel-dim-text {
+  font-size: 12px;
+  color: #94A3B8;
+  font-style: italic;
+}
+
+/* Conflict Alert */
+.neo-intel-conflict-alert {
+  background: #FFF1F2;
+  border: 1px solid #FECDD3;
+  border-left: 4px solid #E11D48;
+  border-radius: 10px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.neo-intel-conflict-header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.neo-intel-conflict-title {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #9F1239;
+  letter-spacing: -0.01em;
+}
+
+.neo-intel-conflict-desc {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #881337;
+}
+
+.neo-intel-conflict-consequence {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: #9A3412;
+  background: #FEF3C7;
+  border: 1px solid #FDE68A;
+  border-radius: 6px;
+  padding: 6px 9px;
+  margin-top: 2px;
+}
+
+.neo-intel-conflict-consequence span {
+  flex: 1;
+  font-weight: 600;
+}
+
+.neo-intel-conflict-confirm-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #4C0519;
+  cursor: pointer;
+  padding: 8px 10px;
+  background: #FFFFFF;
+  border: 1px solid #FDA4AF;
+  border-radius: 8px;
+  margin-top: 4px;
+}
+
+.neo-intel-conflict-confirm-label input[type='checkbox'] {
+  margin-top: 1.5px;
+  width: 15px;
+  height: 15px;
+  accent-color: #E11D48;
+  cursor: pointer;
+}
+
+/* Corroboration Alert */
+.neo-intel-corroboration-alert {
+  background: #F0F9FF;
+  border: 1px solid #BAE6FD;
+  border-left: 4px solid #0284C7;
+  border-radius: 10px;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.neo-intel-corroboration-header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #0369A1;
+}
+
+.neo-intel-corroboration-desc {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: #0C4A6E;
+}
+
+/* Past Rejection Callout */
+.neo-intel-past-rejection-callout {
+  background: #F8FAFC;
+  border: 1px solid #E2E8F0;
+  border-radius: 8px;
+  padding: 9px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.neo-intel-rejection-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #475569;
+}
+
+.neo-intel-rejection-time {
+  font-size: 10.5px;
+  font-weight: 500;
+  color: #94A3B8;
+  margin-left: auto;
+}
+
+.neo-intel-rejection-notes {
+  margin: 0;
+  font-size: 12px;
+  color: #334155;
+  font-style: italic;
+  line-height: 1.4;
+}
+

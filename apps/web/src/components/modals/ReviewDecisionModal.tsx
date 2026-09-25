@@ -6,13 +6,20 @@ import {
   CheckCircle2,
   X,
   Globe,
+  Building2,
   FileText,
   Clock,
   Fingerprint,
   Copy,
   Check,
+  History,
+  AlertTriangle,
+  TrendingUp,
+  Sparkles,
+  Info,
 } from 'lucide-react'
-import type { ModerationQueueItem } from '../../services/moderatorService'
+import type { ModerationQueueItem, IndicatorHistoryContext } from '../../services/moderatorService'
+import { fetchIndicatorIntelligenceContext, getStoredSession } from '../../services/moderatorService'
 import { defangIndicator } from '../../services/reportingService'
 import { formatRelativeTime } from '../../utils/formatTime'
 import './ModeratorModals.css'
@@ -86,11 +93,15 @@ export const ReviewDecisionModal: React.FC<ReviewDecisionModalProps> = ({
   const [notes, setNotes] = useState('')
   const [copiedExcerpt, setCopiedExcerpt] = useState(false)
   const [copiedHash, setCopiedHash] = useState(false)
+  const [copiedId, setCopiedId] = useState(false)
   const [overrideProtectedEntity, setOverrideProtectedEntity] = useState(false)
   const [incidentReason, setIncidentReason] = useState('')
   const [guardrailError, setGuardrailError] = useState<string | null>(null)
+  const [intelContext, setIntelContext] = useState<IndicatorHistoryContext | null>(null)
+  const [loadingContext, setLoadingContext] = useState(false)
+  const [confirmRevocation, setConfirmRevocation] = useState(false)
 
-  // Sync category with report classification when report changes
+  // Sync category and fetch intelligence context when report changes
   useEffect(() => {
     if (report) {
       setCategory(classifyReportCategory(report))
@@ -99,11 +110,40 @@ export const ReviewDecisionModal: React.FC<ReviewDecisionModalProps> = ({
       setNotes('')
       setCopiedExcerpt(false)
       setCopiedHash(false)
+      setCopiedId(false)
       setOverrideProtectedEntity(false)
       setIncidentReason('')
       setGuardrailError(null)
+      setConfirmRevocation(false)
     }
   }, [report])
+
+  // Fetch intelligence context & historical decisions whenever modal opens for a report
+  useEffect(() => {
+    let isMounted = true
+    if (isOpen && report?.id) {
+      const session = getStoredSession()
+      if (session.token) {
+        setLoadingContext(true)
+        fetchIndicatorIntelligenceContext(session.token, report.id)
+          .then((res) => {
+            if (isMounted && res.success && res.context) {
+              setIntelContext(res.context)
+            }
+          })
+          .catch(() => {})
+          .finally(() => {
+            if (isMounted) setLoadingContext(false)
+          })
+      }
+    } else {
+      setIntelContext(null)
+      setConfirmRevocation(false)
+    }
+    return () => {
+      isMounted = false
+    }
+  }, [isOpen, report?.id])
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -150,6 +190,13 @@ export const ReviewDecisionModal: React.FC<ReviewDecisionModalProps> = ({
     setTimeout(() => setCopiedHash(false), 2000)
   }
 
+  const handleCopyId = () => {
+    if (!report?.id) return
+    navigator.clipboard.writeText(report.id)
+    setCopiedId(true)
+    setTimeout(() => setCopiedId(false), 2000)
+  }
+
   return createPortal(
     <div className="neo-modal-backdrop" onClick={() => !isProcessing && onClose()} role="dialog" aria-modal="true">
       <div className="neo-modal-dialog decision-size" onClick={(e) => e.stopPropagation()}>
@@ -169,8 +216,22 @@ export const ReviewDecisionModal: React.FC<ReviewDecisionModalProps> = ({
               <h3 className="neo-modal-title">
                 {isPending ? 'Moderator Review & Decision Deck' : 'Moderation Record Inspection'}
               </h3>
-              <p className="neo-modal-subtitle">
-                <span>Report ID: {report.id.slice(0, 8)}...</span>
+              <div className="neo-modal-subtitle">
+                <button
+                  type="button"
+                  onClick={handleCopyId}
+                  className="neo-report-id-copy-btn"
+                  title={`Click to copy full Report ID: ${report.id}`}
+                >
+                  <span className="neo-report-id-label">Report ID:</span>
+                  <span className="neo-report-id-code">{report.id.slice(0, 8)}...</span>
+                  {copiedId ? (
+                    <Check size={11} color="#10b981" />
+                  ) : (
+                    <Copy size={11} />
+                  )}
+                  {copiedId && <span className="neo-copied-text">Copied</span>}
+                </button>
                 <span>•</span>
                 <Clock size={12} aria-hidden="true" />
                 <span>Submitted {formatRelativeTime(report.created_at)}</span>
@@ -178,7 +239,7 @@ export const ReviewDecisionModal: React.FC<ReviewDecisionModalProps> = ({
                 <span className={`neo-status-pill-modern ${report.status.toLowerCase()}`}>
                   {report.status}
                 </span>
-              </p>
+              </div>
             </div>
           </div>
           <button
@@ -248,15 +309,23 @@ export const ReviewDecisionModal: React.FC<ReviewDecisionModalProps> = ({
           {report.protected_entity?.isProtected && (
             <div className={`neo-protected-entity-banner ${report.protected_entity.type === 'OFFICIAL_NATIONAL' ? 'national' : 'global'}`}>
               <div className="neo-protected-banner-header">
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                   <span className="neo-protected-badge-lg">
-                    {report.protected_entity.badge}
+                    {report.protected_entity.type === 'OFFICIAL_NATIONAL' ? (
+                      <Building2 size={13} strokeWidth={2.2} />
+                    ) : (
+                      <Globe size={13} strokeWidth={2.2} />
+                    )}
+                    <span>
+                      {report.protected_entity.badge?.replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '').trim() ||
+                        (report.protected_entity.type === 'OFFICIAL_NATIONAL' ? 'Official National Entity' : 'Top Global Platform')}
+                    </span>
                   </span>
                   <span className="neo-protected-entity-title">
                     {report.protected_entity.name}
                   </span>
                 </div>
-                <span style={{ fontSize: '11.5px', fontFamily: 'monospace', fontWeight: 600, color: '#64748B' }}>
+                <span className="neo-protected-domain-pill">
                   {report.protected_entity.domain}
                 </span>
               </div>
@@ -265,27 +334,37 @@ export const ReviewDecisionModal: React.FC<ReviewDecisionModalProps> = ({
                 {report.protected_entity.warning}
               </p>
 
-              <div className="neo-protected-recommendation-box">
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span className="neo-recommendation-tag">
-                    {report.report_type === 'false_positive' ? 'SAFE ACTION' : 'RECOMMENDED'}
-                  </span>
-                  <span className="neo-recommendation-text">
+              <div className="neo-protected-recommendation-card">
+                <div className="neo-recom-left">
+                  <div className="neo-recom-tag-row">
+                    <span className={`neo-recom-pill ${report.report_type === 'false_positive' ? 'safe' : 'reject'}`}>
+                      {report.report_type === 'false_positive' ? (
+                        <ShieldCheck size={12} strokeWidth={2.4} />
+                      ) : (
+                        <ShieldAlert size={12} strokeWidth={2.4} />
+                      )}
+                      <span>{report.report_type === 'false_positive' ? 'SAFE ACTION' : 'RECOMMENDED ACTION'}</span>
+                    </span>
+                  </div>
+                  <p className="neo-recom-desc">
                     {report.report_type === 'false_positive'
                       ? 'Approving this report will mark this entity as VERIFIED_SAFE and protect it from false alarms.'
                       : 'Dismiss / Reject Report — Legitimate entity. Approving this domain as a malicious threat would cause widespread false positives.'}
-                  </span>
+                  </p>
                 </div>
                 {isPending && report.report_type !== 'false_positive' && (
-                  <button
-                    type="button"
-                    className="neo-btn-dismiss-recommended"
-                    onClick={() => onReject(report)}
-                    disabled={isProcessing}
-                    title="Recommended action: Dismiss false report"
-                  >
-                    <span>Dismiss as Legitimate Entity</span>
-                  </button>
+                  <div className="neo-recom-right">
+                    <button
+                      type="button"
+                      className="neo-btn-dismiss-recommended"
+                      onClick={() => onReject(report)}
+                      disabled={isProcessing}
+                      title="Recommended action: Dismiss false report"
+                    >
+                      <ShieldCheck size={13} strokeWidth={2.2} />
+                      <span>Dismiss as Legitimate Entity</span>
+                    </button>
+                  </div>
                 )}
               </div>
             </div>
@@ -342,6 +421,145 @@ export const ReviewDecisionModal: React.FC<ReviewDecisionModalProps> = ({
                 <p className="neo-modal-notes-text">{parsed.userNotes}</p>
               </div>
             )}
+          </div>
+
+          {/* Intelligence Radar & Historical Decisions Memory Card */}
+          <div className="neo-intel-history-card">
+            <div className="neo-intel-history-header">
+              <div className="neo-intel-history-title-group">
+                <div className="neo-intel-icon-wrapper">
+                  <History size={15} strokeWidth={2.2} />
+                </div>
+                <div>
+                  <h4 className="neo-intel-title">Intelligence Radar & Decision Memory</h4>
+                  <p className="neo-intel-subtitle">Cross-referenced against verified national threat intelligence and moderator audit history</p>
+                </div>
+              </div>
+              {loadingContext ? (
+                <span className="neo-intel-loading-pill">
+                  <span className="spinner-sm" />
+                  <span>Inspecting...</span>
+                </span>
+              ) : (
+                <span className="neo-intel-target-pill">
+                  {intelContext?.targetIndicator ? defangIndicator(intelContext.targetIndicator) : (report.reported_domain ? defangIndicator(report.reported_domain) : 'Active Target')}
+                </span>
+              )}
+            </div>
+
+            <div className="neo-intel-history-body">
+              {/* Active Intelligence Status & Decision Counts Grid */}
+              <div className="neo-intel-grid">
+                <div className="neo-intel-grid-col">
+                  <span className="neo-intel-col-label">Active Intelligence Status</span>
+                  <div className="neo-intel-status-row">
+                    {intelContext?.hasActiveIntel && intelContext.activeIntel ? (
+                      <div className={`neo-intel-status-chip ${intelContext.activeIntel.risk_level === 'CONFIRMED_SCAM' ? 'threat' : 'safe'}`}>
+                        {intelContext.activeIntel.risk_level === 'CONFIRMED_SCAM' ? (
+                          <ShieldAlert size={13} strokeWidth={2.2} />
+                        ) : (
+                          <ShieldCheck size={13} strokeWidth={2.2} />
+                        )}
+                        <span className="neo-intel-chip-text">
+                          {intelContext.activeIntel.risk_level === 'CONFIRMED_SCAM' ? 'Confirmed Threat IoC' : 'Verified Legitimate Entity'}
+                        </span>
+                        <span className="neo-intel-chip-meta">
+                          {(intelContext.activeIntel.confidence * 100).toFixed(0)}% Conf • {intelContext.activeIntel.report_count} Report{intelContext.activeIntel.report_count > 1 ? 's' : ''}
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="neo-intel-status-chip clean">
+                        <Sparkles size={13} strokeWidth={2.2} />
+                        <span className="neo-intel-chip-text">Fresh Target Indicator</span>
+                        <span className="neo-intel-chip-meta">No prior verified intelligence</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="neo-intel-grid-col">
+                  <span className="neo-intel-col-label">Prior Decisions on this Indicator</span>
+                  <div className="neo-intel-status-row">
+                    {intelContext?.priorDecisions && intelContext.priorDecisions.totalPriorEvents > 0 ? (
+                      <div className="neo-intel-history-pills">
+                        {intelContext.priorDecisions.totalRejections > 0 && (
+                          <span className="neo-intel-history-pill reject" title="Number of past rejected reports for this target">
+                            {intelContext.priorDecisions.totalRejections} Rejected
+                          </span>
+                        )}
+                        {intelContext.priorDecisions.totalApprovals > 0 && (
+                          <span className="neo-intel-history-pill approve" title="Number of past approved reports for this target">
+                            {intelContext.priorDecisions.totalApprovals} Approved
+                          </span>
+                        )}
+                        {intelContext.priorDecisions.totalRetirements > 0 && (
+                          <span className="neo-intel-history-pill retire" title="Number of past indicator retirements or reclassifications">
+                            {intelContext.priorDecisions.totalRetirements} Retired
+                          </span>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="neo-intel-dim-text">No previous moderator decisions on file</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Conflict Alert Box if Opposing Signals Exist */}
+              {intelContext?.isConflict && (
+                <div className="neo-intel-conflict-alert">
+                  <div className="neo-intel-conflict-header">
+                    <AlertTriangle size={15} color="#DC2626" strokeWidth={2.4} />
+                    <span className="neo-intel-conflict-title">Intelligence Conflict Alert</span>
+                  </div>
+                  <p className="neo-intel-conflict-desc">{intelContext.conflictExplanation}</p>
+                  <div className="neo-intel-conflict-consequence">
+                    <Info size={13} color="#D97706" />
+                    <span>{intelContext.revocationConsequence}</span>
+                  </div>
+                  {isPending && (
+                    <label className="neo-intel-conflict-confirm-label">
+                      <input
+                        type="checkbox"
+                        checked={confirmRevocation}
+                        onChange={(e) => {
+                          setConfirmRevocation(e.target.checked)
+                          setGuardrailError(null)
+                        }}
+                      />
+                      <span>I authorize revoking the opposing active intelligence record upon approval.</span>
+                    </label>
+                  )}
+                </div>
+              )}
+
+              {/* Corroboration Alert Box if Agreeing Signals Exist */}
+              {intelContext?.isCorroborating && !intelContext?.isConflict && (
+                <div className="neo-intel-corroboration-alert">
+                  <div className="neo-intel-corroboration-header">
+                    <TrendingUp size={14} color="#0284C7" strokeWidth={2.2} />
+                    <span>Threat Corroboration Detected</span>
+                  </div>
+                  <p className="neo-intel-corroboration-desc">{intelContext.corroborationSummary}</p>
+                </div>
+              )}
+
+              {/* Prior Rejection Notes Callout if applicable */}
+              {intelContext?.priorDecisions?.latestRejection && (
+                <div className="neo-intel-past-rejection-callout">
+                  <div className="neo-intel-rejection-header">
+                    <History size={13} color="#64748B" />
+                    <span>Past Moderator Rejection Context</span>
+                    <span className="neo-intel-rejection-time">
+                      {formatRelativeTime(intelContext.priorDecisions.latestRejection.createdAt)}
+                    </span>
+                  </div>
+                  <p className="neo-intel-rejection-notes">
+                    "{intelContext.priorDecisions.latestRejection.notes || 'Dismissed without notes'}"
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Decision Form Controls (Interactive if PENDING, Read-only summary if resolved) */}
@@ -457,11 +675,7 @@ export const ReviewDecisionModal: React.FC<ReviewDecisionModalProps> = ({
                 </div>
               )}
 
-              {/* PII Stripping Guarantee */}
-              <div className="neo-modal-pii-badge">
-                <ShieldCheck size={16} color="#059669" aria-hidden="true" />
-                <span>PII Protection Enforced: Submitter email and identifying markers are automatically stripped prior to publishing.</span>
-              </div>
+
             </div>
           ) : (
             <div className="neo-modal-decision-card" style={{ background: '#F8FAFC', border: '1px solid #E2E8F0' }}>
@@ -513,6 +727,10 @@ export const ReviewDecisionModal: React.FC<ReviewDecisionModalProps> = ({
                         setGuardrailError('An incident reason or CERT ticket reference is required for protected entities.')
                         return
                       }
+                    }
+                    if (intelContext?.isConflict && !confirmRevocation) {
+                      setGuardrailError('Intelligence Conflict Guard: Please check the authorization box in the Intelligence Radar above to confirm revoking the opposing active indicator.')
+                      return
                     }
                     setGuardrailError(null)
                     void onApprove(
