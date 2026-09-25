@@ -188,6 +188,16 @@ function App() {
   const [selectedScreenshot, setSelectedScreenshot] = useState<string | null>(null)
   const [showTechnicalTrace, setShowTechnicalTrace] = useState(false)
 
+  const handleTabClick = (tab: 'all' | 'signals' | 'sandbox' | 'intel' | 'layer5') => {
+    setActiveTab(tab)
+    setTimeout(() => {
+      const tabsSection = document.getElementById('dashboard-tabs-section')
+      if (tabsSection) {
+        tabsSection.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }
+    }, 50)
+  }
+
   // ScrollSpy: Track current viewport section to highlight active nav bar link
   const [activeSection, setActiveSection] = useState<'checker' | 'scam-trends' | 'how-it-works' | 'faq' | 'about'>('checker')
 
@@ -731,21 +741,21 @@ function App() {
 
 
           {/* ── 2. Segmented Navigation Tabs ─────────────────────────── */}
-          <div className="dashboard-tabs-container">
+          <div className="dashboard-tabs-container" id="dashboard-tabs-section">
             <nav className="dashboard-tabs" aria-label="Analysis Details Tabs">
               <button
                 type="button"
                 className={`tab-btn ${activeTab === 'all' ? 'active' : ''}`}
-                onClick={() => setActiveTab('all')}
+                onClick={() => handleTabClick('all')}
               >
                 <Layers size={16} />
-                <span>All Evidence (Overview)</span>
+                <span>Scan Summary</span>
               </button>
 
               <button
                 type="button"
                 className={`tab-btn ${activeTab === 'signals' ? 'active' : ''}`}
-                onClick={() => setActiveTab('signals')}
+                onClick={() => handleTabClick('signals')}
               >
                 <Activity size={16} />
                 <span>Threat Signals</span>
@@ -757,7 +767,7 @@ function App() {
               <button
                 type="button"
                 className={`tab-btn ${activeTab === 'sandbox' ? 'active' : ''}`}
-                onClick={() => setActiveTab('sandbox')}
+                onClick={() => handleTabClick('sandbox')}
               >
                 <Terminal size={16} />
                 <span>Website Scan Evidence</span>
@@ -773,7 +783,7 @@ function App() {
               <button
                 type="button"
                 className={`tab-btn ${activeTab === 'intel' ? 'active' : ''}`}
-                onClick={() => setActiveTab('intel')}
+                onClick={() => handleTabClick('intel')}
               >
                 <Building2 size={16} />
                 <span>National Intel & Consensus</span>
@@ -787,7 +797,7 @@ function App() {
               <button
                 type="button"
                 className={`tab-btn ${activeTab === 'layer5' ? 'active' : ''}`}
-                onClick={() => setActiveTab('layer5')}
+                onClick={() => handleTabClick('layer5')}
               >
                 <Sparkles size={16} />
                 <span>AI Context</span>
@@ -796,13 +806,17 @@ function App() {
           </div>
 
           {/* ── 3. Tab Contents ───────────────────────────────────────── */}
-          <div className="dashboard-content-area">
+          <div className={`dashboard-content-area ${activeTab === 'all' ? 'no-scroll' : ''}`}>
 
             {/* ── TAB SUMMARY: ALL EVIDENCE ──────────────────────────── */}
             {activeTab === 'all' && (
               <div className="tab-pane active" id="tab-summary">
                 <div className="at-a-glance-section">
                   <h3 className="at-a-glance-title">Analysis Summary</h3>
+                  <div className="summary-guidance-msg" style={{ margin: '-10px 0 24px 0', color: 'var(--text-muted)', fontSize: '14px', lineHeight: '1.5', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Info size={16} color="var(--brand-secondary)" />
+                    <span>Click the tabs above to explore detailed technical evidence and complete AI context evaluation.</span>
+                  </div>
                   <div className="at-a-glance-grid">
                     <div className="at-a-glance-card">
                       <div className="at-a-glance-icon risk-icon">
@@ -848,6 +862,42 @@ function App() {
                       </div>
                     </div>
                   </div>
+
+                  {/* Summary Explanations */}
+                  <div className="summary-explanation-box" style={{ marginTop: '36px' }}>
+                    <h4 style={{ margin: '0 0 16px 0', fontSize: '14px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: '700' }}>Card Legend</h4>
+                    <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '22px' }}>
+                      <li style={{ display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
+                        <ShieldAlert size={20} color="#ef4444" style={{ flexShrink: 0, marginTop: '1px' }} />
+                        <span style={{ fontSize: '14.5px', color: 'var(--text-muted)', lineHeight: '1.5' }}>
+                          <strong style={{ color: 'var(--text-primary)', marginRight: '6px' }}>Threat Level:</strong>
+                          The overall danger rating based on psychological manipulation tactics and known scam patterns.
+                        </span>
+                      </li>
+                      <li style={{ display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
+                        <Activity size={20} color="#f59e0b" style={{ flexShrink: 0, marginTop: '1px' }} />
+                        <span style={{ fontSize: '14.5px', color: 'var(--text-muted)', lineHeight: '1.5' }}>
+                          <strong style={{ color: 'var(--text-primary)', marginRight: '6px' }}>Deceptive Triggers:</strong>
+                          Specific red flags like urgency, fear, or promises of free money detected in the text.
+                        </span>
+                      </li>
+                      <li style={{ display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
+                        <Globe size={20} color="#3b82f6" style={{ flexShrink: 0, marginTop: '1px' }} />
+                        <span style={{ fontSize: '14.5px', color: 'var(--text-muted)', lineHeight: '1.5' }}>
+                          <strong style={{ color: 'var(--text-primary)', marginRight: '6px' }}>DOM Sandbox Scan:</strong>
+                          Indicates if any links were safely opened and analyzed for phishing forms or malicious scripts.
+                        </span>
+                      </li>
+                      <li style={{ display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
+                        <Building2 size={20} color="#10b981" style={{ flexShrink: 0, marginTop: '1px' }} />
+                        <span style={{ fontSize: '14.5px', color: 'var(--text-muted)', lineHeight: '1.5' }}>
+                          <strong style={{ color: 'var(--text-primary)', marginRight: '6px' }}>Sri Lanka Registry:</strong>
+                          Cross-checks against national databases to confirm if the sender is a recognized official entity.
+                        </span>
+                      </li>
+                    </ul>
+                  </div>
+
                 </div>
               </div>
             )}
