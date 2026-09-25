@@ -116,7 +116,20 @@ function loadPersistentAuditLogs() {
   return []
 }
 
+export function isTestEnvironment() {
+  return (
+    process.env.NODE_ENV === 'test' ||
+    process.env.npm_lifecycle_event === 'test' ||
+    (Array.isArray(process.execArgv) && process.execArgv.some((arg) => arg.includes('--test'))) ||
+    (Array.isArray(process.argv) && process.argv.some((arg) => arg.includes('--test') || arg.includes('test/')))
+  )
+}
+
 export function savePersistentAuditLogs(logs) {
+  // Never pollute the persistent audit log file with mock entries generated during automated test runs
+  if (isTestEnvironment()) {
+    return
+  }
   try {
     if (!existsSync(DATA_DIR)) {
       mkdirSync(DATA_DIR, { recursive: true })
@@ -1716,7 +1729,10 @@ export async function getModerationAuditLogs({
           }
 
           const expiresAt = row.expires_at || memMatch?.expires_at || new Date(new Date(row.created_at).getTime() + AUDIT_RETENTION_DAYS * 86400000).toISOString()
-          const prevHash = row.prev_hash || memMatch?.prev_hash || runningPrevHash
+          
+          // If the row already has a stored prev_hash in Supabase, preserve it.
+          // Otherwise, reconstruct sequential linkage: only trust memMatch.prev_hash if it matches runningPrevHash.
+          const prevHash = row.prev_hash || (memMatch?.prev_hash === runningPrevHash ? memMatch.prev_hash : null) || runningPrevHash
 
           const mapped = {
             ...row,
@@ -1730,11 +1746,11 @@ export async function getModerationAuditLogs({
             actor_email: memMatch?.actor_email || row.actor_email || 'moderator@trustlens.lk',
             actor_role: memMatch?.actor_role || row.actor_role || 'moderator',
             expires_at: memMatch?.expires_at || expiresAt,
-            prev_hash: memMatch?.prev_hash || prevHash,
+            prev_hash: prevHash,
             client_ip: memMatch?.client_ip || row.client_ip || null,
             user_agent: memMatch?.user_agent || row.user_agent || null,
           }
-          const entryHash = row.entry_hash || memMatch?.entry_hash || computeAuditHash(prevHash, mapped)
+          const entryHash = row.entry_hash || (memMatch?.entry_hash && memMatch?.prev_hash === prevHash ? memMatch.entry_hash : computeAuditHash(prevHash, mapped))
           mapped.entry_hash = entryHash
 
           runningPrevHash = entryHash
@@ -1747,34 +1763,9 @@ export async function getModerationAuditLogs({
 
         let rows = mappedChronological.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime() || (Number(b.id) || 0) - (Number(a.id) || 0))
 
-        // Merge in-memory persistent audit entries not already in the Supabase result.
-        const dbIds = new Set(rows.map((r) => String(r.id)))
-        const memOnly = inMemoryAuditLogs.filter(
-          (m) => !dbIds.has(String(m.id)) && (!m.entry_hash || !rows.some((r) => r.entry_hash === m.entry_hash))
-        )
-        if (memOnly.length > 0) {
-          let merged = [...memOnly, ...rows]
-          merged.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-          if (searchTrim) {
-            merged = merged.filter((item) => {
-              return item.target_indicator?.toLowerCase().includes(searchTrim)
-                || item.actor_email?.toLowerCase().includes(searchTrim)
-                || item.moderator_notes?.toLowerCase().includes(searchTrim)
-                || item.threat_category?.toLowerCase().includes(searchTrim)
-                || item.report_id?.toString().toLowerCase().includes(searchTrim)
-                || item.client_ip?.toLowerCase().includes(searchTrim)
-            })
-          }
-          const mergedTotal = merged.length
-          const mergedTotalPages = Math.ceil(mergedTotal / limitNum) || 1
-          return {
-            auditLogs: merged.slice(offset, offset + limitNum),
-            total: mergedTotal,
-            page: pageNum,
-            limit: limitNum,
-            totalPages: mergedTotalPages,
-            retentionDays: AUDIT_RETENTION_DAYS,
-          }
+        // If Supabase has zero records (e.g. fresh environment or offline), fall back to inMemoryAuditLogs
+        if (rows.length === 0 && inMemoryAuditLogs.length > 0) {
+          rows = [...inMemoryAuditLogs]
         }
 
         if (searchTrim) {
