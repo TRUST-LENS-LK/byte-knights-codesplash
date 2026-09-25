@@ -388,7 +388,7 @@ function App() {
     <>
       <TopAnnouncementBar />
       <main className="app-shell">
-        {/* ── Minimal Clean Navigation Header ────────────────────── */}
+        {/* ── Sleek Modern Navigation Header ────────────────────── */}
         <header className="nav-header">
           <div
             className="nav-brand"
@@ -414,7 +414,7 @@ function App() {
             </div>
           </div>
 
-          {/* Navigation Links with Active ScrollSpy Tracking */}
+          {/* Navigation Links with Active Indicator */}
           <nav className="nav-links" aria-label="Main Navigation">
             <a
               href="#checker-console"
@@ -478,7 +478,7 @@ function App() {
               type="button"
               className="nav-btn-report"
               onClick={() => setIsReportModalOpen(true)}
-              title="Report a Scam to Community Registry"
+              title="Report a Scam"
             >
               <ShieldAlert size={15} />
               <span>Report Scam</span>
@@ -498,21 +498,18 @@ function App() {
       {/* ── Hero Section & Analysis Console ───────────────────────── */}
       <section className="hero">
         <div className="hero-copy">
-          <div className="hero-eyebrow">
-            <span>Sri Lanka Scam Decision Support</span>
-          </div>
           <h1>Does this message deserve your trust?</h1>
           <p className="hero-description">
-            Verify suspicious SMS, WhatsApp messages, payment requests, or links. TrustLens securely scans and analyzes content to protect you from scams and digital threats.
+            Instantly verify suspicious SMS, WhatsApp messages, payment requests, or URLs to protect yourself from digital scams in Sri Lanka.
           </p>
           <div className="hero-trust-strip">
             <div className="trust-item">
               <ShieldCheck size={16} className="trust-icon" />
-              <span>Real-Time Sandbox Inspection</span>
+              <span>Automated Sandbox Inspection</span>
             </div>
             <div className="trust-item">
               <CheckCircle2 size={16} className="trust-icon" />
-              <span>Verified LK Bank & Utility Directory</span>
+              <span>Verified LK Bank & Gov Registry</span>
             </div>
             <div className="trust-item">
               <Lock size={16} className="trust-icon" />
@@ -536,7 +533,7 @@ function App() {
                     setIntelligenceOverlay(null)
                   }}
                 >
-                  <X size={12} style={{ marginRight: 3, verticalAlign: 'middle' }} />
+                  <X size={13} style={{ marginRight: 3, verticalAlign: 'middle' }} />
                   Clear
                 </button>
               )}
@@ -581,7 +578,7 @@ function App() {
                 setChecked(false)
                 setIntelligenceOverlay(null)
               }}
-              placeholder="Paste SMS, WhatsApp forward, email body, or suspicious URL here..."
+              placeholder="Paste suspicious SMS, WhatsApp message, email, or URL link here..."
             />
           </div>
           )}
@@ -590,8 +587,8 @@ function App() {
             <div className="console-meta">
               <span className="char-counter">{text.length.toLocaleString()} / 10,000 characters</span>
               <span className="privacy-badge">
-                <Info size={12} />
-                <span>No passwords or private OTPs will ever be logged.</span>
+                <Info size={13} />
+                <span>Private & zero-log scanning</span>
               </span>
             </div>
             <button
@@ -603,12 +600,12 @@ function App() {
               {isAnalyzing ? (
                 <>
                   <span className="spinner" />
-                  <span>Scanning securely...</span>
+                  <span>Analyzing message...</span>
                 </>
               ) : (
                 <>
                   <ShieldCheck size={17} />
-                  <span>Analyze Safely</span>
+                  <span>Analyze Message</span>
                 </>
               )}
             </button>
@@ -617,55 +614,36 @@ function App() {
       </section>
 
       {/* ══════════════════════════════════════════════════════════════
-          Executive Threat Results Dashboard
+          Clean Human-Designed Analysis Results Section
          ══════════════════════════════════════════════════════════════ */}
       {checked && (
         <section
           ref={resultRef}
           id="results-dashboard"
-          className={`result-section risk-border-${verdictVariantClass}`}
+          className="result-section"
           aria-live="polite"
         >
-          {/* ── Outer Results Frame Identification Bar ─────────────── */}
-          <div className="result-frame-topbar">
-            <div className="result-frame-title">
-              <span className="result-frame-dot" />
-              <span className="result-frame-badge">SCAN RESULTS</span>
-              <span className="result-frame-subtitle">Comprehensive Security Evaluation & Evidence Dossier</span>
-            </div>
-            <div className="result-frame-verdict-pill">
-              {verdictVariantClass === 'verified-safe' || verdictVariantClass === 'official-entity' ? (
-                <span>● VERDICT: SAFE & LEGITIMATE</span>
-              ) : verdictVariantClass === 'high-risk' ? (
-                <span>▲ VERDICT: HIGH RISK / SCAM DETECTED</span>
-              ) : (
-                <span>◆ VERDICT: CAUTION / SUSPICIOUS</span>
-              )}
-            </div>
-          </div>
-          
-          {/* ── 1. The Command Center Verdict Banner ────────────────── */}
+          {/* ── 1. Clean Verdict Card ───────────────────────────────── */}
           <div className={`command-verdict-banner ${verdictVariantClass}`}>
             
             {/* Top Meta Strip */}
             <div className="command-banner-top">
               <div className="command-status-badge">
-                <span className="status-beacon" />
                 <span className="status-badge-text">
-                  {isOfficialEntity && 'GOVERNMENT REGISTRY VERIFIED'}
-                  {!isOfficialEntity && isVerifiedSafe && 'VERIFIED SAFE CONTENT'}
-                  {isImpersonation && 'CRITICAL: SPOOFING DETECTED'}
-                  {isConflicted && 'DISPUTED THREAT SIGNALS'}
-                  {!isOfficialEntity && !isVerifiedSafe && !isImpersonation && !isConflicted && (decision.riskBand === 'HIGH' || isConfirmedScam) && 'CRITICAL: PHISHING THREAT DETECTED'}
-                  {!isOfficialEntity && !isVerifiedSafe && !isImpersonation && !isConflicted && decision.riskBand === 'MEDIUM' && 'ACTION REQUIRED: SUSPICIOUS ACTIVITY'}
-                  {!isOfficialEntity && !isVerifiedSafe && !isImpersonation && !isConflicted && decision.riskBand === 'LOW' && 'VERIFIED LEGITIMATE'}
+                  {isOfficialEntity && 'Verified Official Institution'}
+                  {!isOfficialEntity && isVerifiedSafe && 'Verified Safe Content'}
+                  {isImpersonation && 'Spoofing / Impersonation Alert'}
+                  {isConflicted && 'Disputed Threat Signals'}
+                  {!isOfficialEntity && !isVerifiedSafe && !isImpersonation && !isConflicted && (decision.riskBand === 'HIGH' || isConfirmedScam) && 'Phishing Scam Detected'}
+                  {!isOfficialEntity && !isVerifiedSafe && !isImpersonation && !isConflicted && decision.riskBand === 'MEDIUM' && 'Suspicious Activity Warning'}
+                  {!isOfficialEntity && !isVerifiedSafe && !isImpersonation && !isConflicted && decision.riskBand === 'LOW' && 'Verified Legitimate'}
                 </span>
               </div>
 
               {detectedDomain && (
                 <div className="target-domain-badge">
                   <Globe size={13} />
-                  <span className="target-domain-label">Target:</span>
+                  <span className="target-domain-label">Domain:</span>
                   <span className="target-domain-val">{defangUrl(detectedDomain)}</span>
                   <button
                     type="button"
@@ -677,125 +655,128 @@ function App() {
                   </button>
                 </div>
               )}
-
-              <div className="engine-meta-pill">
-                <span>Advanced Security Scan</span>
-              </div>
             </div>
 
-            {/* Main Headline & Verdict Card Row */}
+            {/* Main Headline & Summary */}
             <div className="command-banner-body">
               <div className="verdict-icon-container">
-                {isOfficialEntity && <ShieldCheck size={36} />}
-                {!isOfficialEntity && isVerifiedSafe && <ShieldCheck size={36} />}
-                {(isConfirmedScam || decision.riskBand === 'HIGH') && <AlertOctagon size={36} />}
-                {(isConflicted || decision.riskBand === 'MEDIUM') && !isConfirmedScam && <AlertTriangle size={36} />}
+                {isOfficialEntity && <ShieldCheck size={32} />}
+                {!isOfficialEntity && isVerifiedSafe && <ShieldCheck size={32} />}
+                {(isConfirmedScam || decision.riskBand === 'HIGH') && <AlertOctagon size={32} />}
+                {(isConflicted || decision.riskBand === 'MEDIUM') && !isConfirmedScam && <AlertTriangle size={32} />}
                 {!isOfficialEntity && !isVerifiedSafe && !isConfirmedScam && decision.riskBand !== 'HIGH' && decision.riskBand !== 'MEDIUM' && (
-                  <ShieldCheck size={36} />
+                  <ShieldCheck size={32} />
                 )}
               </div>
 
               <div className="verdict-headline-group">
-                <span className="verdict-subheading">Assessment Clearance</span>
                 <h2 className="verdict-primary-title">{risk}</h2>
                 <p className="verdict-explanation">
                   {aiValidation?.reasoning
                     ? aiValidation.reasoning
                     : isOfficialEntity
-                      ? `This domain is verified in the official Sri Lankan national registry as the digital property of ${intelligenceOverlay?.officialOrganization || 'an approved institution'}.`
+                      ? `This domain is verified in the official Sri Lankan national registry as belonging to ${intelligenceOverlay?.officialOrganization || 'an authorized institution'}.`
                       : isImpersonation
-                        ? 'CRITICAL ALERT: Although this message references a verified entity, it requests credentials or advance payment. Threat actors frequently impersonate legitimate organizations.'
+                        ? 'This message references a recognized organization but asks for credentials or payments through an unofficial channel.'
                         : isVerifiedSafe
-                          ? 'This content has been reviewed and verified as legitimate by community moderators and the TrustLens intelligence network.'
+                          ? 'This content has been reviewed and confirmed safe by community intelligence.'
                           : isConfirmedScam
-                            ? 'This content matches confirmed threat intelligence verified by community moderators.'
-                            : isConflicted
-                              ? 'Community intelligence submissions are divided. Under fail-closed security policy, it is treated as HIGH RISK until resolved.'
-                              : decision.riskBand === 'HIGH'
-                                ? 'This message contains aggressive social engineering or deceptive patterns typical of online financial fraud.'
-                                : decision.riskBand === 'MEDIUM'
-                                  ? 'Several warning signs were detected. The sender or link should not be trusted without independent phone verification.'
-                                  : 'No active phishing, OTP harvesting, or extortion signatures were identified.'}
+                            ? 'This message matches confirmed threat intelligence for online phishing.'
+                            : decision.riskBand === 'HIGH'
+                              ? 'This message contains deceptive patterns typical of financial scams or phishing.'
+                              : decision.riskBand === 'MEDIUM'
+                                ? 'Warning signs were identified. Verify the sender independently before taking action.'
+                                : 'No phishing or financial scam patterns were detected in this message.'}
                 </p>
               </div>
 
-              {/* Action Directive Strip */}
               <div className="verdict-cta-group">
-                <div className="verdict-recommendation-tag">
-                  {decision.recommendation.replaceAll('_', ' ')}
-                </div>
                 <button
                   type="button"
                   className="btn-banner-report"
                   onClick={() => setIsReportModalOpen(true)}
                 >
-                  <Flag size={13} />
-                  <span>Flag or Report</span>
+                  <Flag size={14} />
+                  <span>Report Scam</span>
                 </button>
               </div>
             </div>
 
-            {/* Layer 5 AI Context Evaluation Spotlight Box */}
+            {/* AI Reasoning Insight Box */}
             {aiValidation && (
               <div className="verdict-ai-spotlight">
                 <div className="ai-spotlight-header">
                   <div className="ai-spotlight-title">
                     <Sparkles size={16} color="#8B5CF6" />
-                    <span>Layer 5: AI Context Evaluation (Google Gemini)</span>
+                    <span>AI Reasoning (Gemini Intelligence)</span>
                   </div>
-                  <span className={`ai-badge-chip ai-chip-${aiValidation.appliedAction.toLowerCase()}`}>
-                    {aiValidation.appliedAction === 'DOWNGRADED'
-                      ? `Downgraded (${aiValidation.originalRiskBand} ➔ ${aiValidation.adjustedRiskBand})`
-                      : aiValidation.appliedAction === 'UPGRADED'
-                      ? `Upgraded (${aiValidation.originalRiskBand} ➔ ${aiValidation.adjustedRiskBand})`
-                      : aiValidation.appliedAction === 'HARD_BLOCKED'
-                      ? 'Hard Block Preserved'
-                      : 'Verdict Retained'}
+                  <span className="ai-confidence-pill">
+                    {Math.round(aiValidation.confidence * 100)}% Confidence
                   </span>
                 </div>
-                <p className="ai-spotlight-quote">"{aiValidation.reasoning}"</p>
-                <div className="ai-spotlight-meta">
-                  <span>AI Context Verdict: <strong>{aiValidation.verdict}</strong></span>
-                  <span>Confidence: <strong>{Math.round(aiValidation.confidence * 100)}%</strong></span>
-                </div>
+                <p className="ai-spotlight-quote">{aiValidation.reasoning}</p>
               </div>
             )}
 
-            {/* High-Contrast Action Callout */}
+            {/* Protective Guidance */}
             {decision.safeActions && decision.safeActions.length > 0 && (
               <div className="verdict-immediate-action">
-                <div className="action-callout-header">
-                  <Zap size={14} className="action-zap-icon" />
-                  <span className="action-callout-label">Immediate Protective Directive</span>
-                </div>
-                <p className="action-callout-text">{decision.safeActions[0]}</p>
+                <Zap size={15} className="action-zap-icon" />
+                <span className="action-callout-text"><strong>Recommendation:</strong> {decision.safeActions[0]}</span>
               </div>
             )}
+          </div>
 
-            {/* At-A-Glance Stat Pills Row */}
-            <div className="command-banner-stats">
-              <div className="stat-pill">
-                <span className="stat-label">Threat Band</span>
-                <span className="stat-value">{decision.riskBand}</span>
+          {/* ── 2. At A Glance Metric Grid (PivotQ Screenshot Style) ─── */}
+          <div className="at-a-glance-section">
+            <h3 className="at-a-glance-title">At a glance</h3>
+            <div className="at-a-glance-grid">
+              
+              <div className="at-a-glance-card">
+                <div className="at-a-glance-icon risk-icon">
+                  <ShieldAlert size={20} />
+                </div>
+                <div className="at-a-glance-info">
+                  <span className="at-a-glance-val">{decision.riskBand}</span>
+                  <span className="at-a-glance-label">Threat Level</span>
+                </div>
               </div>
-              <div className="stat-pill">
-                <span className="stat-label">Flagged Signals</span>
-                <span className="stat-value">{decision.findings.length} Flagged</span>
+
+              <div className="at-a-glance-card">
+                <div className="at-a-glance-icon signals-icon">
+                  <Activity size={20} />
+                </div>
+                <div className="at-a-glance-info">
+                  <span className="at-a-glance-val">{decision.findings.length} Signals</span>
+                  <span className="at-a-glance-label">Deceptive Triggers</span>
+                </div>
               </div>
-              <div className="stat-pill">
-                <span className="stat-label">Link Scan</span>
-                <span className="stat-value">
-                  {hasScreenshot ? '📸 Screenshot Captured' : hasAdultContent ? '18+ Visual Guard Active' : scannerEvidence?.length ? 'Link Inspected' : 'Text Analysis Active'}
-                </span>
+
+              <div className="at-a-glance-card">
+                <div className="at-a-glance-icon web-icon">
+                  <Globe size={20} />
+                </div>
+                <div className="at-a-glance-info">
+                  <span className="at-a-glance-val">
+                    {scannerEvidence?.length ? 'Link Inspected' : 'Text Analysis'}
+                  </span>
+                  <span className="at-a-glance-label">DOM Sandbox Scan</span>
+                </div>
               </div>
-              <div className="stat-pill">
-                <span className="stat-label">Registry Match</span>
-                <span className="stat-value">
-                  {isOfficialEntity ? 'Approved National Entity' : 'Unregistered Source'}
-                </span>
+
+              <div className="at-a-glance-card">
+                <div className="at-a-glance-icon registry-icon">
+                  <Building2 size={20} />
+                </div>
+                <div className="at-a-glance-info">
+                  <span className="at-a-glance-val">
+                    {isOfficialEntity ? 'Verified Official' : 'Unregistered'}
+                  </span>
+                  <span className="at-a-glance-label">Sri Lanka Registry</span>
+                </div>
               </div>
+
             </div>
-
           </div>
 
 

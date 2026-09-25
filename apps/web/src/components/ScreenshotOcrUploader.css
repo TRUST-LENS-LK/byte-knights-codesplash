@@ -1,13 +1,14 @@
 .ocr-uploader-card {
-  background: #1e293b;
-  border: 1.5px solid #334155;
-  border-radius: 16px;
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 14px;
   padding: 18px;
   height: 240px;
   box-sizing: border-box;
-  color: #f8fafc;
+  color: var(--text-primary);
   display: flex;
   flex-direction: column;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.03);
 }
 
 .ocr-header {
@@ -23,17 +24,17 @@
   gap: 8px;
   font-weight: 600;
   font-size: 14px;
-  color: #38bdf8;
+  color: var(--brand-primary);
 }
 
 .ocr-icon-sparkle {
-  color: #38bdf8;
+  color: var(--brand-primary);
 }
 
 .ocr-btn-close {
   background: transparent;
   border: none;
-  color: #94a3b8;
+  color: var(--text-muted);
   cursor: pointer;
   padding: 4px;
   border-radius: 4px;
@@ -42,18 +43,18 @@
 }
 
 .ocr-btn-close:hover {
-  color: #f8fafc;
-  background: #334155;
+  color: var(--text-primary);
+  background: #f1f5f9;
 }
 
 .ocr-dropzone {
-  border: 1.5px dashed #475569;
-  border-radius: 12px;
+  border: 1.5px dashed #cbd5e1;
+  border-radius: 10px;
   padding: 24px 16px;
   text-align: center;
   cursor: pointer;
   transition: all 0.2s ease;
-  background: #0f172a;
+  background: #f8fafc;
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -63,8 +64,8 @@
 
 .ocr-dropzone:hover,
 .ocr-dropzone.drag-over {
-  border-color: #38bdf8;
-  background: #1e293b;
+  border-color: var(--brand-primary);
+  background: #eff6ff;
 }
 
 .ocr-drop-icon {

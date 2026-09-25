@@ -449,9 +449,30 @@ export const ScamTrendsSection: React.FC<ScamTrendsProps> = ({ onSelectSample })
 
 // ── 3. How It Works Section ──────────────────────────────────────────
 export const HowItWorksSection: React.FC<{ onStartCheck: () => void }> = ({ onStartCheck }) => {
+  const [isVisible, setIsVisible] = React.useState(false);
+  const sectionRef = React.useRef<HTMLElement>(null);
+
+  React.useEffect(() => {
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setIsVisible(true);
+          observer.disconnect();
+        }
+      },
+      { threshold: 0.2 }
+    );
+
+    if (sectionRef.current) {
+      observer.observe(sectionRef.current);
+    }
+
+    return () => observer.disconnect();
+  }, []);
+
   return (
-    <section id="how-it-works" className="landing-section how-it-works-section">
-      <div className="how-it-works-container">
+    <section id="how-it-works" className="landing-section how-it-works-section" ref={sectionRef}>
+      <div className={`how-it-works-container ${isVisible ? 'animate-cards' : ''}`}>
         
         {/* Left Column: Process Steps */}
         <div className="how-it-works-left">
@@ -466,51 +487,51 @@ export const HowItWorksSection: React.FC<{ onStartCheck: () => void }> = ({ onSt
             Don't risk your savings or passwords. TrustLens LK gives you immediate clarity on suspicious messages and links before damage is done.
           </p>
 
-          <div className="process-steps-list">
-            <div className="process-step-item">
+          <div className="process-steps-grid">
+            <div className="process-step-card">
               <div className="step-icon-bubble">
                 <MessageSquare size={20} />
               </div>
               <div className="step-content">
-                <h4 className="step-title">1. Submit a suspicious message or link</h4>
+                <h4 className="step-title">1. Submit message</h4>
                 <p className="step-text">
-                  Paste text from SMS, WhatsApp, Telegram, email, or a suspicious web URL. You can also upload a mobile screenshot with built-in OCR.
+                  Paste any suspicious text, link, or upload a screenshot.
                 </p>
               </div>
             </div>
 
-            <div className="process-step-item">
+            <div className="process-step-card">
               <div className="step-icon-bubble">
                 <Search size={20} />
               </div>
               <div className="step-content">
-                <h4 className="step-title">2. TrustLens checks for scam signals</h4>
+                <h4 className="step-title">2. AI Analysis</h4>
                 <p className="step-text">
-                  Our multi-layer engine inspects domain age, spoofed brand logos, credential phishing forms, hidden scripts, and national blacklist records.
+                  Our system instantly checks for hidden scam signals.
                 </p>
               </div>
             </div>
 
-            <div className="process-step-item">
+            <div className="process-step-card">
               <div className="step-icon-bubble">
                 <ShieldCheck size={20} />
               </div>
               <div className="step-content">
-                <h4 className="step-title">3. Get a fast, clear answer and next steps</h4>
+                <h4 className="step-title">3. Get a verdict</h4>
                 <p className="step-text">
-                  You'll quickly get a clear verdict, along with an easy-to-understand explanation and guidance on what to do next.
+                  Receive a clear answer on whether it's safe or a scam.
                 </p>
               </div>
             </div>
 
-            <div className="process-step-item">
+            <div className="process-step-card">
               <div className="step-icon-bubble">
                 <Globe size={20} />
               </div>
               <div className="step-content">
-                <h4 className="step-title">4. Community & National Defense</h4>
+                <h4 className="step-title">4. Protect others</h4>
                 <p className="step-text">
-                  Every scam checked helps train collective intelligence, alerting Sri Lanka CERT and fellow citizens to prevent further victims.
+                  Every check helps block threats for the community.
                 </p>
               </div>
             </div>
@@ -522,62 +543,6 @@ export const HowItWorksSection: React.FC<{ onStartCheck: () => void }> = ({ onSt
               <span>Run a Quick Scam Check</span>
             </button>
             <span className="no-signup-note">Free public service — no account needed</span>
-          </div>
-        </div>
-
-        {/* Right Column: Realistic Preview Card (Matching user inspiration image) */}
-        <div className="how-it-works-right">
-          <div className="sample-verdict-card">
-            <div className="sample-verdict-header">
-              <div className="sample-verdict-badge">
-                <AlertOctagon size={18} />
-                <span>Definitely a scam</span>
-              </div>
-              <span className="sample-category-tag">Spear Phishing</span>
-            </div>
-
-            <p className="sample-threat-summary">
-              The message received is a targeted phishing attack impersonating <strong>Ceylon Electricity Board (CEB)</strong>, with 58 similar reports this week.
-            </p>
-
-            <div className="sample-breakdown-box">
-              <h5 className="breakdown-title">
-                <ShieldAlert size={15} />
-                <span>Why it's a scam</span>
-              </h5>
-              <p className="breakdown-text">
-                Your link points to an unverified domain (<strong>ceb-bill-payment-lk.online</strong>) registered only 3 days ago in Iceland, masquerading as a Sri Lankan state utility.
-              </p>
-              <p className="breakdown-text">
-                The webpage contains deceptive form fields attempting to harvest debit card CVVs and SMS OTP verification codes.
-              </p>
-            </div>
-
-            <div className="sample-next-steps-box">
-              <h5 className="next-steps-title">
-                <CheckCircle2 size={15} />
-                <span>Recommended next steps</span>
-              </h5>
-              <ul className="next-steps-list">
-                <li>
-                  <span className="step-num">1</span>
-                  <span><strong>Do not click the link</strong> or enter any banking details.</span>
-                </li>
-                <li>
-                  <span className="step-num">2</span>
-                  <span><strong>Never share your SMS OTP</strong> with anyone calling or texting.</span>
-                </li>
-                <li>
-                  <span className="step-num">3</span>
-                  <span>Report the suspicious message to Sri Lanka CERT hotline (<strong>1937</strong>).</span>
-                </li>
-              </ul>
-            </div>
-
-            <div className="sample-card-footer">
-              <span className="sample-confidence">Verified by TrustLens Threat Engine</span>
-              <span className="sample-hotline-pill">Hotline: 1937</span>
-            </div>
           </div>
         </div>
 
