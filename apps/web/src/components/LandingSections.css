@@ -126,582 +126,407 @@
   box-shadow: none;
 }
 
-.scam-scenario-tabs {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
-  margin-bottom: 32px;
-}
-
-.scam-scenario-tab {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 14px 16px;
-  border-radius: 16px;
-  background: #ffffff;
-  border: 1px solid rgba(226, 232, 240, 0.85);
-  cursor: pointer;
-  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+/* Modern Compact Scenario Pill Selector */
+/* ── 2. Sri Lanka Threat Intelligence & Attack Chains ────────── */
+.threat-intel-section {
   position: relative;
-  text-align: left;
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.02);
+  margin-top: 36px;
+  margin-bottom: 48px;
+  scroll-margin-top: 110px;
 }
 
-.scam-scenario-tab:hover {
-  transform: translateY(-2px);
-  border-color: #cbd5e1;
-  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
-}
-
-.scam-scenario-tab.active {
-  border-color: #0066FF;
-  background: linear-gradient(135deg, rgba(239, 246, 255, 0.95) 0%, #ffffff 100%);
-  box-shadow: 0 6px 20px rgba(0, 102, 255, 0.12);
-}
-
-.tab-scenario-icon {
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
-  background: #f8fafc;
-  border: none;
+/* Category Navigation Pills */
+.intel-category-nav {
   display: flex;
   align-items: center;
   justify-content: center;
-  flex-shrink: 0;
-  padding: 4px;
-  box-sizing: border-box;
-  overflow: hidden;
-  transition: all 0.2s ease;
+  gap: 10px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
 }
 
-.scam-scenario-tab:hover .tab-scenario-icon {
-  background: #f1f5f9;
+.intel-nav-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 18px;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.95);
+  border: 1.5px solid rgba(226, 232, 240, 0.9);
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
+  font-family: var(--font-heading);
+  font-size: 13px;
+  font-weight: 700;
+  color: #334155;
+  user-select: none;
 }
 
-.scam-scenario-tab.active .tab-scenario-icon {
+.intel-nav-pill:hover {
   background: #ffffff;
-  box-shadow: 0 2px 8px rgba(0, 102, 255, 0.12);
+  border-color: #94a3b8;
+  color: #0f172a;
+  transform: translateY(-1.5px);
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.08);
 }
 
-.tab-scenario-logo-img {
+.intel-nav-pill.active {
+  background: linear-gradient(135deg, #0066FF 0%, #0052CC 100%);
+  border-color: #0066FF;
+  color: #ffffff;
+  box-shadow: 0 6px 20px rgba(0, 102, 255, 0.28);
+  transform: translateY(-1px);
+}
+
+/* ── Slideshow outer wrapper ─────────────────────────────── */
+.slideshow-outer {
+  position: relative;
   width: 100%;
-  height: 100%;
-  max-width: 32px;
-  max-height: 32px;
-  object-fit: contain;
-  display: block;
+  max-width: 1040px;
+  margin: 0 auto;
 }
 
-.tab-scenario-info {
+/* Viewport clips the sliding content */
+.slideshow-viewport {
+  overflow: hidden;
+  border-radius: 20px;
+  background: #ffffff;
+  border: 1.5px solid rgba(226, 232, 240, 0.95);
+  box-shadow: 0 8px 24px -8px rgba(15, 23, 42, 0.06);
+}
+
+/* The animated wrapper that holds the slide content */
+.slide-content-wrapper {
+  padding: 22px 28px;
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  overflow: hidden;
 }
 
-.tab-scenario-name {
-  font-family: var(--font-heading);
-  font-size: 13.5px;
-  font-weight: 750;
-  color: #0f172a;
-  line-height: 1.25;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+/* --- Slide animation keyframes --- */
+@keyframes slideFromRight {
+  from { opacity: 0; transform: translateX(40px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes slideFromLeft {
+  from { opacity: 0; transform: translateX(-40px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes slideExitLeft {
+  from { opacity: 1; transform: translateX(0); }
+  to   { opacity: 0; transform: translateX(-30px); }
+}
+@keyframes slideExitRight {
+  from { opacity: 1; transform: translateX(0); }
+  to   { opacity: 0; transform: translateX(30px); }
 }
 
-.tab-scenario-count {
-  font-size: 11px;
-  color: #64748b;
-  font-weight: 600;
-  white-space: nowrap;
+.slide-enter {
+  animation: slideFromRight 0.38s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.slide-enter-prev {
+  animation: slideFromLeft 0.38s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.slide-exit-left {
+  animation: slideExitLeft 0.28s ease-out both;
+}
+.slide-exit-right {
+  animation: slideExitRight 0.28s ease-out both;
 }
 
-.tab-active-dot {
+/* --- Prev / Next nav buttons --- */
+.slide-nav-btn {
   position: absolute;
-  top: 10px;
-  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 10;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: 1.5px solid #e2e8f0;
+  color: #64748b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgba(15,23,42,0.08);
+  transition: all 0.2s ease;
+  margin-top: -24px; /* offset above the dot row */
+}
+.slide-nav-btn:hover {
+  background: #0066FF;
+  border-color: #0066FF;
+  color: #ffffff;
+  box-shadow: 0 4px 14px rgba(0, 102, 255, 0.3);
+}
+.slide-nav-prev { left: -20px; }
+.slide-nav-next { right: -20px; }
+
+@media (max-width: 860px) {
+  .slide-nav-prev { left: 8px; }
+  .slide-nav-next { right: 8px; }
+}
+
+/* --- Dot indicators --- */
+.slide-dots {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 18px;
+}
+.slide-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #0066FF;
-  box-shadow: 0 0 8px #0066FF;
+  background: #cbd5e1;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  transition: all 0.3s ease;
 }
-
-/* Master Detail Simulator Stage */
-.scam-simulator-stage {
-  display: grid;
-  grid-template-columns: 0.95fr 1.05fr;
-  gap: 36px;
-  align-items: stretch;
-  margin-bottom: 28px;
-}
-
-/* Phone Mockup Frame */
-.simulator-phone-wrapper {
-  display: flex;
-  justify-content: center;
-}
-
-.simulator-phone-frame {
-  width: 100%;
-  max-width: 440px;
-  background: #0f172a;
-  border-radius: 36px;
-  padding: 12px;
-  border: 3px solid #1e293b;
-  box-shadow:
-    0 25px 60px -15px rgba(15, 23, 42, 0.28),
-    0 0 0 1px rgba(255, 255, 255, 0.1);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.phone-status-bar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 6px 16px 8px;
-  font-size: 11px;
-  font-weight: 700;
-  color: #cbd5e1;
-}
-
-.phone-chat-header {
-  background: #1e293b;
-  border-radius: 20px 20px 0 0;
-  padding: 12px 16px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  border-bottom: 1px solid #334155;
-}
-
-.phone-avatar-badge {
-  width: 38px;
-  height: 38px;
-  border-radius: 50%;
-  background: #ffffff;
-  color: #38bdf8;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  overflow: hidden;
-  padding: 3px;
-  box-sizing: border-box;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
-}
-
-.phone-avatar-logo-img {
-  width: 100%;
-  height: 100%;
-  max-width: 32px;
-  max-height: 32px;
-  object-fit: contain;
-  display: block;
+.slide-dot.active {
+  width: 24px;
   border-radius: 4px;
+  background: #0066FF;
+}
+.slide-dot:hover:not(.active) {
+  background: #94a3b8;
 }
 
-.phone-sender-details {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  overflow: hidden;
-}
-
-.phone-sender-name-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.phone-sender-title {
-  font-family: var(--font-heading);
-  font-size: 14px;
-  font-weight: 800;
-  color: #ffffff;
-  letter-spacing: -0.01em;
-}
-
-.phone-unverified-tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  font-size: 10px;
-  font-weight: 750;
-  background: #fee2e2;
-  color: #b91c1c;
-  padding: 1.5px 6px;
-  border-radius: 6px;
-}
-
-.phone-sender-sub {
-  font-size: 11px;
-  color: #94a3b8;
-  line-height: 1.2;
-}
-
-.phone-chat-body {
-  background: #f1f5f9;
-  border-radius: 0 0 24px 24px;
-  padding: 18px 16px;
-  flex: 1;
+/* --- Compact Structured Slideshow Layout --- */
+.slide-compact-container {
   display: flex;
   flex-direction: column;
   gap: 14px;
 }
 
-.phone-timestamp-divider {
-  text-align: center;
-  font-size: 11px;
-  font-weight: 600;
-  color: #64748b;
-}
-
-.phone-sms-bubble {
-  background: #ffffff;
-  border-radius: 18px 18px 18px 4px;
-  padding: 16px 18px;
-  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.06);
-  border: 1px solid #e2e8f0;
-}
-
-.phone-sms-text {
-  font-family: var(--font-body);
-  font-size: 14px;
-  line-height: 1.65;
-  color: #1e293b;
-  margin: 0 0 12px;
-  word-break: break-word;
-}
-
-.sms-highlight-urgency {
-  background: #fef08a;
-  color: #854d0e;
-  padding: 1px 6px;
-  border-radius: 5px;
-  font-weight: 700;
-}
-
-.sms-highlight-link {
-  background: #fee2e2;
-  color: #b91c1c;
-  padding: 1px 6px;
-  border-radius: 5px;
-  font-weight: 800;
-  font-family: var(--font-mono, monospace);
-  text-decoration: underline;
-  word-break: break-all;
-}
-
-.sms-bubble-footer {
+/* Header: Visible Logo + Title + Hotline */
+.slide-compact-header {
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  align-items: center;
-  border-top: 1px solid #f1f5f9;
-  padding-top: 10px;
-  font-size: 11.5px;
-  color: #94a3b8;
+  gap: 16px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid #f1f5f9;
+  padding-bottom: 12px;
 }
 
-.btn-copy-bubble {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  background: #f8fafc;
-  border: 1px solid #cbd5e1;
-  border-radius: 7px;
-  padding: 3px 8px;
-  font-size: 11px;
-  font-weight: 600;
-  color: #475569;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.btn-copy-bubble:hover {
-  background: #ffffff;
-  color: #0f172a;
-}
-
-.phone-carrier-advisory {
-  background: #fff1f2;
-  border: 1px solid #fecdd3;
-  border-radius: 12px;
-  padding: 10px 12px;
-  font-size: 11.5px;
-  color: #be123c;
+.slide-brand-group {
   display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  line-height: 1.45;
+  align-items: center;
+  gap: 14px;
+  flex: 1;
+  min-width: 280px;
 }
 
-.phone-carrier-advisory svg {
-  flex-shrink: 0;
-  margin-top: 1px;
-}
-
-.phone-home-indicator {
-  width: 90px;
-  height: 4px;
-  background: #334155;
-  border-radius: 99px;
-  margin: 10px auto 2px;
-}
-
-/* Forensic Dossier Panel */
-.simulator-dossier-panel {
+.slide-brand-logo-tile {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
   background: #ffffff;
-  border: 1px solid rgba(226, 232, 240, 0.85);
-  border-radius: 24px;
-  padding: 32px;
+  border: 1.5px solid #e2e8f0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
+  flex-shrink: 0;
+}
+
+.slide-brand-logo-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.slide-brand-fallback-icon {
+  color: #0066FF;
+}
+
+.slide-brand-text {
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
-  box-shadow: 0 10px 30px -10px rgba(15, 23, 42, 0.05);
+  gap: 2px;
 }
 
-.dossier-badge-row {
+.slide-brand-meta {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 12px;
+  gap: 8px;
 }
 
-.risk-badge-pill {
-  font-size: 11.5px;
-  font-weight: 800;
-  padding: 3px 10px;
-  border-radius: 8px;
-  letter-spacing: 0.02em;
-  border: none;
-}
-
-.risk-badge-pill.critical {
-  background: #fee2e2;
-  color: #b91c1c;
-  border: none;
-}
-
-.risk-badge-pill.high {
-  background: #fef3c7;
-  color: #b45309;
-  border: none;
-}
-
-.dossier-category-tag {
-  font-size: 12px;
-  font-weight: 700;
-  color: #64748b;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.dossier-title {
+.slide-category-tag-sm {
   font-family: var(--font-heading);
-  font-size: 22px;
+  font-size: 11px;
+  font-weight: 750;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: #0066FF;
+}
+
+.slide-domain-pill {
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  font-weight: 600;
+  background: #f1f5f9;
+  color: #475569;
+  border: 1px solid #e2e8f0;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.slide-target-title {
+  font-family: var(--font-heading);
+  font-size: 18px;
   font-weight: 800;
   color: #0f172a;
-  margin: 0 0 4px;
+  margin: 0;
+  letter-spacing: -0.015em;
   line-height: 1.25;
 }
 
-.dossier-subtitle {
-  font-size: 13.5px;
+.slide-target-desc {
+  font-size: 13px;
   color: #64748b;
-  margin: 0 0 20px;
+  margin: 0;
+  line-height: 1.4;
 }
 
-.flags-list-heading {
-  font-family: var(--font-heading);
+.slide-hotline-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 6px 12px;
   font-size: 12px;
-  font-weight: 800;
-  text-transform: uppercase;
-  color: #64748b;
-  letter-spacing: 0.06em;
-  margin: 0 0 12px;
+  color: #334155;
+  text-decoration: none;
+  font-weight: 600;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
 }
 
-.dossier-flags-list {
+.slide-hotline-badge:hover {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+  color: #0f172a;
+}
+
+/* 3 Step Flow: Clean Natural Cards */
+.slide-steps-grid {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr auto 1fr;
+  align-items: stretch;
+  gap: 12px;
+}
+
+@media (max-width: 820px) {
+  .slide-steps-grid {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .slide-step-arrow {
+    transform: rotate(90deg);
+    margin: 2px auto;
+  }
+}
+
+.slide-mini-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 14px 16px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  margin-bottom: 22px;
-}
-
-.dossier-flag-card {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  background: #f8fafc;
-  border: none;
-  border-radius: 12px;
-  padding: 12px 14px;
+  gap: 4px;
   transition: all 0.2s ease;
 }
 
-.dossier-flag-card:hover {
-  background: #f1f5f9;
+.slide-mini-card:hover {
+  border-color: #cbd5e1;
+  box-shadow: 0 3px 10px rgba(15, 23, 42, 0.04);
 }
 
-.flag-number-badge {
-  width: 22px;
-  height: 22px;
-  border-radius: 6px;
-  background: #fee2e2;
-  color: #dc2626;
-  font-size: 11px;
-  font-weight: 800;
-  display: grid;
-  place-items: center;
-  flex-shrink: 0;
-  margin-top: 1px;
-}
-
-.flag-title {
+.mini-phase-label {
   font-family: var(--font-heading);
-  font-size: 13.5px;
+  font-size: 11px;
+  font-weight: 750;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 2px;
+}
+
+.mini-phase-label.phase-blue {
+  color: #0284c7;
+}
+
+.mini-phase-label.phase-amber {
+  color: #d97706;
+}
+
+.mini-phase-label.phase-red {
+  color: #dc2626;
+}
+
+.mini-step-text {
+  font-family: var(--font-heading);
+  font-size: 14.5px;
   font-weight: 750;
   color: #0f172a;
-  margin: 0 0 2px;
+  margin: 0;
+  letter-spacing: -0.01em;
+  line-height: 1.35;
 }
 
-.flag-detail {
-  font-size: 12.5px;
-  color: #475569;
+.mini-step-sub {
+  font-size: 12px;
+  color: #64748b;
   line-height: 1.45;
   margin: 0;
 }
 
-.dossier-safe-box {
-  background: #f0fdf4;
-  border: none;
-  border-left: 3.5px solid #16a34a;
-  border-radius: 0 12px 12px 0;
-  padding: 14px 18px;
-  margin-bottom: 20px;
-}
-
-.safe-box-header {
+.slide-step-arrow {
   display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11.5px;
-  font-weight: 800;
-  text-transform: uppercase;
-  color: #15803d;
-  letter-spacing: 0.04em;
-  margin-bottom: 4px;
-}
-
-.safe-box-text {
-  font-size: 13px;
-  color: #166534;
-  line-height: 1.45;
-  margin: 0 0 4px;
-}
-
-.safe-box-hotline {
-  font-family: var(--font-heading);
-  font-size: 12px;
-  font-weight: 800;
-  color: #15803d;
-}
-
-.dossier-action-row {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.btn-simulate-scanner {
-  display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
-  width: 100%;
-  padding: 14px 24px;
-  border-radius: 14px;
-  background: linear-gradient(135deg, #0066FF 0%, #0052CC 100%);
-  color: #ffffff;
-  font-family: var(--font-heading);
-  font-size: 14.5px;
-  font-weight: 800;
-  border: none;
-  cursor: pointer;
-  box-shadow: 0 8px 24px rgba(0, 102, 255, 0.35);
-  transition: all 0.2s ease;
+  color: #cbd5e1;
+  align-self: center;
+  flex-shrink: 0;
 }
 
-.btn-simulate-scanner:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 12px 30px rgba(0, 102, 255, 0.45);
-}
-
-.btn-simulate-scanner svg {
-  transition: transform 0.2s ease;
-}
-
-.btn-simulate-scanner:hover svg {
-  transform: translateX(4px);
-}
-
-.dossier-sample-note {
-  font-size: 11.5px;
-  color: #64748b;
-  text-align: center;
-}
-
-/* Live Sri Lanka Fraud Pulse Ticker */
-.scam-pulse-ticker {
-  background: rgba(248, 250, 252, 0.95);
+/* Defense Strip: Natural & Understated */
+.slide-slim-defense {
+  background: #f8fafc;
   border: 1px solid #e2e8f0;
-  border-radius: 16px;
-  padding: 14px 24px;
+  border-radius: 10px;
+  padding: 10px 14px;
   display: flex;
   align-items: center;
-  justify-content: space-around;
-  flex-wrap: wrap;
-  gap: 16px;
-  font-size: 13px;
+  gap: 9px;
+  font-size: 12.5px;
+  color: #334155;
+  line-height: 1.5;
 }
 
-.pulse-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.defense-shield-icon {
+  color: #059669;
+  flex-shrink: 0;
 }
 
-.pulse-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #10b981;
-  box-shadow: 0 0 8px #10b981;
-}
-
-.pulse-label {
-  color: #64748b;
-  font-weight: 500;
-}
-
-.pulse-val {
-  color: #0f172a;
-  font-weight: 800;
+.defense-rule-lead {
   font-family: var(--font-heading);
+  font-weight: 750;
+  color: #0f172a;
+  white-space: nowrap;
 }
 
-.pulse-divider {
-  width: 1px;
-  height: 20px;
-  background: #cbd5e1;
+.defense-rule-body {
+  color: #475569;
 }
-
 
 /* ── 3. How It Works Section ─────────────────────────────────── */
 .how-it-works-section {

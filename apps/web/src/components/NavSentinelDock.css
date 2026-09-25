@@ -259,7 +259,7 @@
   color: #ffffff;
   border-color: #0066FF;
   box-shadow: 0 6px 18px rgba(0, 102, 255, 0.35);
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .input-mode-tab.active svg {

@@ -99,118 +99,161 @@ export function ScreenshotOcrUploader({ onTextConfirmed, onCancel }: ScreenshotO
   const conf = ocrResult?.confidence || 0
   const confBadgeClass = conf >= 75 ? 'conf-high' : conf >= 50 ? 'conf-med' : 'conf-low'
 
-  return (
-    <div className="ocr-uploader-card">
-      <div className="ocr-header">
-        <div className="ocr-title">
-          <Sparkles size={18} className="ocr-icon-sparkle" />
-          <span>Screenshot OCR & Text Extractor</span>
-        </div>
+  if (!selectedFile) {
+    return (
+      <div
+        className={`ocr-uploader-card ocr-dropzone ${isDragOver ? 'drag-over' : ''}`}
+        onDragOver={(e) => {
+          e.preventDefault()
+          setIsDragOver(true)
+        }}
+        onDragLeave={() => setIsDragOver(false)}
+        onDrop={handleDrop}
+        onClick={() => fileInputRef.current?.click()}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            fileInputRef.current?.click()
+          }
+        }}
+      >
+        <input
+          ref={fileInputRef}
+          aria-label="Upload screenshot image"
+          type="file"
+          accept="image/png,image/jpeg,image/webp,image/gif"
+          onChange={handleInputChange}
+          style={{ display: 'none' }}
+        />
         {onCancel && (
-          <button type="button" className="ocr-btn-close" onClick={onCancel} title="Close OCR panel">
-            <X size={16} />
+          <button
+            type="button"
+            className="ocr-btn-close-corner"
+            onClick={(e) => {
+              e.stopPropagation()
+              onCancel()
+            }}
+            title="Cancel"
+          >
+            <X size={15} />
           </button>
         )}
+        <div className="ocr-icon-circle">
+          <Upload size={24} className="ocr-drop-icon" />
+        </div>
+        <p className="ocr-drop-text">
+          <strong>Upload screenshot</strong> or drag and drop image here
+        </p>
+        <span className="ocr-drop-hint">Supports PNG, JPG, WEBP (English &amp; Sinhala OCR)</span>
+        <span className="ocr-browse-pill">Browse File</span>
+      </div>
+    )
+  }
+
+  return (
+    <div className="ocr-uploader-card ocr-active">
+      <div className="ocr-header">
+        <div className="ocr-title">
+          <Sparkles size={16} className="ocr-icon-sparkle" />
+          <span>Screenshot OCR &amp; Text Extractor</span>
+        </div>
+        <div className="ocr-header-actions">
+          <button
+            type="button"
+            className="ocr-btn-reset"
+            onClick={handleReset}
+            disabled={isProcessing}
+            title="Upload another image"
+          >
+            <RefreshCw size={12} />
+            <span>Change Image</span>
+          </button>
+          {onCancel && (
+            <button
+              type="button"
+              className="ocr-btn-close"
+              onClick={onCancel}
+              title="Close OCR panel"
+            >
+              <X size={15} />
+            </button>
+          )}
+        </div>
       </div>
 
-      {!selectedFile ? (
-        <div
-          className={`ocr-dropzone ${isDragOver ? 'drag-over' : ''}`}
-          onDragOver={(e) => {
-            e.preventDefault()
-            setIsDragOver(true)
-          }}
-          onDragLeave={() => setIsDragOver(false)}
-          onDrop={handleDrop}
-          onClick={() => fileInputRef.current?.click()}
-        >
-          <input
-            ref={fileInputRef}
-            aria-label="Upload screenshot image"
-            type="file"
-            accept="image/png,image/jpeg,image/webp,image/gif"
-            onChange={handleInputChange}
-            style={{ display: 'none' }}
-          />
-          <Upload size={32} className="ocr-drop-icon" />
-          <p className="ocr-drop-text">
-            <strong>Upload screenshot</strong> or drag and drop image here
-          </p>
-          <span className="ocr-drop-hint">Supports PNG, JPG, WEBP (English & Sinhala OCR)</span>
-        </div>
-      ) : (
-        <div className="ocr-active-container">
-          <div className="ocr-preview-row">
-            {imagePreview && (
-              <div className="ocr-preview-box">
-                <img src={imagePreview} alt="Screenshot preview" className="ocr-thumbnail" />
+      <div className="ocr-active-content">
+        <div className="ocr-preview-row">
+          {imagePreview && (
+            <div className="ocr-preview-box">
+              <img src={imagePreview} alt="Screenshot preview" className="ocr-thumbnail" />
+              <div className="ocr-file-details">
                 <span className="ocr-file-name">{selectedFile.name}</span>
+                <span className="ocr-file-size">{(selectedFile.size / 1024).toFixed(0)} KB</span>
               </div>
-            )}
-
-            <button type="button" className="btn-secondary btn-sm" onClick={handleReset} disabled={isProcessing}>
-              <RefreshCw size={14} /> Reset Image
-            </button>
-          </div>
-
-          {isProcessing && (
-            <div className="ocr-progress-box">
-              <div className="ocr-progress-bar-bg">
-                <div
-                  className="ocr-progress-bar-fill"
-                  style={{ width: `${Math.round((progress?.progress || 0) * 100)}%` }}
-                />
-              </div>
-              <p className="ocr-progress-msg">{progress?.message || 'Recognizing text...'}</p>
-            </div>
-          )}
-
-          {error && (
-            <div className="ocr-error-banner">
-              <AlertCircle size={16} />
-              <span>{error}</span>
             </div>
           )}
 
           {ocrResult && !isProcessing && (
-            <div className="ocr-result-box">
-              <div className="ocr-result-meta">
-                <span className={`ocr-conf-badge ${confBadgeClass}`}>
-                  <CheckCircle2 size={13} />
-                  OCR Confidence: {conf}%
-                </span>
-                <span className="ocr-lang-badge">Languages: English + Sinhala</span>
-              </div>
-
-              <div className="ocr-editable-group">
-                <label htmlFor="ocr-editable-text" className="ocr-label">
-                  Recognized Text (Review and correct any OCR typos before analyzing):
-                </label>
-                <textarea
-                  id="ocr-editable-text"
-                  className="ocr-textarea"
-                  rows={4}
-                  value={editableText}
-                  onChange={(e) => setEditableText(e.target.value)}
-                  placeholder="Recognized text will appear here..."
-                />
-              </div>
-
-              <div className="ocr-action-row">
-                <button
-                  type="button"
-                  className="btn-primary ocr-btn-confirm"
-                  onClick={handleConfirmText}
-                  disabled={!editableText.trim()}
-                >
-                  <FileImage size={16} />
-                  Analyze Corrected Text
-                </button>
-              </div>
+            <div className="ocr-result-meta">
+              <span className={`ocr-conf-badge ${confBadgeClass}`}>
+                <CheckCircle2 size={12} />
+                {conf}% Confidence
+              </span>
+              <span className="ocr-lang-badge">English &amp; Sinhala</span>
             </div>
           )}
         </div>
-      )}
+
+        {isProcessing && (
+          <div className="ocr-progress-box">
+            <div className="ocr-progress-bar-bg">
+              <div
+                className="ocr-progress-bar-fill"
+                style={{ width: `${Math.round((progress?.progress || 0) * 100)}%` }}
+              />
+            </div>
+            <p className="ocr-progress-msg">{progress?.message || 'Recognizing text...'}</p>
+          </div>
+        )}
+
+        {error && (
+          <div className="ocr-error-banner">
+            <AlertCircle size={15} />
+            <span>{error}</span>
+          </div>
+        )}
+
+        {ocrResult && !isProcessing && (
+          <div className="ocr-result-box">
+            <div className="ocr-editable-group">
+              <label htmlFor="ocr-editable-text" className="ocr-label">
+                Recognized Text (Review and edit before analyzing):
+              </label>
+              <textarea
+                id="ocr-editable-text"
+                className="ocr-textarea"
+                rows={3}
+                value={editableText}
+                onChange={(e) => setEditableText(e.target.value)}
+                placeholder="Recognized text will appear here..."
+              />
+            </div>
+
+            <div className="ocr-action-row">
+              <button
+                type="button"
+                className="ocr-btn-confirm"
+                onClick={handleConfirmText}
+                disabled={!editableText.trim()}
+              >
+                <FileImage size={15} />
+                <span>Confirm &amp; Insert Text</span>
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

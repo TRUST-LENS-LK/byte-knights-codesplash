@@ -562,29 +562,32 @@ function App() {
             </button>
           </div>
 
-          {inputType === 'screenshot' && (
-            <ScreenshotOcrUploader 
-              onTextConfirmed={(ocrText) => {
-                setText(ocrText)
-              }}
-            />
-          )}
-          {inputType === 'message' && (
-            <div className="textarea-wrapper">
-            <textarea
-              id="message"
-              className="console-textarea"
-              value={text}
-              maxLength={10000}
-              onChange={(e) => {
-                setText(e.target.value)
-                setChecked(false)
-                setIntelligenceOverlay(null)
-              }}
-              placeholder="Paste SMS, WhatsApp forward, email body, or suspicious URL here..."
-            />
+          <div className="console-input-slot">
+            {inputType === 'screenshot' ? (
+              <ScreenshotOcrUploader 
+                onTextConfirmed={(ocrText) => {
+                  setText(ocrText)
+                  setInputType('message')
+                }}
+                onCancel={() => setInputType('message')}
+              />
+            ) : (
+              <div className="textarea-wrapper">
+                <textarea
+                  id="message"
+                  className="console-textarea"
+                  value={text}
+                  maxLength={10000}
+                  onChange={(e) => {
+                    setText(e.target.value)
+                    setChecked(false)
+                    setIntelligenceOverlay(null)
+                  }}
+                  placeholder="Paste SMS, WhatsApp forward, email body, or suspicious URL here..."
+                />
+              </div>
+            )}
           </div>
-          )}
 
           <div className="console-card-footer">
             <div className="console-meta">
