@@ -513,7 +513,7 @@ function App() {
             </div>
             <div className="trust-item">
               <Lock size={16} className="trust-icon" />
-              <span>Zero-Log Privacy Guard</span>
+              <span>Zero-Log Privacy Protection</span>
             </div>
           </div>
         </div>

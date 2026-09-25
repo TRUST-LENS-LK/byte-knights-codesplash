@@ -603,7 +603,12 @@ const server = createServer(async (req, res) => {
       })
       return send(res, 201, { success: true, entry: created, requestId }, requestId)
     } catch (error) {
-      return send(res, 502, { code: 'DIRECTORY_CREATE_ERROR', message: error.message, requestId }, requestId)
+      const isConflict = error.message.includes('already exists') || error.message.includes('already registered')
+      return send(res, isConflict ? 409 : 502, {
+        code: isConflict ? 'DOMAIN_CONFLICT' : 'DIRECTORY_CREATE_ERROR',
+        message: error.message,
+        requestId,
+      }, requestId)
     }
   }
 
@@ -781,49 +786,49 @@ const server = createServer(async (req, res) => {
     const normalizedText = text.replace(/\r\n/g, '\n').trim()
     const contentSha256 = createHash('sha256').update(normalizedText).digest('hex')
 
+    // ── Five-Tier Domain Verification Pipeline ──────────────────────────
+    // All tiers run independently for every domain. Each tier produces a
+    // distinct signal type (approved_domain, known_global_domain,
+    // known_malicious_domain, domain_mismatch, new_domain_risk), so there
+    // is no finding duplication. Running all tiers catches cross-signal
+    // threats that the old short-circuit logic would miss, for example:
+    //   • A Tranco top-1M domain registered only 3 days ago (Tier 3 + 5)
+    //   • An approved directory domain that's been compromised (Tier 1 + 4)
+    //   • A globally popular domain used in an impersonation message (Tier 3 + org mismatch)
+
+    // Tier 1: Official Sri Lankan domain directory
     const approvedDomainFindings = await verifyApprovedDomains(entities).catch(() => {
       decision.limitations.push('Approved-domain verification was unavailable for this request.')
       return []
     })
     if (approvedDomainFindings.length) decision.findings.push(...approvedDomainFindings)
 
-    // Tier 3: only check global popularity when the curated directory
-    // (Tier 1) did not already find a match, so the same domain never gets
-    // both an approved_domain and a known_global_domain finding at once.
-    if (!approvedDomainFindings.length) {
-      const globalDomainCheck = await checkGlobalDomainTrust(entities).catch(() => ({ findings: [] }))
-      if (globalDomainCheck.findings.length) decision.findings.push(...globalDomainCheck.findings)
-    }
+    // Tier 3: Global domain trust (Tranco top-20K in-memory / 1M database)
+    // Runs independently of Tier 1 — a domain can be both locally approved
+    // AND globally popular, and both signals are valid evidence.
+    const globalDomainCheck = await checkGlobalDomainTrust(entities).catch(() => ({ findings: [] }))
+    if (globalDomainCheck.findings.length) decision.findings.push(...globalDomainCheck.findings)
 
-    // Tier 4: a single, fast live call to Google Safe Browsing, checked
-    // regardless of Tier 1/3 results, since it evaluates the URL's current
-    // live threat status, a genuinely independent signal from domain
-    // ownership (even a directory-matched domain could theoretically be
-    // compromised). Fails open silently when no API key is configured.
+    // Tier 4: Google Safe Browsing live threat check
+    // Always runs — even a directory-matched domain could be compromised.
+    // Fails open silently when no API key is configured.
     const safeBrowsingCheck = await checkSafeBrowsing(entities).catch(() => ({ findings: [] }))
     if (safeBrowsingCheck.findings.length) decision.findings.push(...safeBrowsingCheck.findings)
     applyKnownMaliciousRisk(decision)
 
+    // Organization–domain mismatch check
     const organizationDomainCheck = await checkClaimedOrganizationDomain(entities).catch(() => ({ findings: [], limitations: [] }))
     if (organizationDomainCheck.findings.length) decision.findings.push(...organizationDomainCheck.findings)
     if (organizationDomainCheck.limitations.length) decision.limitations.push(...organizationDomainCheck.limitations)
     applyDomainMismatchRisk(decision)
 
-    // Tier 5 (domain age): the slowest tier, since it makes live external
-    // network calls (RDAP, then CT-log fallbacks). Only worth running when
-    // the domain is not already resolved by a faster, cheaper tier: skip it
-    // when Tier 1 already confirmed the domain (age adds nothing useful to
-    // a known-good match) or when a mismatch was already found (the verdict
-    // is already HIGH/STOP_AND_AVOID; waiting on slow external calls for
-    // evidence that cannot change that outcome would only hurt latency).
-    const alreadyResolved = approvedDomainFindings.length > 0
-      || organizationDomainCheck.findings.some((f) => f.canonicalSignal === 'domain_mismatch')
-      || safeBrowsingCheck.findings.some((f) => f.canonicalSignal === 'known_malicious_domain')
-    if (!alreadyResolved) {
-      const domainAgeCheck = await checkDomainAge(entities).catch(() => ({ findings: [], limitations: [] }))
-      if (domainAgeCheck.findings.length) decision.findings.push(...domainAgeCheck.findings)
-      if (domainAgeCheck.limitations.length) decision.limitations.push(...domainAgeCheck.limitations)
-    }
+    // Tier 5: Domain age (RDAP → crt.sh → Certspotter)
+    // Always runs — a brand-new domain is suspicious regardless of what
+    // other tiers found. A Tranco-listed domain that was registered 3 days
+    // ago is a major red flag that the old short-circuit logic would miss.
+    const domainAgeCheck = await checkDomainAge(entities).catch(() => ({ findings: [], limitations: [] }))
+    if (domainAgeCheck.findings.length) decision.findings.push(...domainAgeCheck.findings)
+    if (domainAgeCheck.limitations.length) decision.limitations.push(...domainAgeCheck.limitations)
 
     // ── Intelligence Reconciliation Engine ─────────────────────────────
     let verifiedFindings = []

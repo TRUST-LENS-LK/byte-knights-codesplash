@@ -245,11 +245,11 @@ export const ScamTrendsSection: React.FC<ScamTrendsProps> = ({ onSelectSample })
       <div className="section-header-center">
         <div className="section-eyebrow">
           <TrendingUp size={14} />
-          <span>REALITY CHECK & THREAT SIMULATOR</span>
+          <span>LIVE THREAT PULSE</span>
         </div>
         <h2 className="section-title">Active Scam Campaigns in Sri Lanka</h2>
         <p className="section-subtitle">
-          See exactly how real scammers target Sri Lankan phones today. Select a campaign to inspect the deceptive message, uncover its hidden red flags, and test it in our scanner.
+          Real fraudulent messages circulating right now across Sri Lankan mobile networks. Select a campaign to inspect the deceptive message, review detected red flags, and test it in the scanner.
         </p>
       </div>
 
@@ -386,7 +386,7 @@ export const ScamTrendsSection: React.FC<ScamTrendsProps> = ({ onSelectSample })
 
           {/* Red Flag List */}
           <div className="dossier-flags-list">
-            <h4 className="flags-list-heading">Anatomy of the Deception:</h4>
+            <h4 className="flags-list-heading">Detected Red Flags:</h4>
             {activeScam.redFlags.map((flag, fIdx) => (
               <div key={fIdx} className="dossier-flag-card">
                 <div className="flag-number-badge">{fIdx + 1}</div>
@@ -402,7 +402,7 @@ export const ScamTrendsSection: React.FC<ScamTrendsProps> = ({ onSelectSample })
           <div className="dossier-safe-box">
             <div className="safe-box-header">
               <CheckCircle2 size={16} color="#059669" />
-              <span>Official Verification Channel:</span>
+              <span>Official Safe Channel:</span>
             </div>
             <p className="safe-box-text">{activeScam.safeAlternative}</p>
             <span className="safe-box-hotline">{activeScam.officialHotline}</span>
@@ -419,7 +419,7 @@ export const ScamTrendsSection: React.FC<ScamTrendsProps> = ({ onSelectSample })
               <span>Test This Scam in Scanner</span>
               <ArrowRight size={16} />
             </button>
-            <span className="dossier-sample-note">Pre-fills console & runs safety evaluation</span>
+            <span className="dossier-sample-note">Loads this message directly into the scanner</span>
           </div>
         </div>
 
@@ -429,17 +429,17 @@ export const ScamTrendsSection: React.FC<ScamTrendsProps> = ({ onSelectSample })
       <div className="scam-pulse-ticker">
         <div className="pulse-item">
           <span className="pulse-dot" />
-          <span className="pulse-label">Avg Victim Loss Prevented:</span>
+          <span className="pulse-label">Average Victim Loss Prevented:</span>
           <strong className="pulse-val">Rs. 18,500 – 95,000</strong>
         </div>
         <div className="pulse-divider" />
         <div className="pulse-item">
-          <span className="pulse-label">Active Phishing Hosts Blocked:</span>
+          <span className="pulse-label">Active Sri Lankan Phishing Hosts Blocked:</span>
           <strong className="pulse-val">1,420+ LK Targets</strong>
         </div>
         <div className="pulse-divider" />
         <div className="pulse-item">
-          <span className="pulse-label">Top Targeted Regions:</span>
+          <span className="pulse-label">Most Targeted Provinces:</span>
           <strong className="pulse-val">Western, Central & Southern</strong>
         </div>
       </div>
@@ -481,10 +481,10 @@ export const HowItWorksSection: React.FC<{ onStartCheck: () => void }> = ({ onSt
             <span>HOW IT WORKS</span>
           </div>
           <h2 className="section-title">
-            A free scam check, whenever you need a second opinion
+            Check any suspicious link or message in three simple steps
           </h2>
           <p className="section-subtitle">
-            Don't risk your savings or passwords. TrustLens LK gives you immediate clarity on suspicious messages and links before damage is done.
+            Got an unexpected SMS, WhatsApp forward, or bank alert? Verify it here before you click the link, reply, or share your OTP.
           </p>
 
           <div className="process-steps-grid">
@@ -540,9 +540,9 @@ export const HowItWorksSection: React.FC<{ onStartCheck: () => void }> = ({ onSt
           <div className="how-it-works-cta-row">
             <button type="button" className="btn-primary-action" onClick={onStartCheck}>
               <ShieldCheck size={16} />
-              <span>Run a Quick Scam Check</span>
+              <span>Check a Message Now</span>
             </button>
-            <span className="no-signup-note">Free public service — no account needed</span>
+            <span className="no-signup-note">Free public service — no sign-up or download needed</span>
           </div>
         </div>
 
@@ -561,37 +561,37 @@ const FAQ_DATA: FaqItem[] = [
   {
     question: 'What is TrustLens LK, and how does it work?',
     answer:
-      'TrustLens LK is a free national scam decision-support tool built for Sri Lanka. It combines domain reputation analysis, simulated browser sandbox scanning, and community threat reports to detect malicious links, fake government messages, and banking fraud before citizens fall victim.',
+      'TrustLens LK is a free public tool built for Sri Lanka to verify suspicious messages, SMS alerts, and web links before you click or share sensitive information. It checks domain registration records, official Sri Lankan institution directories, and active phishing patterns to provide an instant, evidence-based verdict.',
   },
   {
     question: 'What types of content can I check?',
     answer:
-      'You can check suspicious website URLs, SMS messages (like CEB electricity bill or courier alerts), WhatsApp job offers, Telegram investment links, and mobile screenshots of text conversations using our built-in OCR image scanner.',
+      'You can check suspicious website links, SMS alerts (like CEB power cut notices or courier fees), WhatsApp messages, Telegram investment forwards, and screenshots taken from your mobile phone using our built-in image OCR scanner.',
   },
   {
-    question: 'How does TrustLens decide if something is a scam?',
+    question: 'How does TrustLens determine if something is a scam?',
     answer:
-      'We inspect multiple safety factors: domain registration age, SSL authenticity, deceptive brand impersonation, urgent pressure tactics, dangerous input fields (asking for passwords, card CVVs, or OTPs), and national threat intelligence reports.',
+      'We evaluate multiple verifiable signals: how recently the domain was created, SSL certificates, brand impersonation, urgent pressure language, deceptive login or payment forms (asking for passwords, card CVVs, or OTPs), and active Sri Lankan threat reports.',
   },
   {
     question: 'Is TrustLens LK completely free to use?',
     answer:
-      'Yes, 100% free and open for public protection. There is no sign-up, email registration, or credit card required.',
+      'Yes, 100% free with no hidden fees, accounts, or sign-ups required. It is built as a public service to protect citizens from cyber fraud.',
   },
   {
-    question: 'What happens to what I submit? Is my privacy protected?',
+    question: 'Is my personal data or message stored?',
     answer:
-      'Your privacy is strictly respected. Submissions are processed securely in temporary memory. Passwords, personal identification, and private banking numbers are automatically stripped and never stored or disclosed in public records.',
+      'No. Submissions are processed in real time and discarded from memory. Private credentials such as passwords, debit card numbers, and bank SMS OTPs are automatically stripped out and never saved or shared.',
   },
   {
-    question: 'Can TrustLens guarantee that something is 100% safe or a scam?',
+    question: 'Can TrustLens guarantee that something is 100% safe?',
     answer:
-      'TrustLens provides a high-confidence advisory assessment based on rigorous heuristics and sandbox scans. However, cybercriminals constantly invent new tactics. If in doubt, always contact the organization directly through official, verified phone numbers.',
+      'TrustLens provides an evidence-based risk assessment based on known scam infrastructure and verified directories. If an unknown message or caller asks you for money or passwords, always verify directly by calling the organization’s official published helpline.',
   },
   {
-    question: 'What should I do if I already clicked a suspicious link or sent money?',
+    question: 'What should I do if I already clicked a suspicious link or transferred money?',
     answer:
-      'Take immediate action: (1) Call your bank’s 24/7 hotline to freeze your card and digital banking accounts. (2) Change your passwords from a separate trusted device. (3) Report the fraud to Sri Lanka CERT by calling 1937, and file a complaint with the Sri Lanka Police CID Cyber Crime Division.',
+      'Act quickly: (1) Call your bank’s 24/7 hotline immediately to freeze your card and digital banking access. (2) Change your online banking passwords from a separate safe phone or computer. (3) Report the incident to the Sri Lanka CERT hotline by calling 1937, and contact the Police Cyber Crime Division at 011-2320141.',
   },
 ]
 
@@ -611,7 +611,7 @@ export const FaqSection: React.FC = () => {
         </div>
         <h2 className="section-title">Frequently Asked Questions</h2>
         <p className="section-subtitle">
-          Everything you need to know about checking scams, privacy, and protecting your digital safety in Sri Lanka.
+          Everything you need to know about checking scams, data privacy, and staying safe online in Sri Lanka.
         </p>
       </div>
 
@@ -655,7 +655,7 @@ export const AboutMissionSection: React.FC<{ onStartCheck: () => void }> = ({ on
       <div className="about-mission-card">
         <div className="mission-eyebrow-pill">
           <ShieldCheck size={14} />
-          <span>SRI LANKA SCAM DEFENSE INITIATIVE</span>
+          <span>PUBLIC CYBER DEFENSE INITIATIVE</span>
         </div>
         <h2 className="mission-title">Scams are evolving. Your protection should too.</h2>
         <div className="mission-grid">
