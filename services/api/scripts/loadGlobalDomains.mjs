@@ -20,7 +20,7 @@ const REQUEST_TIMEOUT_MS = 30_000
 
 function loadEnv() {
   const envPath = new URL('../.env', import.meta.url)
-  const env = {}
+  const env = { ...process.env }
   if (existsSync(envPath)) {
     for (const line of readFileSync(envPath, 'utf8').split(/\r?\n/)) {
       const trimmed = line.trim()
