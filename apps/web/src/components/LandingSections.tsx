@@ -658,12 +658,35 @@ export const AboutMissionSection: React.FC<{ onStartCheck: () => void }> = ({ on
           <span>SRI LANKA SCAM DEFENSE INITIATIVE</span>
         </div>
         <h2 className="mission-title">Scams are evolving. Your protection should too.</h2>
-        <p className="mission-lead">
-          Every month, thousands of Sri Lankans lose their hard-earned money to deceptive SMS alerts, fake investment schemes, and spoofed bank portals. Fueled by automated tools, online scams have become convincing and dangerous.
-        </p>
-        <p className="mission-body">
-          TrustLens LK was founded to give Sri Lankan families, elders, and digital banking consumers a free second opinion whenever something doesn't feel right. Together with community vigilance and national threat intelligence, we are building digital resilience for Sri Lanka.
-        </p>
+        <div className="mission-grid">
+          <div className="mission-grid-item">
+            <div className="mission-icon-box">
+              <AlertTriangle size={20} />
+            </div>
+            <div className="mission-text-content">
+              <h4>The Growing Threat</h4>
+              <p>Thousands of Sri Lankans lose money daily to deceptive SMS alerts, fake investment schemes, and spoofed bank portals.</p>
+            </div>
+          </div>
+          <div className="mission-grid-item">
+            <div className="mission-icon-box">
+              <Search size={20} />
+            </div>
+            <div className="mission-text-content">
+              <h4>A Free Second Opinion</h4>
+              <p>We provide families, elders, and banking consumers a secure platform to verify messages when something doesn't feel right.</p>
+            </div>
+          </div>
+          <div className="mission-grid-item">
+            <div className="mission-icon-box">
+              <ShieldCheck size={20} />
+            </div>
+            <div className="mission-text-content">
+              <h4>Collective Defense</h4>
+              <p>Together with community vigilance and national threat intelligence, we are building digital resilience for Sri Lanka.</p>
+            </div>
+          </div>
+        </div>
 
         <div className="mission-actions">
           <button type="button" className="btn-primary-action mission-btn-primary" onClick={onStartCheck}>
