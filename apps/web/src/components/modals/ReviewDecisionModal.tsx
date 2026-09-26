@@ -349,7 +349,7 @@ export const ReviewDecisionModal: React.FC<ReviewDecisionModalProps> = ({
                   <p className="neo-recom-desc">
                     {report.report_type === 'false_positive'
                       ? 'Approving this report will mark this entity as VERIFIED_SAFE and protect it from false alarms.'
-                      : 'Dismiss / Reject Report — Legitimate entity. Approving this domain as a malicious threat would cause widespread false positives.'}
+                      : 'Dismiss / Reject Report, Legitimate entity. Approving this domain as a malicious threat would cause widespread false positives.'}
                   </p>
                 </div>
                 {isPending && report.report_type !== 'false_positive' && (
@@ -641,9 +641,9 @@ export const ReviewDecisionModal: React.FC<ReviewDecisionModalProps> = ({
                     onChange={(e) => setConfidence(parseFloat(e.target.value))}
                     className="neo-modal-select"
                   >
-                    <option value={1.0}>Definite Threat (1.00 / 100%) — Confirmed IoC</option>
-                    <option value={0.85}>High Probability (0.85 / 85%) — Strong Markers</option>
-                    <option value={0.70}>Suspicious (0.70 / 70%) — Moderate Certainty</option>
+                    <option value={1.0}>Definite Threat (1.00 / 100%), Confirmed IoC</option>
+                    <option value={0.85}>High Probability (0.85 / 85%), Strong Markers</option>
+                    <option value={0.70}>Suspicious (0.70 / 70%), Moderate Certainty</option>
                   </select>
                 </div>
 

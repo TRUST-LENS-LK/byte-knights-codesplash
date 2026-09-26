@@ -254,14 +254,14 @@ function App() {
     : isVerifiedSafe
       ? 'Verified Safe Service'
       : isImpersonation
-        ? 'Critical Risk — Spoofing Attack'
+        ? 'Critical Risk, Spoofing Attack'
         : isConflicted
           ? 'Disputed / High Risk Alert'
           : decision.riskBand === 'HIGH' || isConfirmedScam
-            ? 'High Threat — Phishing Detected'
+            ? 'High Threat, Phishing Detected'
             : decision.riskBand === 'MEDIUM'
               ? 'Suspicious Activity Warning'
-              : 'Low Risk — Likely Safe'
+              : 'Low Risk, Likely Safe'
 
   const verdictVariantClass = isOfficialEntity
     ? 'official-entity'
@@ -522,7 +522,7 @@ function App() {
             </div>
             <div className="trust-item">
               <Lock size={16} className="trust-icon" />
-              <span>100% Private — Messages Never Saved</span>
+              <span>100% Private, Messages Never Saved</span>
             </div>
           </div>
         </div>
@@ -609,7 +609,7 @@ function App() {
               <span className="char-counter">{text.length.toLocaleString()} / 10,000 characters</span>
               <span className="privacy-badge">
                 <Info size={13} />
-                <span>100% private — nothing saved</span>
+                <span>100% private, nothing saved</span>
               </span>
             </div>
             <button

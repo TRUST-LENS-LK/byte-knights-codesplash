@@ -3824,14 +3824,14 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                                 <span className="neo-target-domain">{entry.officialDomain}</span>
                               </div>
                             </td>
-                            <td>{entry.category || '—'}</td>
+                            <td>{entry.category || '-'}</td>
                             <td>
                               <span className={`neo-status-pill-modern ${entry.status.toLowerCase()}`}>
                                 {entry.status}
                               </span>
                             </td>
-                            <td>{entry.reviewer || '—'}</td>
-                            <td>{entry.nextReviewDate || '—'}</td>
+                            <td>{entry.reviewer || '-'}</td>
+                            <td>{entry.nextReviewDate || '-'}</td>
                             <td>
                               <div style={{ display: 'flex', gap: '6px' }}>
                                 {entry.status !== 'ACTIVE' && (
