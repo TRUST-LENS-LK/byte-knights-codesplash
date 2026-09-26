@@ -48,6 +48,7 @@ interface AiValidation {
   verdict: 'AGREE' | 'DISAGREE' | 'UNCERTAIN'
   confidence: number
   reasoning: string
+  overallSummary?: string
   originalRiskBand: 'LOW' | 'MEDIUM' | 'HIGH' | 'UNKNOWN'
   adjustedRiskBand: 'LOW' | 'MEDIUM' | 'HIGH' | 'UNKNOWN'
   appliedAction: 'DOWNGRADED' | 'UPGRADED' | 'HARD_BLOCKED' | 'RETAINED'
