@@ -925,7 +925,7 @@ function App() {
                       <div className="pane-card-header">
                         <div className="pane-title-group">
                           <Activity size={18} color="var(--brand-primary)" />
-                          <h3>Suspicious Patterns Detected</h3>
+                          <h3>Patterns Detected</h3>
                         </div>
                         <span className="pane-meta-tag">
                           {decision.findings.length} pattern{decision.findings.length === 1 ? '' : 's'} matched
