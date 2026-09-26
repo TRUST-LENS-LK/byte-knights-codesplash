@@ -158,11 +158,24 @@ const server = createServer(async (req, res) => {
       const statusParam = parsedUrl.searchParams.get('status') || 'PENDING'
       const pageParam = parseInt(parsedUrl.searchParams.get('page') || '1', 10)
       const limitParam = parseInt(parsedUrl.searchParams.get('limit') || '20', 10)
+      const searchParam = parsedUrl.searchParams.get('search') || ''
+      const reportTypeParam = parsedUrl.searchParams.get('type') || parsedUrl.searchParams.get('report_type') || ''
+      const threatParam = parsedUrl.searchParams.get('threat') || ''
+      const dateParam = parsedUrl.searchParams.get('date') || ''
+
       const page = Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1
       const limit = Number.isFinite(limitParam) && limitParam > 0 && limitParam <= 500 ? limitParam : 20
       const offset = (page - 1) * limit
 
-      const { reports, total } = await getModerationQueue({ status: statusParam, limit, offset })
+      const { reports, total } = await getModerationQueue({
+        status: statusParam,
+        search: searchParam,
+        reportType: reportTypeParam,
+        threatType: threatParam,
+        dateFilter: dateParam,
+        limit,
+        offset,
+      })
       const totalPages = Math.ceil(total / limit) || 1
 
       return send(

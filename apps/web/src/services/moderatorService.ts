@@ -243,15 +243,33 @@ export async function loginModerator(
   }
 }
 
+export interface FetchModerationQueueOptions {
+  search?: string
+  type?: string
+  date?: string
+  threat?: string
+}
+
 export async function fetchModerationQueue(
   token: string,
   status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'ALL' = 'PENDING',
   page = 1,
-  limit = 20
+  limit = 20,
+  options?: FetchModerationQueueOptions
 ): Promise<ModerationQueueResponse> {
   try {
+    const params = new URLSearchParams({
+      status,
+      page: String(page),
+      limit: String(limit),
+    })
+    if (options?.search?.trim()) params.set('search', options.search.trim())
+    if (options?.type && options.type !== 'ALL') params.set('type', options.type)
+    if (options?.threat && options.threat !== 'ALL') params.set('threat', options.threat)
+    if (options?.date && options.date !== 'ALL') params.set('date', options.date)
+
     const response = await fetch(
-      `${API_BASE}/api/moderation/queue?status=${status}&page=${page}&limit=${limit}`,
+      `${API_BASE}/api/moderation/queue?${params.toString()}`,
       {
         headers: {
           Authorization: `Bearer ${token}`,
