@@ -10,22 +10,6 @@ const URL_PATTERN =
   /(?:hxxps?|https?):\/\/[^\s<>()\[\]"']+(?:\[[^\]]*\][^\s<>()\[\]"']*)?/gi
 
 /**
- * Matches bare URLs without a protocol prefix.
- *
- * These are domain.tld/path patterns like:
- *   bit.ly/4wxTL8M
- *   t.co/abc123
- *   tinyurl.com/y5abc
- *   example.com/login/page
- *
- * A slash + path is required to distinguish from plain domain references
- * (which are handled separately by the bare-domain extractor) and to
- * avoid false positives on strings like "Rs.12,500" or "version 2.0".
- */
-const BARE_URL_PATTERN =
-  /(?:^|(?<=[\s,;()\[\]<>]))([a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?(?:\.[a-zA-Z]{2,})+\/[^\s<>()\[\]"',!?;:]+)/gm
-
-/**
  * Matches the domain portion inside a URL.
  * Handles both normal dots (.) and defanged dots ([.]).
  *
@@ -67,11 +51,7 @@ function normalizeDomain(raw: string): string {
 export function extractUrls(text: string): ExtractedEntity[] {
   const results: ExtractedEntity[] = []
 
-  // Track spans already covered by protocol-prefixed URLs so bare-URL
-  // matches don't duplicate them.
-  const coveredSpans: Array<{ start: number; end: number }> = []
-
-  // ── Pass 1: Protocol-prefixed URLs (https://…, hxxps://…) ────────
+  // Reset lastIndex for global regex before each use
   URL_PATTERN.lastIndex = 0
 
   for (const match of text.matchAll(URL_PATTERN)) {
@@ -80,6 +60,7 @@ export function extractUrls(text: string): ExtractedEntity[] {
     const endIndex = startIndex + value.length
     const normalizedValue = normalizeUrl(value)
 
+    // Add the URL entity
     results.push({
       type: 'url',
       value,
@@ -90,12 +71,11 @@ export function extractUrls(text: string): ExtractedEntity[] {
       confidence: 0.97,
     })
 
-    coveredSpans.push({ start: startIndex, end: endIndex })
-
     // Also extract the domain from within the URL
     const domainMatch = DOMAIN_INSIDE_URL.exec(value)
     if (domainMatch) {
       const rawDomain = domainMatch[1]
+      // Strip trailing path/query, keep domain only
       const domainOnly = rawDomain.split('/')[0]
       const domainStart = startIndex + value.indexOf(domainOnly)
       const domainEnd = domainStart + domainOnly.length
@@ -110,50 +90,6 @@ export function extractUrls(text: string): ExtractedEntity[] {
         confidence: 0.97,
       })
     }
-  }
-
-  // ── Pass 2: Bare URLs without protocol (bit.ly/4wxTL8M, t.co/x) ──
-  BARE_URL_PATTERN.lastIndex = 0
-
-  for (const match of text.matchAll(BARE_URL_PATTERN)) {
-    const value = match[1] ?? match[0]
-    const startIndex = match.index! + (match[0].length - value.length)
-    const endIndex = startIndex + value.length
-
-    // Skip if this span is already covered by a protocol-prefixed URL
-    const alreadyCovered = coveredSpans.some(
-      (span) => startIndex >= span.start && endIndex <= span.end
-    )
-    if (alreadyCovered) continue
-
-    // Strip trailing punctuation that may have been captured
-    const cleaned = value.replace(/[.,!?;:]+$/, '')
-    const normalizedValue = `https://${cleaned}`
-
-    results.push({
-      type: 'url',
-      value: cleaned,
-      normalizedValue,
-      sourceSpan: cleaned,
-      startIndex,
-      endIndex: startIndex + cleaned.length,
-      confidence: 0.92,
-    })
-
-    // Extract the domain from the bare URL
-    const domainOnly = cleaned.split('/')[0]
-    const domainStart = startIndex
-    const domainEnd = domainStart + domainOnly.length
-
-    results.push({
-      type: 'domain',
-      value: domainOnly,
-      normalizedValue: domainOnly.toLowerCase(),
-      sourceSpan: domainOnly,
-      startIndex: domainStart,
-      endIndex: domainEnd,
-      confidence: 0.92,
-    })
   }
 
   return results
