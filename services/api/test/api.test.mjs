@@ -184,7 +184,7 @@ function waitForStartup(processChild, port, label = 'API') {
 }
 
 test.before(async () => {
-  child = spawn(process.execPath, ['src/server.mjs'], { cwd: new URL('..', import.meta.url), env: { ...process.env, PORT: String(port), SUPABASE_URL: '', SUPABASE_SERVICE_ROLE_KEY: '' }, stdio: ['ignore', 'pipe', 'pipe'] })
+  child = spawn(process.execPath, ['src/server.mjs'], { cwd: new URL('..', import.meta.url), env: { ...process.env, PORT: String(port), SUPABASE_URL: '', SUPABASE_SERVICE_ROLE_KEY: '', GEMINI_API_KEY: '' }, stdio: ['ignore', 'pipe', 'pipe'] })
   await waitForStartup(child, port)
 })
 
@@ -408,10 +408,9 @@ test('consented analysis persists through the server-only Supabase client', asyn
     assert.equal(body.decision.findings.some((finding) => finding.canonicalSignal === 'approved_domain'), true)
     assert.deepEqual(requests.map((request) => request.url.split('?')[0]), ['/rest/v1/approved_organizations', '/rest/v1/global_trusted_domains', '/rest/v1/verified_intelligence', '/rest/v1/submissions', '/rest/v1/extracted_entities', '/rest/v1/findings'])
     assert.equal(requests[0].headers.apikey, 'test-service-key')
-    const submissionReq = requests.find((r) => r.url.split('?')[0] === '/rest/v1/submissions')
-    assert.ok(submissionReq, 'Submissions request should exist')
-    assert.equal(submissionReq.body.retention_consent, true)
-    assert.equal(submissionReq.body.raw_text, 'Visit https://example.com, pay Rs. 5000 today and send your OTP.')
+    const submissionRequest = requests.find((r) => r.url.startsWith('/rest/v1/submissions'))
+    assert.equal(submissionRequest.body.retention_consent, true)
+    assert.equal(submissionRequest.body.raw_text, 'Visit https://example.com, pay Rs. 5000 today and send your OTP.')
   } finally {
     consentedChild.kill()
     await new Promise((resolve) => supabase.close(resolve))

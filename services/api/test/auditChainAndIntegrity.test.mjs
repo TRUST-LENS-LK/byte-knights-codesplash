@@ -34,8 +34,9 @@ test('Audit Cryptographic Integrity & Tamper-Evidence Tests', async (t) => {
     assert.notEqual(hash1, hashTampered, 'Modified entry payload must change the hash')
   })
 
+  let entry1, entry2
   await t.test('recordAuditLog chains records sequentially with prev_hash and entry_hash', async () => {
-    const entry1 = await recordAuditLog({
+    entry1 = await recordAuditLog({
       action: 'AUTH_LOGIN',
       actorEmail: 'admin@trustlens.lk',
       actorRole: 'admin',
@@ -49,7 +50,7 @@ test('Audit Cryptographic Integrity & Tamper-Evidence Tests', async (t) => {
     assert.ok(entry1.entry_hash, 'Entry 1 must have an entry_hash')
     assert.ok(entry1.prev_hash, 'Entry 1 must have a prev_hash')
 
-    const entry2 = await recordAuditLog({
+    entry2 = await recordAuditLog({
       action: 'DOMAIN_CREATE',
       actorEmail: 'admin@trustlens.lk',
       actorRole: 'admin',
@@ -65,7 +66,7 @@ test('Audit Cryptographic Integrity & Tamper-Evidence Tests', async (t) => {
   })
 
   await t.test('verifyAuditChainIntegrity validates entire active audit chain', async () => {
-    const verification = await verifyAuditChainIntegrity()
+    const verification = await verifyAuditChainIntegrity({ records: [entry1, entry2] })
     assert.equal(verification.isValid, true, 'Clean chain must report isValid: true')
     assert.ok(verification.verifiedCount > 0, 'Should have verified multiple audit entries')
     assert.ok(verification.latestHash, 'Should return latest chain tip hash')

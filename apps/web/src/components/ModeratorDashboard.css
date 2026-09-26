@@ -191,16 +191,22 @@
 .neo-brand-title {
   font-size: 16px;
   font-weight: 800;
-  letter-spacing: -0.02em;
-  color: var(--neo-navy);
+  letter-spacing: -0.025em;
+  color: var(--neo-navy, #0F172A);
   white-space: nowrap;
+  display: flex;
+  align-items: baseline;
 }
 
-.neo-brand-title span {
-  color: var(--neo-primary);
+.neo-brand-title .brand-lens {
+  color: #0066FF;
+}
+
+.neo-brand-title .brand-lk {
+  color: var(--neo-navy, #0F172A);
   font-weight: 750;
-  font-size: 12px;
-  margin-left: 2px;
+  font-size: 0.85em;
+  margin-left: 4px;
 }
 
 /* ChatGPT-Style Sidebar Toggle Button (Expanded State) */
@@ -364,7 +370,7 @@
   cursor: pointer;
   width: calc(100% - 16px);
   text-align: left;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition: background 0.2s cubic-bezier(0.16, 1, 0.3, 1), color 0.2s cubic-bezier(0.16, 1, 0.3, 1), transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   position: relative;
   box-sizing: border-box;
 }
@@ -381,6 +387,7 @@
 .neo-nav-btn:hover:not(.active) {
   background: rgba(0, 102, 255, 0.04);
   color: #0F172A;
+  transform: translateX(2px);
 }
 
 .neo-sidebar.collapsed .neo-nav-btn:hover {
@@ -646,9 +653,9 @@
 
 .neo-header-titles h1 {
   margin: 0;
-  font-size: 26px;
-  font-weight: 800;
-  letter-spacing: -0.03em;
+  font-size: 25px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
   color: var(--neo-navy);
 }
 
@@ -3540,16 +3547,20 @@
   position: absolute;
   top: 24px;
   left: 24px;
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
+  height: 38px;
+  padding: 0 16px 0 12px;
+  border-radius: 999px;
   background: rgba(255, 255, 255, 0.85);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
   border: 1.5px solid rgba(255, 255, 255, 0.95);
-  color: #0F172A;
-  display: grid;
-  place-items: center;
+  color: #334155;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-heading);
+  font-size: 13px;
+  font-weight: 650;
   cursor: pointer;
   z-index: 20;
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
@@ -3561,8 +3572,10 @@
 .neo-login-page-back-btn:hover {
   background: #FFFFFF;
   color: #0066FF;
-  transform: scale(1.06);
-  box-shadow: 0 6px 20px rgba(6, 23, 51, 0.12);
+  transform: translateY(-1px);
+  box-shadow:
+    0 6px 20px rgba(6, 23, 51, 0.12),
+    inset 0 1px 2px rgba(255, 255, 255, 1);
 }
 
 .neo-login-close-btn {
@@ -4105,7 +4118,7 @@
 }
 
 .neo-view-transition {
-  animation: neoViewFade 0.22s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: neoViewFade 0.24s cubic-bezier(0.16, 1, 0.3, 1) both;
   will-change: opacity, transform;
 }
 
@@ -4469,7 +4482,7 @@
   font-size: 12.5px;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   white-space: nowrap;
 }
 
@@ -4477,6 +4490,43 @@
   background: #F8FAFC;
   border-color: #0066FF;
   color: #0066FF;
+  transform: translateY(-1px);
+}
+
+.neo-btn-toolbar-verify:active:not(:disabled) {
+  transform: translateY(0) scale(0.98);
+}
+
+.neo-btn-toolbar-verify.is-verifying {
+  background: #EFF6FF;
+  border-color: #93C5FD;
+  color: #1D4ED8;
+  animation: neoPulseVerification 1.2s infinite ease-in-out;
+}
+
+@keyframes neoPulseVerification {
+  0% {
+    box-shadow: 0 0 0 0 rgba(0, 102, 255, 0.35);
+  }
+  70% {
+    box-shadow: 0 0 0 6px rgba(0, 102, 255, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(0, 102, 255, 0);
+  }
+}
+
+.neo-spin-icon {
+  animation: neoSpinClockwise 1s linear infinite;
+}
+
+@keyframes neoSpinClockwise {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .neo-btn-toolbar-verify.verified-active {
@@ -4612,19 +4662,19 @@
 .neo-protected-entity-pill {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 2px 7px;
+  gap: 4.5px;
+  padding: 2.5px 8px;
   border-radius: 6px;
   font-size: 10.5px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
+  font-weight: 600;
+  letter-spacing: 0.01em;
   white-space: nowrap;
 }
 
 .neo-protected-entity-pill.national {
-  background: #FEF3C7;
+  background: #FFFBEB;
   color: #92400E;
-  border: 1px solid #FDE68A;
+  border: 1px solid #FCD34D;
 }
 
 .neo-protected-entity-pill.global {
@@ -4636,13 +4686,31 @@
 .neo-protected-queue-recommendation {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  font-size: 11px;
+  gap: 4.5px;
+  font-size: 10px;
   font-weight: 700;
-  color: #B45309;
-  background: #FFFBEB;
-  border: 1px solid #FDE68A;
-  padding: 2px 6px;
-  border-radius: 5px;
-  margin-top: 3px;
+  letter-spacing: 0.02em;
+  color: #991B1B;
+  background: #FEF2F2;
+  border: 1px solid #FECACA;
+  padding: 2.5px 7.5px;
+  border-radius: 6px;
+  margin-top: 4px;
+  width: fit-content;
+}
+
+/* Accessibility: Respect Reduced Motion Preference */
+@media (prefers-reduced-motion: reduce) {
+  .neo-view-transition,
+  .neo-table-body-transition,
+  .neo-header-title-transition,
+  .neo-filter-popover-menu,
+  .neo-btn-toolbar-verify,
+  .neo-btn-toolbar-verify.is-verifying,
+  .neo-spin-icon,
+  .neo-nav-btn {
+    animation: none !important;
+    transition: none !important;
+    transform: none !important;
+  }
 }

@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import {
   ShieldCheck,
   Search,
@@ -8,18 +8,14 @@ import {
   ExternalLink,
   ChevronDown,
   ArrowRight,
+  AlertOctagon,
   Zap,
   HelpCircle,
-  TrendingUp,
-  Smartphone,
-  Copy,
-  Check,
-  AlertTriangle,
-  CheckCircle2,
   ShieldAlert,
   Landmark,
-  Briefcase,
   Package,
+  Briefcase,
+  CheckCircle2,
 } from 'lucide-react'
 import './LandingSections.css'
 
@@ -41,405 +37,322 @@ export const TopAnnouncementBar: React.FC = () => {
   )
 }
 
-// ── 2. Sri Lanka Scam Trends & Reality Simulator ─────────────────────
-export interface ScamSimulation {
+// ── 2. Sri Lanka Scam Breakdown: How Scammers Trick You ───────────────
+interface ThreatCategory {
   id: string
-  tabLabel: string
+  label: string
   iconComponent: React.ComponentType<{ size?: number; className?: string }>
   logoUrl?: string
-  title: string
-  subtitle: string
-  category: string
-  riskBadge: 'CRITICAL' | 'HIGH'
-  reportedThisWeek: number
-  senderHeader: string
-  senderSub: string
-  carrier: string
-  timestamp: string
-  messagePrefix: string
-  highlightUrgency: string
-  messageMiddle: string
-  highlightLink: string
-  messageSuffix?: string
-  fullRawText: string
-  redFlags: Array<{
-    title: string
-    detail: string
-  }>
-  safeAlternative: string
-  officialHotline: string
+  targetEntity: string
+  chain: {
+    origin: { step: string; text: string; sub: string }
+    lure: { step: string; text: string; sub: string }
+    payload: { step: string; text: string; sub: string }
+  }
+  defense: {
+    authority: string
+    officialDomain: string
+    policy: string
+    hotline: string
+    hotlineLabel: string
+  }
 }
 
-const SRI_LANKA_SCAM_SIMULATIONS: ScamSimulation[] = [
+const SRI_LANKA_THREAT_CATEGORIES: ThreatCategory[] = [
   {
-    id: 'ceb-sms',
-    tabLabel: 'CEB Power Cut SMS',
+    id: 'utilities',
+    label: 'Electricity Bill (CEB)',
     iconComponent: Zap,
     logoUrl: '/ceb_logo.png',
-    title: 'Electricity Bill Disconnection SMS',
-    subtitle: 'Impersonating Ceylon Electricity Board (CEB)',
-    category: 'State Utility Phishing',
-    riskBadge: 'CRITICAL',
-    reportedThisWeek: 84,
-    senderHeader: 'CEB-ALERT',
-    senderSub: 'Unregistered Sender • Not in Verified LK Registry',
-    carrier: 'Dialog 4G',
-    timestamp: 'Today, 2:41 PM',
-    messagePrefix: 'CEB Alert: Your electricity connection will be ',
-    highlightUrgency: 'disconnected tonight at 10:00 PM',
-    messageMiddle: ' due to unpaid bill of Rs. 4,250. Settle now to avoid disconnection: ',
-    highlightLink: 'https://ceb-bill-payment-lk.online/portal',
-    fullRawText:
-      'CEB Alert: Your electricity connection will be disconnected tonight at 10:00 PM due to unpaid bill of Rs. 4,250. Settle now to avoid disconnection: https://ceb-bill-payment-lk.online/portal',
-    redFlags: [
-      {
-        title: 'Fake Foreign Domain (.online)',
-        detail: 'Registered in Iceland 3 days ago. Official government and state utilities always use .lk or ceb.lk.',
+    targetEntity: 'Ceylon Electricity Board (CEB)',
+    chain: {
+      origin: {
+        step: '1 · The Message',
+        text: 'Power cut tonight at 10 PM',
+        sub: 'Urgent SMS from unknown number',
       },
-      {
-        title: 'Manufactured Panic',
-        detail: 'Threatens power cutoff in a few hours to trigger panic and stop you from checking your actual bill.',
+      lure: {
+        step: '2 · The Trap',
+        text: 'Pay overdue bill now via link',
+        sub: 'Takes you to fake payment site',
       },
-      {
-        title: 'Debit Card & OTP Interception',
-        detail: 'The fraudulent webpage mimics a payment gateway to harvest your debit card CVV and bank SMS OTP.',
+      payload: {
+        step: '3 · The Loss',
+        text: 'Steals card details & OTP',
+        sub: 'Bank card drained instantly',
       },
-    ],
-    safeAlternative: 'Always pay bills exclusively via the official CEB Care mobile app or ceb.lk.',
-    officialHotline: 'CEB 24/7 Hotline: 1987',
+    },
+    defense: {
+      authority: 'Ceylon Electricity Board',
+      officialDomain: 'ceb.lk',
+      policy: 'CEB gives 10-day notice on paper bills. They never demand card payment via SMS links.',
+      hotline: '1987',
+      hotlineLabel: 'CEB Helpline',
+    },
   },
   {
-    id: 'combank-kyc',
-    tabLabel: 'Bank eBanking KYC',
+    id: 'banking',
+    label: 'Bank Accounts',
     iconComponent: Landmark,
     logoUrl: '/combank_logo.svg',
-    title: 'Bank Account Suspension Phishing',
-    subtitle: 'Spoofing Commercial Bank & Bank of Ceylon',
-    category: 'Banking Credential Theft',
-    riskBadge: 'CRITICAL',
-    reportedThisWeek: 62,
-    senderHeader: 'COMBANK-SEC',
-    senderSub: 'Spoofed Caller ID • Anonymous GSM Gateway',
-    carrier: 'Mobitel 4G',
-    timestamp: 'Today, 11:15 AM',
-    messagePrefix: 'COMMERCIAL BANK: Your ComBank digital account has been ',
-    highlightUrgency: 'temporarily locked due to unverified KYC',
-    messageMiddle: '. Please update your debit card immediately to restore access: ',
-    highlightLink: 'https://combank-online-update.me/verify',
-    fullRawText:
-      'COMMERCIAL BANK: Your ComBank digital account has been temporarily locked due to unverified KYC. Please update your debit card immediately to restore access: https://combank-online-update.me/verify',
-    redFlags: [
-      {
-        title: 'Suspicious TLD (.me)',
-        detail: 'Legitimate Sri Lankan commercial banks never host verification portals on random foreign domains.',
+    targetEntity: 'Commercial Banks (ComBank, BOC, Sampath)',
+    chain: {
+      origin: {
+        step: '1 · The Message',
+        text: 'Account or card is blocked',
+        sub: 'Fake security alert SMS',
       },
-      {
-        title: 'Banks Never Text Login Links',
-        detail: 'Official banking policies in Sri Lanka strictly forbid sending clickable links requiring user credentials.',
+      lure: {
+        step: '2 · The Trap',
+        text: 'Click here to verify identity',
+        sub: 'Cloned bank login page',
       },
-      {
-        title: 'Complete Account Takeover',
-        detail: 'Submitting your credentials allows criminals to instantly enroll unauthorized mobile devices.',
+      payload: {
+        step: '3 · The Loss',
+        text: 'Steals your password & OTP',
+        sub: 'Unauthorized money transfers',
       },
-    ],
-    safeAlternative: 'Only access internet banking by manually typing combank.lk into your secure browser.',
-    officialHotline: 'ComBank 24/7 Emergency: 011-2353596',
+    },
+    defense: {
+      authority: 'Central Bank of Sri Lanka (CBSL)',
+      officialDomain: 'combank.lk',
+      policy: 'Sri Lankan banks NEVER send clickable links in SMS. Any SMS with a login link is a scam.',
+      hotline: '011-2353596',
+      hotlineLabel: 'Bank Card Center',
+    },
   },
   {
-    id: 'whatsapp-job',
-    tabLabel: 'WhatsApp Task Fraud',
-    iconComponent: Briefcase,
-    logoUrl: '/whatsapp_logo.svg',
-    title: 'Remote Job & YouTube Task Scam',
-    subtitle: 'Advance Fee & Pyramid Task Schemes',
-    category: 'Financial Fraud',
-    riskBadge: 'HIGH',
-    reportedThisWeek: 47,
-    senderHeader: 'HR Recruiter +94 76 892 1044',
-    senderSub: 'WhatsApp Business • Unverified Profile',
-    carrier: 'WhatsApp',
-    timestamp: 'Yesterday, 5:30 PM',
-    messagePrefix: 'Hello! Remote part-time job offer for Sri Lankan citizens. ',
-    highlightUrgency: 'Earn Rs. 5,000–15,000 daily',
-    messageMiddle: ' liking YouTube videos and following Telegram channels. Payouts via eZ Cash. Connect with manager: ',
-    highlightLink: 'https://t.me/LK_TasksManager_Bot',
-    fullRawText:
-      'Hello! Remote part-time job offer for Sri Lankan citizens. Earn Rs. 5,000–15,000 daily liking YouTube videos and following Telegram channels. Payouts via eZ Cash. Connect with manager: https://t.me/LK_TasksManager_Bot',
-    redFlags: [
-      {
-        title: 'Unrealistic Guaranteed Earnings',
-        detail: 'Legitimate global companies never pay thousands of rupees for simply liking social media posts.',
-      },
-      {
-        title: 'Bait-and-Switch Trap',
-        detail: 'Scammers pay a tiny sum (Rs. 500) initially to gain your trust, then demand a deposit of Rs. 20,000+.',
-      },
-      {
-        title: 'Anonymous Telegram Payouts',
-        detail: 'Uses anonymous handles so victims have no legal recourse when the scammers vanish with their money.',
-      },
-    ],
-    safeAlternative: 'Never pay upfront fees or deposit money to receive job assignments or remote wages.',
-    officialHotline: 'Report Fraud: Sri Lanka Police CID',
-  },
-  {
-    id: 'slpost-customs',
-    tabLabel: 'Customs Delivery Fee',
+    id: 'logistics',
+    label: 'Postal Packages',
     iconComponent: Package,
     logoUrl: '/slpost_logo.png',
-    title: 'Parcel Delivery Clearance Scam',
-    subtitle: 'Impersonating Sri Lanka Post & Couriers',
-    category: 'Courier Impersonation',
-    riskBadge: 'HIGH',
-    reportedThisWeek: 39,
-    senderHeader: 'SL-POST',
-    senderSub: 'SMS Broadcast • Unregistered Route',
-    carrier: 'Airtel 4G',
-    timestamp: 'Today, 9:02 AM',
-    messagePrefix: 'SL-POST: Incoming international parcel LK-982412 is on hold. ',
-    highlightUrgency: 'Pay customs duty fee of Rs. 380',
-    messageMiddle: ' within 48h to avoid package return: ',
-    highlightLink: 'https://slpost-parcel-clearance.net',
-    fullRawText:
-      'SL-POST: Incoming international parcel LK-982412 is on hold. Pay customs duty fee of Rs. 380 within 48h to avoid package return: https://slpost-parcel-clearance.net',
-    redFlags: [
-      {
-        title: 'Phantom Package Tactic',
-        detail: 'Sent indiscriminately to mobile users whether or not they have placed international orders.',
+    targetEntity: 'Department of Posts & Customs',
+    chain: {
+      origin: {
+        step: '1 · The Message',
+        text: 'Parcel delivery failed',
+        sub: 'SMS claiming missing address',
       },
-      {
-        title: 'Micro-Fee Trick',
-        detail: 'Requests a small fee (Rs. 380) so victims lower their guard and willingly type their card details.',
+      lure: {
+        step: '2 · The Trap',
+        text: 'Pay Rs. 380 fee to reschedule',
+        sub: 'Fake postal tracking website',
       },
-      {
-        title: 'Recurring Card Charges',
-        detail: 'Capturing your CVV and card details allows the fraud ring to run recurring international charges.',
+      payload: {
+        step: '3 · The Loss',
+        text: 'Steals your card numbers',
+        sub: 'Unauthorized payments charged',
       },
-    ],
-    safeAlternative: 'Sri Lanka Post customs charges are settled at your local post office, not via arbitrary web links.',
-    officialHotline: 'Sri Lanka Post Hotline: 1950',
+    },
+    defense: {
+      authority: 'Department of Posts, Sri Lanka',
+      officialDomain: 'slpost.gov.lk',
+      policy: 'Sri Lanka Post delivers printed slips to your home. They never ask for SMS fee payments.',
+      hotline: '1950',
+      hotlineLabel: 'Postal Helpline',
+    },
+  },
+  {
+    id: 'recruitment',
+    label: 'WhatsApp Job Offers',
+    iconComponent: Briefcase,
+    logoUrl: '/whatsapp_logo.svg',
+    targetEntity: 'WhatsApp & Telegram Job Offers',
+    chain: {
+      origin: {
+        step: '1 · The Message',
+        text: 'Earn Rs. 15,000/day liking videos',
+        sub: 'Stranger texts you on WhatsApp',
+      },
+      lure: {
+        step: '2 · The Trap',
+        text: 'Deposit money to unlock VIP pay',
+        sub: 'Gives tiny test payout first',
+      },
+      payload: {
+        step: '3 · The Loss',
+        text: 'Scammers block you & take cash',
+        sub: 'All deposited money is lost',
+      },
+    },
+    defense: {
+      authority: 'Sri Lanka Police Cyber Crimes Division',
+      officialDomain: 'police.lk',
+      policy: 'Real companies never hire on WhatsApp or ask for deposits to receive a salary.',
+      hotline: '011-2422176',
+      hotlineLabel: 'Police Cyber Crimes',
+    },
   },
 ]
 
 interface ScamTrendsProps {
-  onSelectSample: (text: string) => void
+  onSelectSample?: (text: string) => void
 }
 
-export const ScamTrendsSection: React.FC<ScamTrendsProps> = ({ onSelectSample }) => {
-  const [activeId, setActiveId] = useState<string>('ceb-sms')
-  const [copied, setCopied] = useState(false)
+export const ScamTrendsSection: React.FC<ScamTrendsProps> = () => {
+  const [activeIndex, setActiveIndex] = useState(0)
+  const [direction, setDirection] = useState<'next' | 'prev'>('next')
+  const [animating, setAnimating] = useState(false)
+  const total = SRI_LANKA_THREAT_CATEGORIES.length
 
-  const activeScam = SRI_LANKA_SCAM_SIMULATIONS.find((s) => s.id === activeId) || SRI_LANKA_SCAM_SIMULATIONS[0]
+  const goTo = useCallback(
+    (nextIndex: number, dir: 'next' | 'prev') => {
+      if (animating) return
+      setDirection(dir)
+      setAnimating(true)
+      setTimeout(() => {
+        setActiveIndex((nextIndex + total) % total)
+        setAnimating(false)
+      }, 380)
+    },
+    [animating, total]
+  )
 
-  const handleCopy = (txt: string) => {
-    navigator.clipboard.writeText(txt).then(() => {
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    }).catch(() => {})
-  }
+  const goNext = useCallback(() => goTo(activeIndex + 1, 'next'), [goTo, activeIndex])
+  const goPrev = useCallback(() => goTo(activeIndex - 1, 'prev'), [goTo, activeIndex])
+
+  // Auto-advance every 6 seconds
+  useEffect(() => {
+    const timer = setInterval(goNext, 6000)
+    return () => clearInterval(timer)
+  }, [goNext])
+
+  const current = SRI_LANKA_THREAT_CATEGORIES[activeIndex]
 
   return (
-    <section id="scam-trends" className="landing-section scam-simulator-section">
-      {/* Header */}
+    <section id="scam-trends" className="landing-section threat-intel-section">
       <div className="section-header-center">
         <div className="section-eyebrow">
-          <TrendingUp size={14} />
-          <span>LIVE THREAT PULSE</span>
+          <ShieldAlert size={14} />
+          <span>HOW SCAMS WORK</span>
         </div>
-        <h2 className="section-title">Active Scam Campaigns in Sri Lanka</h2>
+        <h2 className="section-title">How Scammers Trick People in Sri Lanka</h2>
         <p className="section-subtitle">
-          Real fraudulent messages circulating right now across Sri Lankan mobile networks. Select a campaign to inspect the deceptive message, review detected red flags, and test it in the scanner.
+          See the simple 3-step trick scammers use, and what real organizations actually do.
         </p>
       </div>
 
-      {/* Interactive Scenario Switcher */}
-      <div className="scam-scenario-tabs" role="tablist">
-        {SRI_LANKA_SCAM_SIMULATIONS.map((item) => {
-          const isActive = item.id === activeId
-          return (
+      {/* Slideshow Card */}
+      <div className="slideshow-outer">
+
+        {/* Prev Button */}
+        <button
+          type="button"
+          className="slide-nav-btn slide-nav-prev"
+          onClick={goPrev}
+          aria-label="Previous scam"
+        >
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M13 4L7 10L13 16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </button>
+
+        {/* Slide Content */}
+        <div className="slideshow-viewport">
+          <div
+            className={`slide-content-wrapper ${
+              animating ? (direction === 'next' ? 'slide-exit-left' : 'slide-exit-right') : 'slide-enter'
+            }`}
+          >
+            {/* Compact Structured Slide Card */}
+            <div className="slide-compact-container">
+              {/* Header: Visible Logo + Title + Hotline */}
+              <div className="slide-compact-header">
+                <div className="slide-brand-group">
+                  <div className="slide-brand-logo-tile">
+                    {current.logoUrl ? (
+                      <img src={current.logoUrl} alt={current.label} className="slide-brand-logo-img" />
+                    ) : (
+                      <current.iconComponent size={24} className="slide-brand-fallback-icon" />
+                    )}
+                  </div>
+                  <div className="slide-brand-text">
+                    <div className="slide-brand-meta">
+                      <span className="slide-category-tag-sm">{current.label}</span>
+                      <code className="slide-domain-pill">{current.defense.officialDomain}</code>
+                    </div>
+                    <h3 className="slide-target-title">{current.targetEntity}</h3>
+                  </div>
+                </div>
+
+                <a href={`tel:${current.defense.hotline}`} className="slide-hotline-badge" title="Call official helpline">
+                  <PhoneCall size={13} />
+                  <span>{current.defense.hotlineLabel}: <strong>{current.defense.hotline}</strong></span>
+                </a>
+              </div>
+
+              {/* 3 Step Flow: Compact Horizontal Cards */}
+              <div className="slide-steps-grid">
+                {/* Step 1: The Message */}
+                <div className="slide-mini-card">
+                  <span className="mini-phase-label phase-blue">{current.chain.origin.step}</span>
+                  <h4 className="mini-step-text">{current.chain.origin.text}</h4>
+                  <p className="mini-step-sub">{current.chain.origin.sub}</p>
+                </div>
+
+                {/* Arrow */}
+                <div className="slide-step-arrow" aria-hidden="true">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M5 12H19M19 12L13 6M19 12L13 18" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                </div>
+
+                {/* Step 2: The Trap */}
+                <div className="slide-mini-card">
+                  <span className="mini-phase-label phase-amber">{current.chain.lure.step}</span>
+                  <h4 className="mini-step-text">{current.chain.lure.text}</h4>
+                  <p className="mini-step-sub">{current.chain.lure.sub}</p>
+                </div>
+
+                {/* Arrow */}
+                <div className="slide-step-arrow" aria-hidden="true">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M5 12H19M19 12L13 6M19 12L13 18" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                </div>
+
+                {/* Step 3: The Loss */}
+                <div className="slide-mini-card">
+                  <span className="mini-phase-label phase-red">{current.chain.payload.step}</span>
+                  <h4 className="mini-step-text">{current.chain.payload.text}</h4>
+                  <p className="mini-step-sub">{current.chain.payload.sub}</p>
+                </div>
+              </div>
+
+              {/* Defense Strip: Natural & Understated */}
+              <div className="slide-slim-defense">
+                <ShieldCheck size={16} className="defense-shield-icon" />
+                <span className="defense-rule-lead">Real Rule:</span>
+                <span className="defense-rule-body">{current.defense.policy}</span>
+              </div>
+            
+            </div>
+          </div>
+        </div>
+
+        {/* Next Button */}
+        <button
+          type="button"
+          className="slide-nav-btn slide-nav-next"
+          onClick={goNext}
+          aria-label="Next scam"
+        >
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M7 4L13 10L7 16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </button>
+
+        {/* Dot Indicators */}
+        <div className="slide-dots">
+          {SRI_LANKA_THREAT_CATEGORIES.map((cat, i) => (
             <button
-              key={item.id}
+              key={cat.id}
               type="button"
-              role="tab"
-              aria-selected={isActive}
-              className={`scam-scenario-tab ${isActive ? 'active' : ''}`}
-              onClick={() => setActiveId(item.id)}
-            >
-              <span className="tab-scenario-icon">
-                {item.logoUrl ? (
-                  <img
-                    src={item.logoUrl}
-                    alt={item.tabLabel}
-                    className="tab-scenario-logo-img"
-                    loading="lazy"
-                  />
-                ) : (
-                  <item.iconComponent size={16} />
-                )}
-              </span>
-              <div className="tab-scenario-info">
-                <span className="tab-scenario-name">{item.tabLabel}</span>
-                <span className="tab-scenario-count">{item.reportedThisWeek} reports this week</span>
-              </div>
-              {isActive && <span className="tab-active-dot" />}
-            </button>
-          )
-        })}
-      </div>
-
-      {/* Master Detail Simulator Deck */}
-      <div className="scam-simulator-stage">
-        
-        {/* Left Column: Authentic Mobile Device Preview */}
-        <div className="simulator-phone-wrapper">
-          <div className="simulator-phone-frame">
-            {/* Phone Status Bar */}
-            <div className="phone-status-bar">
-              <span className="phone-carrier">{activeScam.carrier}</span>
-              <span className="phone-clock">2:48 PM</span>
-              <span className="phone-battery">84%</span>
-            </div>
-
-            {/* Conversation Header */}
-            <div className="phone-chat-header">
-              <div className="phone-avatar-badge">
-                {activeScam.logoUrl ? (
-                  <img
-                    src={activeScam.logoUrl}
-                    alt={activeScam.senderHeader}
-                    className="phone-avatar-logo-img"
-                  />
-                ) : (
-                  <Smartphone size={18} />
-                )}
-              </div>
-              <div className="phone-sender-details">
-                <div className="phone-sender-name-row">
-                  <span className="phone-sender-title">{activeScam.senderHeader}</span>
-                  <span className="phone-unverified-tag">
-                    <AlertTriangle size={11} />
-                    Unverified
-                  </span>
-                </div>
-                <span className="phone-sender-sub">{activeScam.senderSub}</span>
-              </div>
-            </div>
-
-            {/* Message Area */}
-            <div className="phone-chat-body">
-              <div className="phone-timestamp-divider">
-                <span>{activeScam.timestamp}</span>
-              </div>
-
-              {/* Realistic Message Bubble */}
-              <div className="phone-sms-bubble">
-                <p className="phone-sms-text">
-                  {activeScam.messagePrefix}
-                  <mark className="sms-highlight-urgency" title="Red Flag: Artificial Panic">
-                    {activeScam.highlightUrgency}
-                  </mark>
-                  {activeScam.messageMiddle}
-                  <mark className="sms-highlight-link" title="Red Flag: Fake Domain">
-                    {activeScam.highlightLink}
-                  </mark>
-                </p>
-                <div className="sms-bubble-footer">
-                  <span className="sms-bubble-time">Delivered • 2:41 PM</span>
-                  <button
-                    type="button"
-                    className="btn-copy-bubble"
-                    onClick={() => handleCopy(activeScam.fullRawText)}
-                    title="Copy message content"
-                  >
-                    {copied ? <Check size={12} color="#059669" /> : <Copy size={12} />}
-                    <span>{copied ? 'Copied' : 'Copy'}</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Carrier Warning Notice */}
-              <div className="phone-carrier-advisory">
-                <ShieldAlert size={14} />
-                <span>Security Warning: Message contains unverified links asking for sensitive information.</span>
-              </div>
-            </div>
-
-            {/* Phone Bottom Notch */}
-            <div className="phone-home-indicator" />
-          </div>
-        </div>
-
-        {/* Right Column: Forensic Red-Flag Breakdown */}
-        <div className="simulator-dossier-panel">
-          <div className="dossier-header">
-            <div className="dossier-badge-row">
-              <span className={`risk-badge-pill ${activeScam.riskBadge.toLowerCase()}`}>
-                <AlertTriangle size={12} style={{ marginRight: 4, verticalAlign: 'middle' }} />
-                {activeScam.riskBadge} RISK
-              </span>
-              <span className="dossier-category-tag">{activeScam.category}</span>
-            </div>
-            <h3 className="dossier-title">{activeScam.title}</h3>
-            <p className="dossier-subtitle">{activeScam.subtitle}</p>
-          </div>
-
-          {/* Red Flag List */}
-          <div className="dossier-flags-list">
-            <h4 className="flags-list-heading">Detected Red Flags:</h4>
-            {activeScam.redFlags.map((flag, fIdx) => (
-              <div key={fIdx} className="dossier-flag-card">
-                <div className="flag-number-badge">{fIdx + 1}</div>
-                <div className="flag-content">
-                  <h5 className="flag-title">{flag.title}</h5>
-                  <p className="flag-detail">{flag.detail}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Safe Alternative Box */}
-          <div className="dossier-safe-box">
-            <div className="safe-box-header">
-              <CheckCircle2 size={16} color="#059669" />
-              <span>Official Safe Channel:</span>
-            </div>
-            <p className="safe-box-text">{activeScam.safeAlternative}</p>
-            <span className="safe-box-hotline">{activeScam.officialHotline}</span>
-          </div>
-
-          {/* Action Trigger */}
-          <div className="dossier-action-row">
-            <button
-              type="button"
-              className="btn-simulate-scanner"
-              onClick={() => onSelectSample(activeScam.fullRawText)}
-              title="Send this exact message into the TrustLens Scanner"
-            >
-              <span>Test This Scam in Scanner</span>
-              <ArrowRight size={16} />
-            </button>
-            <span className="dossier-sample-note">Loads this message directly into the scanner</span>
-          </div>
-        </div>
-
-      </div>
-
-      {/* Live Sri Lanka Fraud Pulse Ticker */}
-      <div className="scam-pulse-ticker">
-        <div className="pulse-item">
-          <span className="pulse-dot" />
-          <span className="pulse-label">Average Victim Loss Prevented:</span>
-          <strong className="pulse-val">Rs. 18,500 – 95,000</strong>
-        </div>
-        <div className="pulse-divider" />
-        <div className="pulse-item">
-          <span className="pulse-label">Active Sri Lankan Phishing Hosts Blocked:</span>
-          <strong className="pulse-val">1,420+ LK Targets</strong>
-        </div>
-        <div className="pulse-divider" />
-        <div className="pulse-item">
-          <span className="pulse-label">Most Targeted Provinces:</span>
-          <strong className="pulse-val">Western, Central & Southern</strong>
+              className={`slide-dot ${i === activeIndex ? 'active' : ''}`}
+              onClick={() => goTo(i, i > activeIndex ? 'next' : 'prev')}
+              aria-label={cat.label}
+            />
+          ))}
         </div>
       </div>
     </section>
@@ -541,7 +454,10 @@ export const HowItWorksSection: React.FC<{ onStartCheck: () => void }> = ({ onSt
               <ShieldCheck size={16} />
               <span>Check a Message Now</span>
             </button>
-            <span className="no-signup-note">Free public service — no sign-up or download needed</span>
+            <span className="no-signup-note">
+              <CheckCircle2 size={14} className="no-signup-check-icon" />
+              This service is 100% free — no sign-up needed
+            </span>
           </div>
         </div>
 
@@ -652,11 +568,13 @@ export const AboutMissionSection: React.FC<{ onStartCheck: () => void }> = ({ on
   return (
     <section id="about" className="landing-section about-mission-section">
       <div className="about-mission-card">
-        <div className="mission-eyebrow-pill">
-          <ShieldCheck size={14} />
-          <span>PUBLIC CYBER DEFENSE INITIATIVE</span>
+        <div className="about-mission-header">
+          <div className="mission-eyebrow-pill">
+            <ShieldCheck size={14} />
+            <span>PUBLIC CYBER DEFENSE INITIATIVE</span>
+          </div>
+          <h2 className="mission-title">Scams are evolving. Your protection should too.</h2>
         </div>
-        <h2 className="mission-title">Scams are evolving. Your protection should too.</h2>
         <div className="mission-grid">
           <div className="mission-grid-item">
             <div className="mission-icon-box">
@@ -722,87 +640,81 @@ export const LandingFooter: React.FC<FooterProps> = ({ onOpenReportModal, onBack
     <footer className="rich-landing-footer">
       <div className="footer-columns-grid">
         
-        {/* Column 1: Brand & Emergency */}
+        {/* Column 1: Brand & Direct Helpline */}
         <div className="footer-col footer-col-brand">
           <div className="footer-brand-header">
             <div className="footer-logo-box">
               <img src="/TrustLens_Icon.png" alt="TrustLens LK" className="footer-logo-img" />
             </div>
             <span className="footer-brand-name">
-              TrustLens <span className="nav-brand-badge">LK</span>
+              Trust<span className="brand-lens">Lens</span> <span className="brand-lk">LK</span>
             </span>
           </div>
           <p className="footer-brand-mission">
-            Sri Lanka’s Scam Decision Support & Threat Intelligence Platform. Protecting citizens, families, and digital banking consumers against phishing and cyber fraud.
+            Public cyber defense platform providing instant scam verification, threat intelligence, and digital safety for Sri Lanka.
           </p>
-          <div className="footer-hotline-box">
-            <span className="footer-hotline-label">Emergency Cyber Incident Hotline:</span>
-            <a href="tel:1937" className="footer-hotline-number">
-              <PhoneCall size={14} />
-              <span>Dial 1937 (Sri Lanka CERT)</span>
-            </a>
-          </div>
+          <a href="tel:1937" className="footer-hotline-pill" title="Call Sri Lanka CERT">
+            <PhoneCall size={13} />
+            <span>Sri Lanka CERT Hotline: <strong>1937</strong></span>
+          </a>
         </div>
 
-        {/* Column 2: Scam Check Tools */}
+        {/* Column 2: Platform & Defense */}
         <div className="footer-col">
-          <h4 className="footer-col-title">Scam Check Tools</h4>
+          <h4 className="footer-col-title">Platform</h4>
           <ul className="footer-links-list">
             <li>
-              <a href="#checker" onClick={(e) => { e.preventDefault(); onBackToScanner(); }}>
-                Link & URL Safety Scanner
+              <a href="#checker-console" onClick={(e) => { e.preventDefault(); onBackToScanner(); }}>
+                Scam &amp; URL Scanner
               </a>
             </li>
             <li>
-              <a href="#checker" onClick={(e) => { e.preventDefault(); onBackToScanner(); }}>
-                Screenshot OCR Reader
+              <a href="#scam-trends" onClick={(e) => { e.preventDefault(); scrollTo('scam-trends'); }}>
+                How Scams Work
               </a>
             </li>
             <li>
-              <a href="#checker" onClick={(e) => { e.preventDefault(); onBackToScanner(); }}>
-                SMS & WhatsApp Scam Detector
+              <a href="#how-it-works" onClick={(e) => { e.preventDefault(); scrollTo('how-it-works'); }}>
+                How Verification Works
               </a>
             </li>
-            <li>
-              <a href="#checker" onClick={(e) => { e.preventDefault(); onBackToScanner(); }}>
-                Bank Spoofing Verifier
-              </a>
-            </li>
-            <li>
-              <button type="button" className="footer-action-link" onClick={onOpenReportModal}>
-                Report a New Scam
-              </button>
-            </li>
+            {onOpenReportModal && (
+              <li>
+                <button type="button" className="footer-action-link" onClick={onOpenReportModal}>
+                  Report Suspicious Scam
+                </button>
+              </li>
+            )}
           </ul>
         </div>
 
-        {/* Column 3: Common Sri Lanka Scams */}
+        {/* Column 3: Navigation */}
         <div className="footer-col">
-          <h4 className="footer-col-title">Common LK Scams</h4>
+          <h4 className="footer-col-title">Navigation</h4>
           <ul className="footer-links-list">
             <li>
-              <a href="#scam-trends" onClick={(e) => { e.preventDefault(); scrollTo('scam-trends'); }}>
-                Electricity Bill (CEB) SMS Scams
+              <a href="#checker-console" onClick={(e) => { e.preventDefault(); onBackToScanner(); }}>
+                Check a Message
               </a>
             </li>
             <li>
               <a href="#scam-trends" onClick={(e) => { e.preventDefault(); scrollTo('scam-trends'); }}>
-                Commercial Bank / BOC Phishing
+                Scam Trends
               </a>
             </li>
             <li>
-              <a href="#scam-trends" onClick={(e) => { e.preventDefault(); scrollTo('scam-trends'); }}>
-                Sri Lanka Post Customs Clearance
+              <a href="#how-it-works" onClick={(e) => { e.preventDefault(); scrollTo('how-it-works'); }}>
+                How It Works
               </a>
             </li>
             <li>
-              <a href="#scam-trends" onClick={(e) => { e.preventDefault(); scrollTo('scam-trends'); }}>
-                WhatsApp Daily Task & Job Scams
+              <a href="#faq" onClick={(e) => { e.preventDefault(); scrollTo('faq'); }}>
+                FAQ
               </a>
             </li>
             <li>
-              <a href="#scam-trends" onClick={(e) => { e.preventDefault(); scrollTo('scam-trends'); }}>
-                Telegram Crypto Investment Fraud
+              <a href="#about" onClick={(e) => { e.preventDefault(); scrollTo('about'); }}>
+                About Initiative
               </a>
             </li>
           </ul>
@@ -825,35 +737,25 @@ export const LandingFooter: React.FC<FooterProps> = ({ onOpenReportModal, onBack
               </a>
             </li>
             <li>
-              <span className="footer-static-info">Police CID Cyber Crime: 011-2320141</span>
-            </li>
-            <li>
-              <a href="#faq" onClick={(e) => { e.preventDefault(); scrollTo('faq'); }}>
-                Frequently Asked Questions
+              <a href="tel:0112320141" className="external-link-item">
+                <PhoneCall size={12} />
+                <span>Police Cyber Crime: 011-2320141</span>
               </a>
             </li>
             <li>
-              <a href="#how-it-works" onClick={(e) => { e.preventDefault(); scrollTo('how-it-works'); }}>
-                How Scam Verification Works
-              </a>
+              <span className="footer-static-info">National Cyber Defense</span>
             </li>
           </ul>
         </div>
 
       </div>
 
-      {/* Bottom Bar */}
+      {/* Bottom Bar: Copyright & Privacy */}
       <div className="footer-bottom-bar">
         <p className="footer-copyright">
-          © 2026 TrustLens LK — Sri Lanka National Scam Defense. Built for public cyber resilience.
+          © 2026 TrustLens LK. All rights reserved.
         </p>
-        <div className="footer-bottom-badges">
-          <span className="bottom-badge">Privacy-First Architecture</span>
-          <span className="bottom-divider">•</span>
-          <span className="bottom-badge">Real-Time Threat Analysis</span>
-          <span className="bottom-divider">•</span>
-          <span className="bottom-badge">Sri Lanka Cyber Resilience</span>
-        </div>
+        <span className="bottom-badge">100% Private — Messages Never Saved</span>
       </div>
     </footer>
   )

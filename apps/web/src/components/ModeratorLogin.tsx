@@ -66,15 +66,16 @@ export const ModeratorLogin: React.FC<ModeratorLoginProps> = ({
 
   return (
     <div className="neo-login-viewport">
-      {/* Top Left Page Back Button */}
+      {/* Top Left Page Back Button Pill */}
       <button
         type="button"
         className="neo-login-page-back-btn"
         onClick={onBackToScanner}
-        title="Return to Citizen Scanner"
-        aria-label="Return to Citizen Scanner"
+        title="Return to Public Scanner"
+        aria-label="Return to Public Scanner"
       >
-        <ArrowLeft size={18} aria-hidden="true" />
+        <ArrowLeft size={16} aria-hidden="true" />
+        <span>Back to Public Scanner</span>
       </button>
 
       <div className="neo-login-container">
@@ -97,7 +98,7 @@ export const ModeratorLogin: React.FC<ModeratorLoginProps> = ({
                 />
               </div>
               <div style={{ fontSize: '26px', fontWeight: '800', letterSpacing: '-0.03em', color: '#0F172A', lineHeight: '1.2', marginBottom: '6px' }}>
-                TrustLens<span style={{ color: '#0066FF' }}>LK</span>
+                Trust<span className="brand-lens" style={{ color: '#0066FF' }}>Lens</span> <span className="brand-lk" style={{ color: '#0F172A', fontWeight: '750', fontSize: '0.85em', marginLeft: '4px' }}>LK</span>
               </div>
               <h1 className="neo-login-title" style={{ fontSize: '14px', fontWeight: '600', color: '#64748B', margin: '0' }}>
                 Sign In to Moderator Deck
@@ -187,21 +188,6 @@ export const ModeratorLogin: React.FC<ModeratorLoginProps> = ({
                   <span>Auto-fill Demo Credentials</span>
                 </button>
               </div>
-
-              {/* Divider */}
-              <div className="neo-login-divider">
-                <span>OR RETURN TO PUBLIC SCANNER</span>
-              </div>
-
-              {/* Secondary Action: Back to Public Scanner */}
-              <button
-                type="button"
-                className="neo-login-btn-secondary"
-                onClick={onBackToScanner}
-              >
-                <ArrowLeft size={15} aria-hidden="true" />
-                <span>Return to Public Scanner</span>
-              </button>
             </form>
           </div>
         </div>

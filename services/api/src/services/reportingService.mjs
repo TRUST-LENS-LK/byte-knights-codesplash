@@ -1,6 +1,6 @@
 import { randomUUID, createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { SUPABASE_SERVICE_ROLE_KEY, SUPABASE_URL } from '../config/env.mjs'
+import { SUPABASE_SERVICE_ROLE_KEY, SUPABASE_URL, GEMINI_API_KEY } from '../config/env.mjs'
 import { DEMO_REPORTS } from '../fixtures/demoReports.mjs'
 import { analyzeMessage } from '@trustlens/rules'
 import { isTopGlobalDomain } from '@trustlens/domain'
@@ -32,7 +32,7 @@ export async function classifyProtectedEntity(rawInputDomain) {
         name: rec.name || cleanDomain,
         domain: rec.officialDomain || cleanDomain,
         category: rec.category || 'Official Organization',
-        badge: '🏛️ Official National Entity',
+        badge: 'Official National Entity',
         warning: `"${cleanDomain}" is verified in the Official National Directory as ${rec.name}. Official entities have authoritative legal standing and must not be flagged as scams without confirmed infrastructure incident verification.`,
         recommendedAction: 'REJECT',
       }
@@ -49,7 +49,7 @@ export async function classifyProtectedEntity(rawInputDomain) {
         type: 'TOP_GLOBAL',
         name: cleanDomain,
         domain: cleanDomain,
-        badge: '🌐 Top Global Platform',
+        badge: 'Top Global Platform',
         warning: `"${cleanDomain}" is a globally verified high-traffic domain (Tranco Top-1M). Citizens often report legitimate platforms when encountering scam posts, phishing ads, or third-party impersonators. The root domain itself is not a scam.`,
         recommendedAction: 'REJECT',
       }
@@ -83,7 +83,7 @@ export const GENESIS_PREV_HASH = '0000000000000000000000000000000000000000000000
  */
 export function computeAuditHash(prevHash, entry) {
   const normalizedPrev = prevHash || GENESIS_PREV_HASH
-  const rawTarget = entry.raw_target_indicator !== undefined ? entry.raw_target_indicator : entry.target_indicator
+  const rawTarget = (entry.raw_target_indicator !== undefined && entry.raw_target_indicator !== null) ? entry.raw_target_indicator : entry.target_indicator
   const payload = [
     normalizedPrev,
     canonicalTimestamp(entry.created_at),
@@ -116,7 +116,28 @@ function loadPersistentAuditLogs() {
   return []
 }
 
+export function isTestEnvironment() {
+  return (
+    process.env.NODE_ENV === 'test' ||
+    process.env.npm_lifecycle_event === 'test' ||
+    (Array.isArray(process.execArgv) && process.execArgv.some((arg) => arg.includes('--test'))) ||
+    (Array.isArray(process.argv) &&
+      process.argv.some(
+        (arg) =>
+          arg.includes('--test') ||
+          arg.includes('test/') ||
+          arg.includes('test\\') ||
+          arg.endsWith('.test.mjs') ||
+          arg.endsWith('.test.js')
+      ))
+  )
+}
+
 export function savePersistentAuditLogs(logs) {
+  // Never pollute the persistent audit log file with mock entries generated during automated test runs
+  if (isTestEnvironment()) {
+    return
+  }
   try {
     if (!existsSync(DATA_DIR)) {
       mkdirSync(DATA_DIR, { recursive: true })
@@ -496,6 +517,10 @@ export function updateEngineSettings(newSettings = {}, actor = 'moderator', acto
 }
 
 export function isSupabaseConfigured() {
+  // Never write mock/test data to remote Supabase database during automated test runs
+  if (isTestEnvironment() && SUPABASE_URL && !SUPABASE_URL.includes('127.0.0.1') && !SUPABASE_URL.includes('localhost')) {
+    return false
+  }
   return Boolean(SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY)
 }
 
@@ -654,7 +679,11 @@ export async function findDuplicatePendingReport(contentSha256, reportType, repo
 }
 
 export async function submitReport(payload) {
-  const contentSha256 = payload.contentSha256.toLowerCase()
+  let contentSha256 = payload.contentSha256?.toLowerCase()
+  if (!contentSha256) {
+    const textToHash = payload.text || payload.reportedDomain || randomUUID()
+    contentSha256 = createHash('sha256').update(textToHash.trim()).digest('hex')
+  }
   const reportType = payload.reportType
   const reportedDomain = payload.reportedDomain?.trim().toLowerCase() || null
 
@@ -1106,30 +1135,57 @@ export async function processModerationReview(
           if (checkRes.ok) {
             const [existing] = await checkRes.json()
             if (existing) {
-              const updatedCount = (existing.report_count || 1) + 1
-              const baseConf = Math.max(Number(existing.confidence) || 0.85, chosenConfidence)
-              const updatedConfidence = computeEffectiveConfidence(baseConf, updatedCount)
-              const updatedNotes = notes && !existing.notes?.includes(notes) ? `${existing.notes} | ${notes}` : existing.notes
-              const updatePayload = {
-                report_count: updatedCount,
-                confidence: updatedConfidence,
-                updated_at: new Date().toISOString(),
-                ...(updatedNotes ? { notes: updatedNotes } : {}),
-              }
-              const updateRes = await fetch(`${SUPABASE_URL}/rest/v1/verified_intelligence?id=eq.${existing.id}`, {
-                method: 'PATCH',
-                headers: getHeaders(),
-                body: JSON.stringify(updatePayload),
-                signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-              })
-              if (updateRes.ok) {
-                if (!verifiedIntelligenceId) verifiedIntelligenceId = existing.id
-                continue
+              if (existing.active && existing.risk_level !== intelRecord.risk_level) {
+                // OPPOSING INTEL CONFLICT: Revoke and deactivate existing indicator
+                await fetch(`${SUPABASE_URL}/rest/v1/verified_intelligence?id=eq.${existing.id}`, {
+                  method: 'PATCH',
+                  headers: getHeaders(),
+                  body: JSON.stringify({
+                    active: false,
+                    notes: `[REVOKED]: Superseded by approved ${report.report_type === 'false_positive' ? 'False Alarm' : 'Threat'} (Report ID: ${reportId.slice(0, 8)}). ${notes ? `Moderator note: ${notes}` : ''} | Prior notes: ${existing.notes || ''}`,
+                    updated_at: new Date().toISOString(),
+                  }),
+                  signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+                })
+                void recordAuditLog({
+                  reportId,
+                  action: 'RECLASSIFY_INDICATOR',
+                  targetIndicator: defang(primaryVal),
+                  threatCategory: report.report_type === 'false_positive' ? 'Threat Revocation' : 'Safe Declassification',
+                  actorEmail,
+                  actorRole,
+                  confidence: chosenConfidence,
+                  moderatorNotes: `[REVOKED & RECLASSIFIED]: ${existing.risk_level} superseded and reclassified to ${intelRecord.risk_level} by moderator. ${notes || ''}`,
+                  clientIp,
+                  userAgent,
+                })
+              } else if (existing.active) {
+                // CORROBORATING: Increment count and scale confidence
+                const updatedCount = (existing.report_count || 1) + 1
+                const baseConf = Math.max(Number(existing.confidence) || 0.85, chosenConfidence)
+                const updatedConfidence = computeEffectiveConfidence(baseConf, updatedCount)
+                const updatedNotes = notes && !existing.notes?.includes(notes) ? `${existing.notes} | ${notes}` : existing.notes
+                const updatePayload = {
+                  report_count: updatedCount,
+                  confidence: updatedConfidence,
+                  updated_at: new Date().toISOString(),
+                  ...(updatedNotes ? { notes: updatedNotes } : {}),
+                }
+                const updateRes = await fetch(`${SUPABASE_URL}/rest/v1/verified_intelligence?id=eq.${existing.id}`, {
+                  method: 'PATCH',
+                  headers: getHeaders(),
+                  body: JSON.stringify(updatePayload),
+                  signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+                })
+                if (updateRes.ok) {
+                  if (!verifiedIntelligenceId) verifiedIntelligenceId = existing.id
+                  continue
+                }
               }
             }
           }
 
-          // Not found, insert new indicator
+          // Not found or new opposing record, insert new indicator
           const intelRes = await fetch(`${SUPABASE_URL}/rest/v1/verified_intelligence`, {
             method: 'POST',
             headers: getHeaders(),
@@ -1147,22 +1203,50 @@ export async function processModerationReview(
         // In-memory Deduplication & Frequency Counter
         let existing = null
         for (const item of inMemoryIntel.values()) {
-          if (item.indicator_value === intelRecord.indicator_value) {
+          if (item.indicator_value === intelRecord.indicator_value && item.active) {
             existing = item
             break
           }
         }
 
         if (existing) {
-          existing.report_count = (existing.report_count || 1) + 1
-          const baseConf = Math.max(Number(existing.confidence) || 0.85, chosenConfidence)
-          existing.confidence = computeEffectiveConfidence(baseConf, existing.report_count)
-          existing.updated_at = new Date().toISOString()
-          if (notes && !existing.notes?.includes(notes)) {
-            existing.notes = `${existing.notes} | ${notes}`
+          if (existing.risk_level !== intelRecord.risk_level) {
+            // OPPOSING INTEL CONFLICT: Revoke and deactivate existing indicator
+            existing.active = false
+            existing.notes = `[REVOKED]: Superseded by approved ${report.report_type === 'false_positive' ? 'False Alarm' : 'Threat'} (Report ID: ${reportId.slice(0, 8)}). ${notes ? `Moderator note: ${notes}` : ''} | Prior notes: ${existing.notes || ''}`
+            existing.updated_at = new Date().toISOString()
+            inMemoryIntel.set(existing.id, existing)
+
+            void recordAuditLog({
+              reportId,
+              action: 'RECLASSIFY_INDICATOR',
+              targetIndicator: defang(primaryVal),
+              threatCategory: report.report_type === 'false_positive' ? 'Threat Revocation' : 'Safe Declassification',
+              actorEmail,
+              actorRole,
+              confidence: chosenConfidence,
+              moderatorNotes: `[REVOKED & RECLASSIFIED]: ${existing.risk_level} superseded and reclassified to ${intelRecord.risk_level} by moderator. ${notes || ''}`,
+              clientIp,
+              userAgent,
+            })
+
+            // Insert new active reclassified indicator
+            intelRecord.report_count = 1
+            intelRecord.confidence = chosenConfidence
+            inMemoryIntel.set(intelRecord.id, intelRecord)
+            if (!verifiedIntelligenceId) verifiedIntelligenceId = intelRecord.id
+          } else {
+            // CORROBORATING
+            existing.report_count = (existing.report_count || 1) + 1
+            const baseConf = Math.max(Number(existing.confidence) || 0.85, chosenConfidence)
+            existing.confidence = computeEffectiveConfidence(baseConf, existing.report_count)
+            existing.updated_at = new Date().toISOString()
+            if (notes && !existing.notes?.includes(notes)) {
+              existing.notes = `${existing.notes} | ${notes}`
+            }
+            inMemoryIntel.set(existing.id, existing)
+            if (!verifiedIntelligenceId) verifiedIntelligenceId = existing.id
           }
-          inMemoryIntel.set(existing.id, existing)
-          if (!verifiedIntelligenceId) verifiedIntelligenceId = existing.id
         } else {
           intelRecord.report_count = 1
           intelRecord.confidence = chosenConfidence
@@ -1181,6 +1265,156 @@ export async function processModerationReview(
     verifiedIntelligenceId,
   }
 }
+
+/**
+ * Inspects past intelligence and historical audit records for an indicator
+ * to provide situational context during moderator review.
+ */
+export async function getIndicatorIntelligenceContext(reportId) {
+  const report = await getReportById(reportId)
+  if (!report) return null
+
+  const storedDomain = report.reported_domain || ''
+  const rawDomain = rehydrate(storedDomain).toLowerCase().trim()
+  const contentSha256 = report.content_sha256 || null
+  const domainVariants = extractDomainVariants(rawDomain)
+  const targetCandidates = new Set([rawDomain, ...domainVariants, defang(rawDomain)].filter(Boolean))
+  if (contentSha256) targetCandidates.add(contentSha256.toLowerCase())
+
+  // 1. Query Active Intelligence
+  let activeIntel = null
+  if (isSupabaseConfigured()) {
+    try {
+      const quoted = Array.from(targetCandidates).map((c) => `"${c.replace(/"/g, '')}"`).join(',')
+      const q = `${SUPABASE_URL}/rest/v1/verified_intelligence?active=eq.true&or=(indicator_value.in.(${quoted}),defanged_value.in.(${quoted}))&order=updated_at.desc&limit=1`
+      const res = await fetch(q, { headers: getHeaders(), signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) })
+      if (res.ok) {
+        const items = await res.json()
+        if (items.length > 0) activeIntel = items[0]
+      }
+    } catch { }
+  } else {
+    for (const item of inMemoryIntel.values()) {
+      if (!item.active) continue
+      const val = (item.indicator_value || '').toLowerCase()
+      const def = (item.defanged_value || '').toLowerCase()
+      if (targetCandidates.has(val) || targetCandidates.has(def)) {
+        activeIntel = item
+        break
+      }
+    }
+  }
+
+  // 2. Query Historical Audit Logs
+  let targetAuditLogs = []
+  if (isSupabaseConfigured()) {
+    try {
+      const quoted = Array.from(targetCandidates).map((c) => `"${c.replace(/"/g, '')}"`).join(',')
+      const q = `${SUPABASE_URL}/rest/v1/moderation_audit_logs?or=(target_indicator.in.(${quoted}),raw_target_indicator.in.(${quoted}))&order=created_at.desc&limit=50`
+      const res = await fetch(q, { headers: getHeaders(), signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) })
+      if (res.ok) {
+        targetAuditLogs = await res.json()
+      }
+    } catch { }
+  }
+
+  if (!targetAuditLogs.length && inMemoryAuditLogs.length > 0) {
+    targetAuditLogs = inMemoryAuditLogs.filter((entry) => {
+      const target = (entry.target_indicator || entry.raw_target_indicator || '').toLowerCase()
+      const defangedTarget = defang(target).toLowerCase()
+      return Array.from(targetCandidates).some((c) => target === c || defangedTarget === c || (c && target.includes(c)))
+    })
+  }
+
+  // 3. Aggregate Prior Decisions
+  const rejections = targetAuditLogs.filter((l) => l.action === 'REJECT')
+  const approvals = targetAuditLogs.filter((l) => l.action === 'APPROVE')
+  const retirements = targetAuditLogs.filter((l) => l.action === 'RETIRE' || l.action === 'RECLASSIFY_INDICATOR')
+
+  const latestRejection = rejections.length > 0 ? {
+    actorEmail: rejections[0].actor_email || null,
+    actorRole: rejections[0].actor_role || 'moderator',
+    notes: rejections[0].moderator_notes || null,
+    createdAt: rejections[0].created_at,
+  } : null
+
+  const latestAction = targetAuditLogs.length > 0 ? {
+    action: targetAuditLogs[0].action,
+    actorEmail: targetAuditLogs[0].actor_email || null,
+    notes: targetAuditLogs[0].moderator_notes || null,
+    createdAt: targetAuditLogs[0].created_at,
+  } : null
+
+  // 4. Conflict & Corroboration Engine
+  let isConflict = false
+  let conflictType = 'NONE'
+  let conflictExplanation = null
+  let revocationConsequence = null
+
+  let isCorroborating = false
+  let corroborationSummary = null
+  let projectedConfidence = null
+  let projectedCount = null
+
+  if (activeIntel) {
+    if (activeIntel.risk_level === 'CONFIRMED_SCAM' && report.report_type === 'false_positive') {
+      isConflict = true
+      conflictType = 'FALSE_ALARM_AGAINST_SCAM'
+      conflictExplanation = `Active Intelligence already classifies this domain as a CONFIRMED SCAM (${(Number(activeIntel.confidence) * 100).toFixed(0)}% Confidence, ${activeIntel.report_count || 1} prior verified reports). The submitter claims this is a False Alarm / Legitimate Domain.`
+      revocationConsequence = `Approving this report will REVOKE the active CONFIRMED_SCAM status, deactivate the malicious indicator, and reclassify the domain as VERIFIED_SAFE in the intelligence feed.`
+    } else if (activeIntel.risk_level === 'VERIFIED_SAFE' && report.report_type === 'suspicious') {
+      isConflict = true
+      conflictType = 'SCAM_AGAINST_SAFE'
+      conflictExplanation = `Active Intelligence classifies this domain as VERIFIED SAFE (${(Number(activeIntel.confidence) * 100).toFixed(0)}% Confidence). The submitter reports this as a Scam / Phishing threat.`
+      revocationConsequence = `Approving this report will REVOKE the VERIFIED_SAFE status and escalate the domain to CONFIRMED_SCAM (HIGH Risk).`
+    } else if (activeIntel.risk_level === 'CONFIRMED_SCAM' && report.report_type === 'suspicious') {
+      isCorroborating = true
+      projectedCount = (activeIntel.report_count || 1) + 1
+      projectedConfidence = computeEffectiveConfidence(Math.max(Number(activeIntel.confidence) || 0.85, 0.9), projectedCount)
+      corroborationSummary = `Domain is already verified as an active threat. Approving will corroborate this threat intelligence, incrementing report count to ${projectedCount} and scaling Bayesian confidence to ${(projectedConfidence * 100).toFixed(0)}%.`
+    } else if (activeIntel.risk_level === 'VERIFIED_SAFE' && report.report_type === 'false_positive') {
+      isCorroborating = true
+      projectedCount = (activeIntel.report_count || 1) + 1
+      projectedConfidence = computeEffectiveConfidence(Math.max(Number(activeIntel.confidence) || 0.9, 0.95), projectedCount)
+      corroborationSummary = `Domain is already verified as legitimate. Approving will corroborate this safe intelligence (Report count: ${projectedCount}).`
+    }
+  }
+
+  return {
+    reportId,
+    targetIndicator: rawDomain || contentSha256,
+    hasActiveIntel: Boolean(activeIntel),
+    activeIntel: activeIntel ? {
+      id: activeIntel.id,
+      indicator_type: activeIntel.indicator_type || 'domain',
+      indicator_value: activeIntel.indicator_value || null,
+      risk_level: activeIntel.risk_level,
+      category: activeIntel.category || 'Threat Intelligence',
+      confidence: Number(activeIntel.confidence) || 1.0,
+      report_count: Number(activeIntel.report_count) || 1,
+      notes: activeIntel.notes || null,
+      created_at: activeIntel.created_at,
+      updated_at: activeIntel.updated_at,
+    } : null,
+    isConflict,
+    conflictType,
+    conflictExplanation,
+    revocationConsequence,
+    isCorroborating,
+    corroborationSummary,
+    projectedConfidence,
+    projectedCount,
+    priorDecisions: {
+      totalRejections: rejections.length,
+      totalApprovals: approvals.length,
+      totalRetirements: retirements.length,
+      totalPriorEvents: targetAuditLogs.length,
+      latestRejection,
+      latestAction,
+    },
+  }
+}
+
 
 export async function checkVerifiedIntelligence(entities = [], contentSha256 = null) {
   const rawDomains = entities.filter((e) => e.type === 'domain').map((e) => (e.normalizedValue || e.value || '').toLowerCase())
@@ -1336,7 +1570,7 @@ export async function recordAuditLog({
 
   const logEntry = candidate
 
-  if (isSupabaseConfigured()) {
+  if (isSupabaseConfigured() && !isTestEnvironment()) {
     try {
       // Attempt 1: Full insert with all enriched columns and cryptographic hash chaining
       const res = await fetch(`${SUPABASE_URL}/rest/v1/moderation_audit_logs`, {
@@ -1419,203 +1653,142 @@ export async function getModerationAuditLogs({
   const searchTrim = typeof search === 'string' ? search.trim().toLowerCase() : ''
   const actorTrim = typeof actor === 'string' ? actor.trim().toLowerCase() : ''
 
+  let combinedRows = [...inMemoryAuditLogs]
   if (isSupabaseConfigured()) {
     try {
-      let query = `${SUPABASE_URL}/rest/v1/moderation_audit_logs?select=*,user_reports(reported_domain,notes,report_type)&order=created_at.desc`
-      if (action && action !== 'ALL') {
-        if (action === 'REVIEWS' || action === 'QUEUE_REVIEWS') {
-          query += `&action=in.(APPROVE,REJECT,RETIRE)`
-        } else {
-          query += `&action=eq.${encodeURIComponent(action)}`
-        }
-      }
-      if (actorTrim) {
-        query += `&actor_email=ilike.*${encodeURIComponent(actorTrim)}*`
-      }
-      if (fromDate) {
-        query += `&created_at=gte.${encodeURIComponent(fromDate)}`
-      }
-      if (toDate) {
-        query += `&created_at=lte.${encodeURIComponent(toDate)}`
-      }
-      if (!searchTrim) {
-        query += `&limit=${limitNum}&offset=${offset}`
-      }
-      const headers = { ...getHeaders(), Prefer: 'count=exact' }
-      const res = await fetch(query, { headers, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) })
+      const res = await fetch(
+        `${SUPABASE_URL}/rest/v1/moderation_audit_logs?select=*,user_reports(reported_domain,notes,report_type)&order=created_at.desc&limit=1000`,
+        { headers: getHeaders(), signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) }
+      )
       if (res.ok) {
         const rawRows = await res.json()
-        // Sort chronologically (oldest to newest) to reconstruct the cryptographic sequence
-        const chronological = [...rawRows].sort((a, b) => {
-          const tA = new Date(a.created_at).getTime()
-          const tB = new Date(b.created_at).getTime()
-          if (tA !== tB) return tA - tB
-          return (Number(a.id) || 0) - (Number(b.id) || 0)
-        })
-
-        let runningPrevHash = GENESIS_PREV_HASH
-
-        const mappedChronological = chronological.map((row) => {
-          const memMatch = inMemoryAuditLogs.find((m) => String(m.id) === String(row.id))
-
-          const rep = row.user_reports
-          let target = row.target_indicator || memMatch?.target_indicator
-          if (!target && rep?.reported_domain) {
-            target = rep.reported_domain
-          }
-          if (target && !target.startsWith('Report #') && !target.startsWith('policy.') && !target.startsWith('engine.') && !target.startsWith('auth.')) {
-            target = target.replace(/^https?:\/\//i, (m) => m.toLowerCase().startsWith('https') ? 'hxxps://' : 'hxxp://')
-            if (!target.includes('[.]')) {
-              target = target.replace(/\.(?=[a-zA-Z0-9])/g, '[.]')
-            }
-          }
-
-          let category = row.threat_category || memMatch?.threat_category
-          if (!category && rep?.notes) {
-            const catMatch = rep.notes.match(/\[Threat Category\]:\s*([^\n\r]+)/)
-            if (catMatch) category = catMatch[1].trim()
-          }
-          if (!category) {
-            const combinedText = `${rep?.reported_domain || ''} ${rep?.notes || ''} ${row.moderator_notes || ''}`.toLowerCase()
-            if (rep?.report_type === 'false_positive' || combinedText.includes('false alarm') || combinedText.includes('official') || combinedText.includes('legitimate')) {
-              category = 'False Alarm'
-            } else if (combinedText.includes('electricity') || combinedText.includes('utility') || combinedText.includes('bill') || combinedText.includes('water')) {
-              category = 'Utility Bill Scam'
-            } else if (combinedText.includes('bank') || combinedText.includes('banking') || combinedText.includes('finance') || combinedText.includes('card') || combinedText.includes('otp')) {
-              category = 'Banking Phishing'
-            } else if (combinedText.includes('telecom') || combinedText.includes('mobile') || combinedText.includes('sms') || combinedText.includes('carrier')) {
-              category = 'Telecom Scam'
-            } else if (combinedText.includes('job') || combinedText.includes('salary') || combinedText.includes('hiring')) {
-              category = 'Fake Job Scam'
-            } else if (combinedText.includes('apk') || combinedText.includes('malware') || combinedText.includes('trojan')) {
-              category = 'Malware / APK'
-            } else if (row.action === 'APPROVE') {
-              category = 'Confirmed Threat'
-            } else if (row.action === 'REJECT') {
-              category = 'Dismissed Report'
-            } else if (row.action === 'RETIRE') {
-              category = 'Retired Indicator'
-            } else if (row.action === 'UPDATE_SETTINGS' || row.action === 'TOGGLE_STATUS') {
-              category = 'Engine Policy'
-            } else if (row.action === 'AUTH_LOGIN' || row.action === 'AUTH_FAILED') {
-              category = 'Authentication'
-            } else if (row.action.startsWith('DOMAIN_')) {
-              category = 'Domain Whitelist'
-            } else if (row.action === 'PURGE_EXPIRED') {
-              category = 'Governance Prune'
-            }
-          }
-
-          const expiresAt = row.expires_at || memMatch?.expires_at || new Date(new Date(row.created_at).getTime() + AUDIT_RETENTION_DAYS * 86400000).toISOString()
-          const prevHash = row.prev_hash || memMatch?.prev_hash || runningPrevHash
-
-          const mapped = {
-            ...row,
-            raw_target_indicator: row.target_indicator || memMatch?.raw_target_indicator || null,
-            target_indicator: target || (row.report_id ? `Report #${String(row.report_id).slice(0, 8)}` : 'System Policy'),
-            threat_category: category,
-            actor_email: row.actor_email || memMatch?.actor_email || 'moderator@trustlens.lk',
-            actor_role: row.actor_role || memMatch?.actor_role || 'moderator',
-            expires_at: expiresAt,
-            prev_hash: prevHash,
-            client_ip: row.client_ip || memMatch?.client_ip || null,
-            user_agent: row.user_agent || memMatch?.user_agent || null,
-          }
-          const entryHash = row.entry_hash || memMatch?.entry_hash || computeAuditHash(prevHash, mapped)
-          mapped.entry_hash = entryHash
-
-          runningPrevHash = entryHash
-          return mapped
-        })
-
-        if (mappedChronological.length > 0) {
-          latestAuditHash = runningPrevHash
-        }
-
-        let rows = mappedChronological.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime() || (Number(b.id) || 0) - (Number(a.id) || 0))
-
-        // Merge in-memory persistent audit entries not already in the Supabase result.
-        const dbIds = new Set(rows.map((r) => String(r.id)))
-        const memOnly = inMemoryAuditLogs.filter(
-          (m) => !dbIds.has(String(m.id)) && (!m.entry_hash || !rows.some((r) => r.entry_hash === m.entry_hash))
-        )
-        if (memOnly.length > 0) {
-          let merged = [...memOnly, ...rows]
-          merged.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-          if (searchTrim) {
-            merged = merged.filter((item) => {
-              return item.target_indicator?.toLowerCase().includes(searchTrim)
-                || item.actor_email?.toLowerCase().includes(searchTrim)
-                || item.moderator_notes?.toLowerCase().includes(searchTrim)
-                || item.threat_category?.toLowerCase().includes(searchTrim)
-                || item.report_id?.toString().toLowerCase().includes(searchTrim)
-                || item.client_ip?.toLowerCase().includes(searchTrim)
-            })
-          }
-          const mergedTotal = merged.length
-          const mergedTotalPages = Math.ceil(mergedTotal / limitNum) || 1
-          return {
-            auditLogs: merged.slice(offset, offset + limitNum),
-            total: mergedTotal,
-            page: pageNum,
-            limit: limitNum,
-            totalPages: mergedTotalPages,
-            retentionDays: AUDIT_RETENTION_DAYS,
-          }
-        }
-
-        if (searchTrim) {
-          rows = rows.filter((item) => {
-            const matchTarget = item.target_indicator?.toLowerCase().includes(searchTrim)
-            const matchEmail = item.actor_email?.toLowerCase().includes(searchTrim)
-            const matchNotes = item.moderator_notes?.toLowerCase().includes(searchTrim)
-            const matchCat = item.threat_category?.toLowerCase().includes(searchTrim)
-            const matchReportId = item.report_id?.toString().toLowerCase().includes(searchTrim)
-            const matchIp = item.client_ip?.toLowerCase().includes(searchTrim)
-            return matchTarget || matchEmail || matchNotes || matchCat || matchReportId || matchIp
-          })
-          const total = rows.length
-          const totalPages = Math.ceil(total / limitNum) || 1
-          const pagedRows = rows.slice(offset, offset + limitNum)
-          return {
-            auditLogs: pagedRows,
-            total,
-            page: pageNum,
-            limit: limitNum,
-            totalPages,
-            retentionDays: AUDIT_RETENTION_DAYS,
-          }
-        }
-
-        const contentRange = res.headers.get('content-range') || ''
-        const match = contentRange.match(/\/(\d+|\*)$/)
-        const total = match && match[1] !== '*' ? parseInt(match[1], 10) : rows.length
-        const totalPages = Math.ceil(total / limitNum) || 1
-        return {
-          auditLogs: rows,
-          total,
-          page: pageNum,
-          limit: limitNum,
-          totalPages,
-          retentionDays: AUDIT_RETENTION_DAYS,
+        if (Array.isArray(rawRows)) {
+          const supabaseIds = new Set(rawRows.map((r) => String(r.id)))
+          const localOnly = inMemoryAuditLogs.filter((m) => !supabaseIds.has(String(m.id)))
+          combinedRows = [...rawRows, ...localOnly]
         }
       }
     } catch {
-      // Fallback to in-memory on network error
+      // Fallback to inMemoryAuditLogs on network error
     }
   }
 
-  let filtered = [...inMemoryAuditLogs]
+  // Sort chronologically (oldest to newest) to reconstruct the cryptographic sequence
+  const chronological = combinedRows.sort((a, b) => {
+    const tA = new Date(a.created_at).getTime()
+    const tB = new Date(b.created_at).getTime()
+    if (tA !== tB) return tA - tB
+    return (Number(a.id) || 0) - (Number(b.id) || 0)
+  })
+
+  let runningPrevHash = GENESIS_PREV_HASH
+
+  const mappedChronological = chronological.map((row) => {
+    const memMatch = inMemoryAuditLogs.find((m) => String(m.id) === String(row.id))
+
+    const rep = row.user_reports
+    let target = row.target_indicator || memMatch?.target_indicator
+    if (!target && rep?.reported_domain) {
+      target = rep.reported_domain
+    }
+    if (target && !target.startsWith('Report #') && !target.startsWith('policy.') && !target.startsWith('engine.') && !target.startsWith('auth.')) {
+      target = target.replace(/^https?:\/\//i, (m) => m.toLowerCase().startsWith('https') ? 'hxxps://' : 'hxxp://')
+      if (!target.includes('[.]')) {
+        target = target.replace(/\.(?=[a-zA-Z0-9])/g, '[.]')
+      }
+    }
+
+    let category = row.threat_category || memMatch?.threat_category
+    if (!category && rep?.notes) {
+      const catMatch = rep.notes.match(/\[Threat Category\]:\s*([^\n\r]+)/)
+      if (catMatch) category = catMatch[1].trim()
+    }
+    if (!category) {
+      const combinedText = `${rep?.reported_domain || ''} ${rep?.notes || ''} ${row.moderator_notes || ''}`.toLowerCase()
+      if (rep?.report_type === 'false_positive' || combinedText.includes('false alarm') || combinedText.includes('official') || combinedText.includes('legitimate')) {
+        category = 'False Alarm'
+      } else if (combinedText.includes('electricity') || combinedText.includes('utility') || combinedText.includes('bill') || combinedText.includes('water')) {
+        category = 'Utility Bill Scam'
+      } else if (combinedText.includes('bank') || combinedText.includes('banking') || combinedText.includes('finance') || combinedText.includes('card') || combinedText.includes('otp')) {
+        category = 'Banking Phishing'
+      } else if (combinedText.includes('telecom') || combinedText.includes('mobile') || combinedText.includes('sms') || combinedText.includes('carrier')) {
+        category = 'Telecom Scam'
+      } else if (combinedText.includes('job') || combinedText.includes('salary') || combinedText.includes('hiring')) {
+        category = 'Fake Job Scam'
+      } else if (combinedText.includes('apk') || combinedText.includes('malware') || combinedText.includes('trojan')) {
+        category = 'Malware / APK'
+      } else if (row.action === 'APPROVE') {
+        category = 'Confirmed Threat'
+      } else if (row.action === 'REJECT') {
+        category = 'Dismissed Report'
+      } else if (row.action === 'RETIRE') {
+        category = 'Retired Indicator'
+      } else if (row.action === 'UPDATE_SETTINGS' || row.action === 'TOGGLE_STATUS') {
+        category = 'Engine Policy'
+      } else if (row.action === 'AUTH_LOGIN' || row.action === 'AUTH_FAILED') {
+        category = 'Authentication'
+      } else if (row.action?.startsWith('DOMAIN_')) {
+        category = 'Domain Whitelist'
+      } else if (row.action === 'PURGE_EXPIRED') {
+        category = 'Governance Prune'
+      }
+    }
+
+    const expiresAt = row.expires_at || memMatch?.expires_at || new Date(new Date(row.created_at).getTime() + AUDIT_RETENTION_DAYS * 86400000).toISOString()
+    const prevHash = runningPrevHash
+
+    const mapped = {
+      ...row,
+      ...(memMatch || {}),
+      id: row.id,
+      created_at: memMatch?.created_at || row.created_at,
+      raw_target_indicator: (memMatch?.raw_target_indicator !== undefined && memMatch?.raw_target_indicator !== null) ? memMatch.raw_target_indicator : (row.target_indicator || null),
+      target_indicator: memMatch?.target_indicator || target || (row.report_id ? `Report #${String(row.report_id).slice(0, 8)}` : 'System Policy'),
+      threat_category: memMatch?.threat_category || category,
+      moderator_notes: memMatch?.moderator_notes || row.moderator_notes,
+      actor_email: memMatch?.actor_email || row.actor_email || 'moderator@trustlens.lk',
+      actor_role: memMatch?.actor_role || row.actor_role || 'moderator',
+      expires_at: memMatch?.expires_at || expiresAt,
+      prev_hash: prevHash,
+      client_ip: memMatch?.client_ip || row.client_ip || null,
+      user_agent: memMatch?.user_agent || row.user_agent || null,
+    }
+    const entryHash = computeAuditHash(prevHash, mapped)
+    mapped.entry_hash = entryHash
+
+    runningPrevHash = entryHash
+    return mapped
+  })
+
+  if (mappedChronological.length > 0) {
+    latestAuditHash = runningPrevHash
+  }
+
+  let filtered = mappedChronological
+
+  // 1. Action filter
   if (action && action !== 'ALL') {
     if (action === 'REVIEWS' || action === 'QUEUE_REVIEWS') {
       filtered = filtered.filter((item) => item.action === 'APPROVE' || item.action === 'REJECT' || item.action === 'RETIRE')
+    } else if (action === 'AUTH_LOGIN') {
+      filtered = filtered.filter((item) => item.action === 'AUTH_LOGIN' || item.action === 'AUTH_FAILED')
+    } else if (action === 'DOMAIN_CREATE') {
+      filtered = filtered.filter((item) => item.action?.startsWith('DOMAIN_'))
+    } else if (action === 'MANUAL_INTEL') {
+      filtered = filtered.filter((item) => item.action === 'MANUAL_INTEL' || item.action === 'CREATE_INTEL')
+    } else if (action === 'UPDATE_SETTINGS') {
+      filtered = filtered.filter((item) => item.action === 'UPDATE_SETTINGS' || item.action === 'TOGGLE_STATUS')
     } else {
       filtered = filtered.filter((item) => item.action === action)
     }
   }
+
+  // 2. Actor filter
   if (actorTrim) {
     filtered = filtered.filter((item) => item.actor_email?.toLowerCase().includes(actorTrim))
   }
+
+  // 3. Date range filters
   if (fromDate) {
     const fromMs = new Date(fromDate).getTime()
     if (!isNaN(fromMs)) {
@@ -1628,19 +1801,28 @@ export async function getModerationAuditLogs({
       filtered = filtered.filter((item) => new Date(item.created_at).getTime() <= toMs)
     }
   }
+
+  // 4. Search filter
   if (searchTrim) {
     filtered = filtered.filter((item) => {
-      const matchIndicator = item.target_indicator?.toLowerCase().includes(searchTrim)
+      const matchTarget = item.target_indicator?.toLowerCase().includes(searchTrim)
       const matchEmail = item.actor_email?.toLowerCase().includes(searchTrim)
       const matchNotes = item.moderator_notes?.toLowerCase().includes(searchTrim)
-      const matchCategory = item.threat_category?.toLowerCase().includes(searchTrim)
-      const matchReportId = item.report_id?.toLowerCase().includes(searchTrim)
+      const matchCat = item.threat_category?.toLowerCase().includes(searchTrim)
+      const matchReportId = item.report_id?.toString().toLowerCase().includes(searchTrim)
       const matchIp = item.client_ip?.toLowerCase().includes(searchTrim)
-      return matchIndicator || matchEmail || matchNotes || matchCategory || matchReportId || matchIp
+      return matchTarget || matchEmail || matchNotes || matchCat || matchReportId || matchIp
     })
   }
 
-  filtered.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+  // Sort chronologically descending (newest first)
+  filtered.sort((a, b) => {
+    const tA = new Date(a.created_at).getTime()
+    const tB = new Date(b.created_at).getTime()
+    if (tB !== tA) return tB - tA
+    return (Number(b.id) || 0) - (Number(a.id) || 0)
+  })
+
   const total = filtered.length
   const totalPages = Math.ceil(total / limitNum) || 1
   const auditLogs = filtered.slice(offset, offset + limitNum)
@@ -1896,47 +2078,19 @@ export async function getAuditStorageStats() {
   const retentionMs = AUDIT_RETENTION_DAYS * 86400000
   const warningWindowMs = 7 * 86400000
 
+  let combinedRows = [...inMemoryAuditLogs]
   if (isSupabaseConfigured()) {
     try {
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/moderation_audit_logs?select=id,action,created_at&order=created_at.desc`, {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/moderation_audit_logs?select=id,action,created_at&order=created_at.desc&limit=1000`, {
         headers: getHeaders(),
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       })
       if (res.ok) {
         const rows = await res.json()
-        const total = rows.length
-        const sorted = [...rows].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
-
-        let expiredRecordsCount = 0
-        let expiringSoonCount = 0
-        for (const r of rows) {
-          const createdMs = new Date(r.created_at).getTime()
-          if (isNaN(createdMs)) continue
-          const expiresMs = createdMs + retentionMs
-          if (expiresMs <= nowMs) {
-            expiredRecordsCount++
-          } else if (expiresMs <= nowMs + warningWindowMs) {
-            expiringSoonCount++
-          }
-        }
-
-        const actionBreakdown = {
-          approve: rows.filter((r) => r.action === 'APPROVE').length,
-          reject: rows.filter((r) => r.action === 'REJECT').length,
-          retire: rows.filter((r) => r.action === 'RETIRE').length,
-          settings: rows.filter((r) => r.action === 'UPDATE_SETTINGS').length,
-          toggle: rows.filter((r) => r.action === 'TOGGLE_STATUS').length,
-          purge: rows.filter((r) => r.action === 'PURGE_EXPIRED').length,
-        }
-        return {
-          totalRecords: total,
-          retentionDays: AUDIT_RETENTION_DAYS,
-          oldestRecordAt: sorted[0]?.created_at || null,
-          newestRecordAt: sorted[sorted.length - 1]?.created_at || null,
-          storageStatus: total >= 100000 ? 'CAPACITY_REACHED' : total >= 50000 ? 'WARNING' : 'OPTIMAL',
-          actionBreakdown,
-          expiredRecordsCount,
-          expiringSoonCount,
+        if (Array.isArray(rows)) {
+          const supabaseIds = new Set(rows.map((r) => String(r.id)))
+          const localOnly = inMemoryAuditLogs.filter((m) => !supabaseIds.has(String(m.id)))
+          combinedRows = [...rows, ...localOnly]
         }
       }
     } catch {
@@ -1944,18 +2098,18 @@ export async function getAuditStorageStats() {
     }
   }
 
-  const total = inMemoryAuditLogs.length
+  const total = combinedRows.length
   let oldestRecordAt = null
   let newestRecordAt = null
   let expiredRecordsCount = 0
   let expiringSoonCount = 0
 
   if (total > 0) {
-    const sorted = [...inMemoryAuditLogs].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+    const sorted = [...combinedRows].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
     oldestRecordAt = sorted[0]?.created_at || null
     newestRecordAt = sorted[sorted.length - 1]?.created_at || null
 
-    for (const a of inMemoryAuditLogs) {
+    for (const a of combinedRows) {
       const createdMs = new Date(a.created_at).getTime()
       if (isNaN(createdMs)) continue
       const expiresMs = createdMs + retentionMs
@@ -1974,12 +2128,15 @@ export async function getAuditStorageStats() {
     newestRecordAt,
     storageStatus: total >= 100000 ? 'CAPACITY_REACHED' : total >= 50000 ? 'WARNING' : 'OPTIMAL',
     actionBreakdown: {
-      approve: inMemoryAuditLogs.filter((a) => a.action === 'APPROVE').length,
-      reject: inMemoryAuditLogs.filter((a) => a.action === 'REJECT').length,
-      retire: inMemoryAuditLogs.filter((a) => a.action === 'RETIRE').length,
-      settings: inMemoryAuditLogs.filter((a) => a.action === 'UPDATE_SETTINGS').length,
-      toggle: inMemoryAuditLogs.filter((a) => a.action === 'TOGGLE_STATUS').length,
-      purge: inMemoryAuditLogs.filter((a) => a.action === 'PURGE_EXPIRED').length,
+      approve: combinedRows.filter((a) => a.action === 'APPROVE').length,
+      reject: combinedRows.filter((a) => a.action === 'REJECT').length,
+      retire: combinedRows.filter((a) => a.action === 'RETIRE').length,
+      settings: combinedRows.filter((a) => a.action === 'UPDATE_SETTINGS').length,
+      toggle: combinedRows.filter((a) => a.action === 'TOGGLE_STATUS').length,
+      purge: combinedRows.filter((a) => a.action === 'PURGE_EXPIRED').length,
+      auth: combinedRows.filter((a) => a.action === 'AUTH_LOGIN' || a.action === 'AUTH_FAILED').length,
+      domain: combinedRows.filter((a) => a.action?.startsWith('DOMAIN_')).length,
+      manualIntel: combinedRows.filter((a) => a.action === 'MANUAL_INTEL' || a.action === 'CREATE_INTEL').length,
     },
     expiredRecordsCount,
     expiringSoonCount,
@@ -2296,19 +2453,135 @@ export async function createManualIntelligenceEntry(
   return { ...record, report_count: 1 }
 }
 
-export async function seedDemoQueue() {
+const GEMINI_SEED_MODELS = [
+  'gemini-flash-lite-latest',
+  'gemini-1.5-flash',
+  'gemini-2.0-flash',
+]
+
+/**
+ * Generates synthetic Sri Lankan cyber-threat scam reports using Google Gemini API.
+ * Fails safely: Returns null on timeout, missing key, or API errors to seamlessly trigger static fallback.
+ */
+export async function fetchGeminiDemoReports(options = {}) {
+  // During automated tests, avoid outbound network calls unless explicitly opted-in
+  if (!GEMINI_API_KEY || (isTestEnvironment() && !options.allowAiInTest)) {
+    return null
+  }
+
+  const prompt = `You are an expert Sri Lankan cyber-threat intelligence analyst for TrustLens LK.
+Generate exactly 3 realistic, highly authentic citizen-reported cyber scam or threat messages for moderator queue evaluation in Sri Lanka.
+Include:
+1. One SMS or WhatsApp phishing scam targeting a Sri Lankan telecom or utility (e.g. Dialog Star Points, SLT-Mobitel, CEB electricity bill, e-Channelling).
+2. One banking / financial KYC phishing or OTP theft alert targeting a major Sri Lankan bank (e.g. Commercial Bank, Bank of Ceylon, Sampath Bank, People's Bank).
+3. One government notice or false-positive where a citizen reported a lookalike or legitimate .gov.lk site (e.g. Inland Revenue tax refund, Department of Immigration passport appointment, or MoHE university portal).
+
+Return STRICTLY a valid JSON array of 3 objects with NO markdown code fences and NO preamble, matching this exact JSON schema:
+[
+  {
+    "report_type": "suspicious" | "false_positive",
+    "reported_domain": "example-scam.xyz",
+    "raw_excerpt": "Full text of the message in English or Singlish",
+    "notes": "Brief submitter notes explaining where received and why flagged"
+  }
+]`
+
+  for (const model of GEMINI_SEED_MODELS) {
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(GEMINI_API_KEY)}`
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            responseMimeType: 'application/json',
+            temperature: 0.7,
+          },
+        }),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      })
+
+      if (!res.ok) continue
+
+      const data = await res.json()
+      const contentText = data?.candidates?.[0]?.content?.parts?.[0]?.text
+      if (!contentText) continue
+
+      let cleanJson = contentText.trim()
+      if (cleanJson.startsWith('```')) {
+        cleanJson = cleanJson.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim()
+      }
+      if (!cleanJson.startsWith('[')) {
+        const match = cleanJson.match(/\[[\s\S]*\]/)
+        if (match) cleanJson = match[0]
+      }
+
+      const parsed = JSON.parse(cleanJson)
+      if (Array.isArray(parsed) && parsed.length >= 1) {
+        return parsed.slice(0, 3).map((item) => ({
+          report_type: ['suspicious', 'false_positive', 'false_negative'].includes(item.report_type)
+            ? item.report_type
+            : 'suspicious',
+          reported_domain: (item.reported_domain || 'unknown-scam.xyz')
+            .toLowerCase()
+            .replace(/^https?:\/\//i, '')
+            .split('/')[0]
+            .trim(),
+          raw_excerpt: String(item.raw_excerpt || item.notes || 'Suspicious message received').trim(),
+          notes: String(item.notes || 'Citizen reported potential scam').trim(),
+          isAiGenerated: true,
+        }))
+      }
+    } catch {
+      // Continue to next model or fallback
+    }
+  }
+
+  return null
+}
+
+export async function seedDemoQueue(options = {}) {
+  let reportsToSeed = null
+  let generatorType = 'static'
+
+  if (!options.forceStatic) {
+    try {
+      const aiReports = await fetchGeminiDemoReports(options)
+      if (aiReports && aiReports.length > 0) {
+        reportsToSeed = aiReports
+        generatorType = 'gemini'
+      }
+    } catch {
+      // Fallback
+    }
+  }
+
+  if (!reportsToSeed || reportsToSeed.length === 0) {
+    reportsToSeed = DEMO_REPORTS.map((r) => ({
+      ...r,
+      isAiGenerated: false,
+    }))
+    generatorType = 'static'
+  }
+
   const seeded = []
-  for (const demo of DEMO_REPORTS) {
+  for (const demo of reportsToSeed) {
     const freshId = randomUUID()
+    const rawExcerpt = demo.raw_excerpt || demo.notes || ''
+    const contentHash = demo.content_sha256 || createHash('sha256').update(rawExcerpt.trim()).digest('hex')
+    const aiTag = demo.isAiGenerated ? '[DEMO_FIXTURE:GEMINI]' : '[DEMO_FIXTURE:STATIC]'
+
     const dbPayload = {
       id: freshId,
       report_type: demo.report_type,
-      content_sha256: demo.content_sha256,
+      content_sha256: contentHash,
       reported_domain: demo.reported_domain,
-      notes: `[Reported Message Excerpt]: "${demo.raw_excerpt}"\n\n[Submitter Context]: ${demo.notes} [DEMO_FIXTURE]`,
-      status: demo.status,
+      notes: `[Reported Message Excerpt]: "${rawExcerpt}"\n\n[Submitter Context]: ${demo.notes} ${aiTag} [DEMO_FIXTURE]`,
+      status: demo.status || 'PENDING',
       created_at: new Date().toISOString(),
     }
+
     if (isSupabaseConfigured()) {
       try {
         const res = await fetch(`${SUPABASE_URL}/rest/v1/user_reports`, {
@@ -2343,6 +2616,7 @@ export async function seedDemoQueue() {
     }
   }
 
+  seeded.generator = generatorType
   return seeded
 }
 
