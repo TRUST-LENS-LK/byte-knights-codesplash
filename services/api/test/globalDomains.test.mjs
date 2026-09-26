@@ -103,9 +103,10 @@ test('an L2 database failure is swallowed silently rather than breaking analysis
   })
 })
 
-test('a Tier 1 curated-directory match suppresses the Tier 3 global-domain check for the same domain', async () => {
-  // github.com would also be picked up by Tier 3's L1 cache, so this proves
-  // the suppression guard actually runs, not just that Tier 1 wins by luck.
+test('a Tier 1 curated-directory match no longer suppresses the Tier 3 global-domain check — both findings are produced', async () => {
+  // github.com is in both the Tier 1 mock directory AND the Tier 3 L1 cache.
+  // The pipeline should now produce BOTH an approved_domain and a
+  // known_global_domain finding, since each is an independent signal.
   await withServer({ mockRows: [{ name: 'GitHub', official_domain: 'github.com', category: 'Tech', source_url: null }] }, async (apiPort) => {
     const response = await fetch(`http://localhost:${apiPort}/api/analyze`, {
       method: 'POST',
@@ -114,7 +115,7 @@ test('a Tier 1 curated-directory match suppresses the Tier 3 global-domain check
     })
     const body = await response.json()
     assert.equal(response.status, 200)
-    assert.equal(body.decision.findings.some((f) => f.canonicalSignal === 'approved_domain'), true)
-    assert.equal(body.decision.findings.some((f) => f.canonicalSignal === 'known_global_domain'), false)
+    assert.equal(body.decision.findings.some((f) => f.canonicalSignal === 'approved_domain'), true, 'Tier 1 approved_domain finding should be present')
+    assert.equal(body.decision.findings.some((f) => f.canonicalSignal === 'known_global_domain'), true, 'Tier 3 known_global_domain finding should also be present')
   })
 })

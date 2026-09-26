@@ -28,6 +28,7 @@ import {
   Trash2,
   FileSpreadsheet,
   Info,
+  AlertTriangle,
 } from 'lucide-react'
 import {
   type ModerationQueueItem,
@@ -59,6 +60,7 @@ import {
   fetchDomainDirectoryEntries,
   createDomainDirectoryEntry,
   updateDomainDirectoryEntry,
+  formatApiErrorMessage,
 } from '../services/moderatorService'
 import { defangIndicator } from '../services/reportingService'
 import { formatRelativeTime } from '../utils/formatTime'
@@ -556,18 +558,62 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
   const [isTogglingEngine, setIsTogglingEngine] = useState<boolean>(false)
 
   // Toast Notification
-  const [toastMessage, setToastMessage] = useState<string | null>(null)
+  const [toast, setToast] = useState<{
+    id: string
+    message: string
+    type: 'success' | 'error' | 'warning' | 'info'
+    title?: string
+  } | null>(null)
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const showToast = useCallback((msg: string) => {
-    if (toastTimerRef.current) {
-      clearTimeout(toastTimerRef.current)
-    }
-    setToastMessage(msg)
-    toastTimerRef.current = setTimeout(() => {
-      setToastMessage(null)
-    }, 4500)
-  }, [])
+  const showToast = useCallback(
+    (msg: string, type?: 'success' | 'error' | 'warning' | 'info', title?: string) => {
+      if (toastTimerRef.current) {
+        clearTimeout(toastTimerRef.current)
+      }
+
+      let cleanMsg = (msg || '').trim()
+      let resolvedType = type
+
+      if (!resolvedType) {
+        if (cleanMsg.startsWith('✓')) {
+          resolvedType = 'success'
+          cleanMsg = cleanMsg.replace(/^✓\s*/, '')
+        } else if (cleanMsg.startsWith('⚠')) {
+          resolvedType = 'warning'
+          cleanMsg = cleanMsg.replace(/^⚠\s*/, '')
+        } else if (
+          /failed|error|invalid|reject|conflict|duplicate|issue|already exists|not found/i.test(cleanMsg)
+        ) {
+          resolvedType = 'error'
+        } else {
+          resolvedType = 'info'
+        }
+      } else {
+        cleanMsg = cleanMsg.replace(/^[✓⚠]\s*/, '')
+      }
+
+      if (resolvedType === 'error') {
+        cleanMsg = formatApiErrorMessage(cleanMsg)
+        if (!title) {
+          title = 'Action Failed'
+        }
+      }
+
+      setToast({
+        id: String(Date.now()),
+        message: cleanMsg,
+        type: resolvedType,
+        title,
+      })
+
+      const duration = resolvedType === 'error' ? 6500 : 4500
+      toastTimerRef.current = setTimeout(() => {
+        setToast(null)
+      }, duration)
+    },
+    []
+  )
 
   const handleSignOut = useCallback(() => {
     clearSession()
@@ -935,6 +981,11 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
   const [newDomainDomain, setNewDomainDomain] = useState('')
   const [newDomainCategory, setNewDomainCategory] = useState('')
   const [newDomainSourceUrl, setNewDomainSourceUrl] = useState('')
+  const [domainFormError, setDomainFormError] = useState<string | null>(null)
+  const [domainSearchQuery, setDomainSearchQuery] = useState('')
+  const [domainStatusFilter, setDomainStatusFilter] = useState<'ALL' | 'ACTIVE' | 'STALE' | 'RETIRED'>('ALL')
+  const [domainPage, setDomainPage] = useState(1)
+  const [domainPageSize, setDomainPageSize] = useState(10)
 
   const loadDomainEntries = useCallback(async () => {
     if (!token) return
@@ -957,27 +1008,52 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
 
   const handleAddDomainEntry = async () => {
     if (!token) return
-    if (!newDomainName.trim() || !newDomainDomain.trim()) {
-      showToast('Organization name and domain are both required.')
+    setDomainFormError(null)
+
+    const name = newDomainName.trim()
+    const rawDomain = newDomainDomain
+      .trim()
+      .toLowerCase()
+      .replace(/^https?:\/\//i, '')
+      .replace(/\/.*$/, '')
+
+    if (!name || !rawDomain) {
+      const err = 'Organization name and official domain are both required.'
+      setDomainFormError(err)
+      showToast(err, 'error', 'Missing Required Fields')
       return
     }
+
+    const duplicate = domainEntries.find(
+      (entry) => entry.officialDomain.toLowerCase() === rawDomain
+    )
+    if (duplicate) {
+      const err = `Domain "${rawDomain}" is already in the official directory (${duplicate.name}).`
+      setDomainFormError(err)
+      showToast(err, 'error', 'Domain Already Registered')
+      return
+    }
+
     setIsAddingDomain(true)
     const res = await createDomainDirectoryEntry(token, {
-      name: newDomainName.trim(),
-      officialDomain: newDomainDomain.trim(),
+      name,
+      officialDomain: rawDomain,
       category: newDomainCategory.trim() || undefined,
       sourceUrl: newDomainSourceUrl.trim() || undefined,
     })
     setIsAddingDomain(false)
     if (res.success) {
-      showToast(`Added ${newDomainName.trim()} (${newDomainDomain.trim()}) to the official domain directory.`)
+      setDomainFormError(null)
+      showToast(`Added ${name} (${rawDomain}) to the official domain directory.`, 'success', 'Domain Added')
       setNewDomainName('')
       setNewDomainDomain('')
       setNewDomainCategory('')
       setNewDomainSourceUrl('')
       void loadDomainEntries()
     } else {
-      showToast(`Failed to add domain: ${res.error}`)
+      const cleanErr = formatApiErrorMessage(res.error, 'Failed to add domain')
+      setDomainFormError(cleanErr)
+      showToast(cleanErr, 'error', 'Failed to Add Domain')
     }
   }
 
@@ -996,6 +1072,35 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
       showToast(`Failed to update ${entry.name}: ${res.error}`)
     }
   }
+
+  const handleResetDomainFilters = () => {
+    setDomainSearchQuery('')
+    setDomainStatusFilter('ALL')
+    setDomainPage(1)
+  }
+
+  const filteredDomainEntries = useMemo(() => {
+    let items = domainEntries
+    if (domainStatusFilter !== 'ALL') {
+      items = items.filter((entry) => entry.status === domainStatusFilter)
+    }
+    const q = domainSearchQuery.trim().toLowerCase()
+    if (q) {
+      items = items.filter(
+        (entry) =>
+          entry.name.toLowerCase().includes(q) ||
+          entry.officialDomain.toLowerCase().includes(q) ||
+          (entry.category || '').toLowerCase().includes(q)
+      )
+    }
+    return items
+  }, [domainEntries, domainStatusFilter, domainSearchQuery])
+
+  const domainTotalPages = Math.max(1, Math.ceil(filteredDomainEntries.length / domainPageSize))
+  const paginatedDomainEntries = filteredDomainEntries.slice(
+    (domainPage - 1) * domainPageSize,
+    domainPage * domainPageSize
+  )
 
   const [editingIntelId, setEditingIntelId] = useState<string | null>(null)
   const [editingIntelNoteText, setEditingIntelNoteText] = useState('')
@@ -1101,7 +1206,8 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
     const res = await seedDemoReports(token)
     setIsSeeding(false)
     if (res.success) {
-      showToast(`✓ Seeded ${res.count ?? 3} realistic Sri Lankan scam reports for evaluation.`)
+      const modeLabel = res.generator === 'gemini' ? 'via Gemini AI' : 'from fixtures'
+      showToast(`✓ Seeded ${res.count ?? 3} realistic Sri Lankan scam reports for evaluation (${modeLabel}).`)
       void loadReports(true)
     } else {
       showToast(`Seed failed: ${res.error}`)
@@ -1396,14 +1502,26 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
   if (!token || !user) {
     return (
       <div key="page-moderator-login" className="trustlens-page-transition">
-        {toastMessage && (
-          <div className="neo-toast" role="status" aria-live="polite">
-            <CheckCircle2 size={16} className="neo-toast-icon" aria-hidden="true" />
-            <span className="neo-toast-text">{toastMessage}</span>
+        {toast && (
+          <div
+            className={`neo-toast neo-toast-${toast.type}`}
+            role={toast.type === 'error' ? 'alert' : 'status'}
+            aria-live={toast.type === 'error' ? 'assertive' : 'polite'}
+          >
+            <div className="neo-toast-icon-wrapper">
+              {toast.type === 'success' && <CheckCircle2 size={18} className="neo-toast-icon neo-toast-icon-success" aria-hidden="true" />}
+              {toast.type === 'error' && <AlertCircle size={18} className="neo-toast-icon neo-toast-icon-error" aria-hidden="true" />}
+              {toast.type === 'warning' && <AlertTriangle size={18} className="neo-toast-icon neo-toast-icon-warning" aria-hidden="true" />}
+              {toast.type === 'info' && <Info size={18} className="neo-toast-icon neo-toast-icon-info" aria-hidden="true" />}
+            </div>
+            <div className="neo-toast-body">
+              {toast.title && <div className="neo-toast-title">{toast.title}</div>}
+              <span className="neo-toast-text">{toast.message}</span>
+            </div>
             <button
               type="button"
               className="neo-toast-close"
-              onClick={() => setToastMessage(null)}
+              onClick={() => setToast(null)}
               aria-label="Dismiss notification"
             >
               <X size={14} aria-hidden="true" />
@@ -1679,14 +1797,26 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
   return (
     <div key="page-moderator-dashboard" className="neo-dashboard-wrapper trustlens-page-transition">
       {/* Toast Notification */}
-      {toastMessage && (
-        <div className="neo-toast" role="status" aria-live="polite">
-          <CheckCircle2 size={16} className="neo-toast-icon" aria-hidden="true" />
-          <span className="neo-toast-text">{toastMessage}</span>
+      {toast && (
+        <div
+          className={`neo-toast neo-toast-${toast.type}`}
+          role={toast.type === 'error' ? 'alert' : 'status'}
+          aria-live={toast.type === 'error' ? 'assertive' : 'polite'}
+        >
+          <div className="neo-toast-icon-wrapper">
+            {toast.type === 'success' && <CheckCircle2 size={18} className="neo-toast-icon neo-toast-icon-success" aria-hidden="true" />}
+            {toast.type === 'error' && <AlertCircle size={18} className="neo-toast-icon neo-toast-icon-error" aria-hidden="true" />}
+            {toast.type === 'warning' && <AlertTriangle size={18} className="neo-toast-icon neo-toast-icon-warning" aria-hidden="true" />}
+            {toast.type === 'info' && <Info size={18} className="neo-toast-icon neo-toast-icon-info" aria-hidden="true" />}
+          </div>
+          <div className="neo-toast-body">
+            {toast.title && <div className="neo-toast-title">{toast.title}</div>}
+            <span className="neo-toast-text">{toast.message}</span>
+          </div>
           <button
             type="button"
             className="neo-toast-close"
-            onClick={() => setToastMessage(null)}
+            onClick={() => setToast(null)}
             aria-label="Dismiss notification"
           >
             <X size={14} aria-hidden="true" />
@@ -2446,24 +2576,9 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                                     <span className="neo-target-domain" title={item.reported_domain || 'Message-only'}>
                                       {formatCleanIndicator(item.reported_domain)}
                                     </span>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap', marginTop: '2px' }}>
-                                      <span className="neo-target-type">
-                                        {item.reported_domain ? 'Domain' : 'Message'}
-                                      </span>
-                                      {item.protected_entity?.isProtected && (
-                                        <span
-                                          className={`neo-protected-entity-pill ${item.protected_entity.type === 'OFFICIAL_NATIONAL' ? 'national' : 'global'}`}
-                                          title={item.protected_entity.warning}
-                                        >
-                                          {item.protected_entity.badge}
-                                        </span>
-                                      )}
-                                    </div>
-                                    {item.protected_entity?.isProtected && item.status === 'PENDING' && (
-                                      <span className="neo-protected-queue-recommendation" title="Guardrail recommendation">
-                                        {item.report_type === 'false_positive' ? '✓ Disputed Safe' : '⚡ Recom: REJECT'}
-                                      </span>
-                                    )}
+                                    <span className="neo-target-type">
+                                      {item.reported_domain ? 'Domain' : 'Message'}
+                                    </span>
                                   </div>
                                 </div>
                               </td>
@@ -2637,7 +2752,7 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                       { id: 'ALL', label: `All (${auditTotal})` },
                       {
                         id: 'REVIEWS',
-                        label: `Queue Reviews (${(auditStorageStats?.actionBreakdown?.approve || 0) + (auditStorageStats?.actionBreakdown?.reject || 0) + (auditStorageStats?.actionBreakdown?.retire || 0)})`,
+                        label: 'Queue Reviews',
                       },
                       { id: 'AUTH_LOGIN', label: 'Auth Logs' },
                       { id: 'DOMAIN_CREATE', label: 'Domains' },
@@ -2722,12 +2837,12 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                   <div className="neo-audit-action-buttons">
                     <button
                       type="button"
-                      className={`neo-btn-toolbar-verify ${chainVerificationResult ? (chainVerificationResult.verified ? 'verified-active' : 'tampered-active') : ''}`}
+                      className={`neo-btn-toolbar-verify ${isVerifyingChain ? 'is-verifying' : ''} ${chainVerificationResult ? (chainVerificationResult.verified ? 'verified-active' : 'tampered-active') : ''}`}
                       onClick={handleVerifyChain}
                       disabled={isVerifyingChain}
                       title="Cryptographically verify SHA-256 hash chaining across all audit records"
                     >
-                      <ShieldCheck size={13} aria-hidden="true" />
+                      <ShieldCheck size={13} className={isVerifyingChain ? 'neo-spin-icon' : ''} aria-hidden="true" />
                       <span>
                         {isVerifyingChain
                           ? 'Verifying Chain...'
@@ -3481,7 +3596,7 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
           {/* VIEW 5: OFFICIAL DOMAIN DIRECTORY MANAGEMENT (Member 3)                   */}
           {/* ========================================================================= */}
           {activeNav === 'DOMAINS' && (
-            <section className="neo-queue-view-layout" aria-label="Official Domain Directory Management">
+            <section key="DOMAINS" className="neo-queue-view-layout neo-view-transition" aria-label="Official Domain Directory Management">
               <div className="neo-intel-metrics-row">
                 <div className="neo-intel-stat-card">
                   <div className="neo-intel-stat-top">
@@ -3521,9 +3636,17 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                     <input
                       type="text"
                       value={newDomainName}
-                      onChange={(e) => setNewDomainName(e.target.value)}
+                      onChange={(e) => {
+                        setNewDomainName(e.target.value)
+                        if (domainFormError) setDomainFormError(null)
+                      }}
                       placeholder="e.g. National Service Organization"
-                      style={{ padding: '8px 10px', borderRadius: '6px', border: '1px solid #CBD5E1', minWidth: '220px' }}
+                      style={{
+                        padding: '8px 10px',
+                        borderRadius: '6px',
+                        border: domainFormError && !newDomainName.trim() ? '1px solid #EF4444' : '1px solid #CBD5E1',
+                        minWidth: '220px',
+                      }}
                     />
                   </label>
                   <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#475569' }}>
@@ -3531,9 +3654,17 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                     <input
                       type="text"
                       value={newDomainDomain}
-                      onChange={(e) => setNewDomainDomain(e.target.value)}
+                      onChange={(e) => {
+                        setNewDomainDomain(e.target.value)
+                        if (domainFormError) setDomainFormError(null)
+                      }}
                       placeholder="e.g. organization.gov.lk or domain.lk"
-                      style={{ padding: '8px 10px', borderRadius: '6px', border: '1px solid #CBD5E1', minWidth: '180px' }}
+                      style={{
+                        padding: '8px 10px',
+                        borderRadius: '6px',
+                        border: domainFormError ? '1px solid #EF4444' : '1px solid #CBD5E1',
+                        minWidth: '180px',
+                      }}
                     />
                   </label>
                   <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', color: '#475569' }}>
@@ -3565,104 +3696,247 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                     {isAddingDomain ? 'Adding...' : 'Add domain'}
                   </button>
                 </div>
+                {domainFormError && (
+                  <div className="neo-domain-inline-error" role="alert">
+                    <AlertCircle size={15} className="neo-domain-inline-error-icon" aria-hidden="true" />
+                    <span>{domainFormError}</span>
+                    <button
+                      type="button"
+                      className="neo-domain-inline-error-dismiss"
+                      onClick={() => setDomainFormError(null)}
+                      aria-label="Dismiss error message"
+                    >
+                      <X size={13} />
+                    </button>
+                  </div>
+                )}
               </div>
 
-              {domainsError && (
-                <div className="neo-modern-error-banner" role="alert" style={{ marginBottom: '16px' }}>
-                  <AlertCircle size={14} aria-hidden="true" />
-                  <span>{domainsError}</span>
-                </div>
-              )}
+              <div className="neo-modern-table-card">
+                <div className="neo-modern-toolbar">
+                  <div className="neo-toolbar-search-box">
+                    <Search size={14} className="neo-search-icon-inside" aria-hidden="true" />
+                    <input
+                      type="text"
+                      placeholder="Search organization, domain, category..."
+                      value={domainSearchQuery}
+                      onChange={(e) => {
+                        setDomainSearchQuery(e.target.value)
+                        setDomainPage(1)
+                      }}
+                      className="neo-modern-search-input"
+                    />
+                  </div>
 
-              <div className="neo-modern-table-wrapper">
-                <table className="neo-modern-table">
-                  <thead>
-                    <tr>
-                      <th>ORGANIZATION</th>
-                      <th>DOMAIN</th>
-                      <th>CATEGORY</th>
-                      <th>STATUS</th>
-                      <th>REVIEWER</th>
-                      <th>NEXT REVIEW</th>
-                      <th>ACTIONS</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {isLoadingDomains ? (
+                  <div className="neo-modern-toolbar-actions">
+                    <NeoFilterDropdown
+                      label="Status"
+                      value={domainStatusFilter}
+                      onChange={(val) => {
+                        setDomainStatusFilter(val)
+                        setDomainPage(1)
+                      }}
+                      options={[
+                        { value: 'ALL', label: 'All Statuses' },
+                        { value: 'ACTIVE', label: 'Active', dotColor: '#10B981' },
+                        { value: 'STALE', label: 'Stale', dotColor: '#F59E0B' },
+                        { value: 'RETIRED', label: 'Retired', dotColor: '#64748B' },
+                      ]}
+                      title="Filter by directory status"
+                    />
+
+                    <button
+                      type="button"
+                      className={`neo-btn-toolbar-reset ${domainSearchQuery || domainStatusFilter !== 'ALL' ? 'has-active-filters' : ''}`}
+                      onClick={handleResetDomainFilters}
+                      title="Reset all filters and search"
+                    >
+                      <RotateCcw size={12} aria-hidden="true" />
+                      <span>Reset</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      className="neo-btn-toolbar-reset"
+                      onClick={() => void loadDomainEntries()}
+                      title="Refresh domain directory"
+                      disabled={isLoadingDomains}
+                    >
+                      <RefreshCw size={12} className={isLoadingDomains ? 'neo-spin' : ''} aria-hidden="true" />
+                      <span>Refresh</span>
+                    </button>
+                  </div>
+                </div>
+
+                {domainsError && (
+                  <div className="neo-modern-error-banner" role="alert">
+                    <AlertCircle size={14} aria-hidden="true" />
+                    <span>{domainsError}</span>
+                  </div>
+                )}
+
+                <div className="neo-modern-table-wrapper">
+                  <table className="neo-modern-table">
+                    <thead>
                       <tr>
-                        <td colSpan={7} style={{ textAlign: 'center', padding: '48px 20px', color: '#64748B' }}>
-                          <div className="neo-audit-loading-spinner" />
-                          <p style={{ margin: '10px 0 0', fontSize: '13px' }}>Loading the domain directory...</p>
-                        </td>
+                        <th>ORGANIZATION</th>
+                        <th>DOMAIN</th>
+                        <th>CATEGORY</th>
+                        <th>STATUS</th>
+                        <th>REVIEWER</th>
+                        <th>NEXT REVIEW</th>
+                        <th>ACTIONS</th>
                       </tr>
-                    ) : domainEntries.length === 0 ? (
-                      <tr>
-                        <td colSpan={7} style={{ textAlign: 'center', padding: '48px 20px', color: '#64748B' }}>
-                          <Globe size={32} color="#0066FF" style={{ margin: '0 auto 8px', display: 'block' }} />
-                          <strong style={{ color: '#0F172A', fontSize: '14px' }}>No domain directory entries yet</strong>
-                        </td>
-                      </tr>
-                    ) : (
-                      domainEntries.map((entry) => (
-                        <tr key={entry.id} className={entry.status === 'RETIRED' ? 'neo-row-retired' : ''}>
-                          <td>{entry.name}</td>
-                          <td>
-                            <div className="neo-target-cell">
-                              <div className="neo-target-icon-circle">
-                                <Globe size={14} color="#0066FF" aria-hidden="true" />
-                              </div>
-                              <span className="neo-target-domain">{entry.officialDomain}</span>
-                            </div>
-                          </td>
-                          <td>{entry.category || '—'}</td>
-                          <td>
-                            <span
-                              className={`neo-status-badge ${entry.status === 'ACTIVE' ? 'green' : entry.status === 'STALE' ? 'amber' : 'slate'}`}
-                            >
-                              {entry.status}
-                            </span>
-                          </td>
-                          <td>{entry.reviewer || '—'}</td>
-                          <td>{entry.nextReviewDate || '—'}</td>
-                          <td>
-                            <div style={{ display: 'flex', gap: '6px' }}>
-                              {entry.status !== 'ACTIVE' && (
-                                <button
-                                  type="button"
-                                  className="neo-btn-secondary-sm"
-                                  onClick={() => void handleSetDomainStatus(entry, 'ACTIVE')}
-                                  title="Reactivate this entry"
-                                >
-                                  Activate
-                                </button>
-                              )}
-                              {entry.status === 'ACTIVE' && (
-                                <button
-                                  type="button"
-                                  className="neo-btn-secondary-sm"
-                                  onClick={() => void handleSetDomainStatus(entry, 'STALE')}
-                                  title="Mark this entry as due for re-review"
-                                >
-                                  Mark Stale
-                                </button>
-                              )}
-                              {entry.status !== 'RETIRED' && (
-                                <button
-                                  type="button"
-                                  className="neo-btn-secondary-sm"
-                                  onClick={() => void handleSetDomainStatus(entry, 'RETIRED')}
-                                  title="Retire this entry"
-                                >
-                                  Retire
-                                </button>
-                              )}
-                            </div>
+                    </thead>
+                    <tbody>
+                      {isLoadingDomains ? (
+                        <tr>
+                          <td colSpan={7} style={{ textAlign: 'center', padding: '48px 20px', color: '#64748B' }}>
+                            <div className="neo-audit-loading-spinner" />
+                            <p style={{ margin: '10px 0 0', fontSize: '13px' }}>Loading the domain directory...</p>
                           </td>
                         </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
+                      ) : paginatedDomainEntries.length === 0 ? (
+                        <tr>
+                          <td colSpan={7} style={{ textAlign: 'center', padding: '48px 20px', color: '#64748B' }}>
+                            <Globe size={32} color="#0066FF" style={{ margin: '0 auto 8px', display: 'block' }} />
+                            <strong style={{ color: '#0F172A', fontSize: '14px' }}>No domain directory entries found</strong>
+                            <p style={{ margin: '4px 0 0', fontSize: '12px' }}>
+                              {domainSearchQuery || domainStatusFilter !== 'ALL'
+                                ? 'Try adjusting or resetting your search and filters.'
+                                : 'No entries have been added yet.'}
+                            </p>
+                          </td>
+                        </tr>
+                      ) : (
+                        paginatedDomainEntries.map((entry) => (
+                          <tr key={entry.id} className={entry.status === 'RETIRED' ? 'neo-row-retired' : ''}>
+                            <td>{entry.name}</td>
+                            <td>
+                              <div className="neo-target-cell">
+                                <div className="neo-target-icon-circle">
+                                  <Globe size={14} color="#0066FF" aria-hidden="true" />
+                                </div>
+                                <span className="neo-target-domain">{entry.officialDomain}</span>
+                              </div>
+                            </td>
+                            <td>{entry.category || '—'}</td>
+                            <td>
+                              <span className={`neo-status-pill-modern ${entry.status.toLowerCase()}`}>
+                                {entry.status}
+                              </span>
+                            </td>
+                            <td>{entry.reviewer || '—'}</td>
+                            <td>{entry.nextReviewDate || '—'}</td>
+                            <td>
+                              <div style={{ display: 'flex', gap: '6px' }}>
+                                {entry.status !== 'ACTIVE' && (
+                                  <button
+                                    type="button"
+                                    className="neo-btn-secondary-sm"
+                                    onClick={() => void handleSetDomainStatus(entry, 'ACTIVE')}
+                                    title="Reactivate this entry"
+                                  >
+                                    Activate
+                                  </button>
+                                )}
+                                {entry.status === 'ACTIVE' && (
+                                  <button
+                                    type="button"
+                                    className="neo-btn-secondary-sm"
+                                    onClick={() => void handleSetDomainStatus(entry, 'STALE')}
+                                    title="Mark this entry as due for re-review"
+                                  >
+                                    Mark Stale
+                                  </button>
+                                )}
+                                {entry.status !== 'RETIRED' && (
+                                  <button
+                                    type="button"
+                                    className="neo-btn-secondary-sm"
+                                    onClick={() => void handleSetDomainStatus(entry, 'RETIRED')}
+                                    title="Retire this entry"
+                                  >
+                                    Retire
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {paginatedDomainEntries.length > 0 && (
+                  <div className="neo-pagination-bar">
+                    <div className="neo-pagination-info">
+                      <span>
+                        Showing <strong>{(domainPage - 1) * domainPageSize + 1}</strong> to{' '}
+                        <strong>{Math.min(domainPage * domainPageSize, filteredDomainEntries.length)}</strong> of{' '}
+                        <strong>{filteredDomainEntries.length}</strong> entries
+                      </span>
+                      <div className="neo-page-size-selector">
+                        <label htmlFor="domains-page-size">Per page:</label>
+                        <select
+                          id="domains-page-size"
+                          value={domainPageSize}
+                          onChange={(e) => {
+                            setDomainPageSize(Number(e.target.value))
+                            setDomainPage(1)
+                          }}
+                        >
+                          <option value={10}>10</option>
+                          <option value={20}>20</option>
+                          <option value={50}>50</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="neo-pagination-actions">
+                      <button
+                        type="button"
+                        className="neo-btn-page-nav"
+                        disabled={domainPage <= 1}
+                        onClick={() => setDomainPage(1)}
+                        title="First Page"
+                      >
+                        «
+                      </button>
+                      <button
+                        type="button"
+                        className="neo-btn-page-nav"
+                        disabled={domainPage <= 1}
+                        onClick={() => setDomainPage((p) => Math.max(1, p - 1))}
+                        title="Previous Page"
+                      >
+                        ‹ Prev
+                      </button>
+
+                      {renderPaginationNumbers(domainPage, domainTotalPages, setDomainPage)}
+
+                      <button
+                        type="button"
+                        className="neo-btn-page-nav"
+                        disabled={domainPage >= domainTotalPages}
+                        onClick={() => setDomainPage((p) => Math.min(domainTotalPages, p + 1))}
+                        title="Next Page"
+                      >
+                        Next ›
+                      </button>
+                      <button
+                        type="button"
+                        className="neo-btn-page-nav"
+                        disabled={domainPage >= domainTotalPages}
+                        onClick={() => setDomainPage(domainTotalPages)}
+                        title="Last Page"
+                      >
+                        »
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </section>
           )}

@@ -1,6 +1,6 @@
 import { randomUUID, createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { SUPABASE_SERVICE_ROLE_KEY, SUPABASE_URL } from '../config/env.mjs'
+import { SUPABASE_SERVICE_ROLE_KEY, SUPABASE_URL, GEMINI_API_KEY } from '../config/env.mjs'
 import { DEMO_REPORTS } from '../fixtures/demoReports.mjs'
 import { analyzeMessage } from '@trustlens/rules'
 import { isTopGlobalDomain } from '@trustlens/domain'
@@ -32,7 +32,7 @@ export async function classifyProtectedEntity(rawInputDomain) {
         name: rec.name || cleanDomain,
         domain: rec.officialDomain || cleanDomain,
         category: rec.category || 'Official Organization',
-        badge: '🏛️ Official National Entity',
+        badge: 'Official National Entity',
         warning: `"${cleanDomain}" is verified in the Official National Directory as ${rec.name}. Official entities have authoritative legal standing and must not be flagged as scams without confirmed infrastructure incident verification.`,
         recommendedAction: 'REJECT',
       }
@@ -49,7 +49,7 @@ export async function classifyProtectedEntity(rawInputDomain) {
         type: 'TOP_GLOBAL',
         name: cleanDomain,
         domain: cleanDomain,
-        badge: '🌐 Top Global Platform',
+        badge: 'Top Global Platform',
         warning: `"${cleanDomain}" is a globally verified high-traffic domain (Tranco Top-1M). Citizens often report legitimate platforms when encountering scam posts, phishing ads, or third-party impersonators. The root domain itself is not a scam.`,
         recommendedAction: 'REJECT',
       }
@@ -83,7 +83,7 @@ export const GENESIS_PREV_HASH = '0000000000000000000000000000000000000000000000
  */
 export function computeAuditHash(prevHash, entry) {
   const normalizedPrev = prevHash || GENESIS_PREV_HASH
-  const rawTarget = entry.raw_target_indicator !== undefined ? entry.raw_target_indicator : entry.target_indicator
+  const rawTarget = (entry.raw_target_indicator !== undefined && entry.raw_target_indicator !== null) ? entry.raw_target_indicator : entry.target_indicator
   const payload = [
     normalizedPrev,
     canonicalTimestamp(entry.created_at),
@@ -116,7 +116,28 @@ function loadPersistentAuditLogs() {
   return []
 }
 
+export function isTestEnvironment() {
+  return (
+    process.env.NODE_ENV === 'test' ||
+    process.env.npm_lifecycle_event === 'test' ||
+    (Array.isArray(process.execArgv) && process.execArgv.some((arg) => arg.includes('--test'))) ||
+    (Array.isArray(process.argv) &&
+      process.argv.some(
+        (arg) =>
+          arg.includes('--test') ||
+          arg.includes('test/') ||
+          arg.includes('test\\') ||
+          arg.endsWith('.test.mjs') ||
+          arg.endsWith('.test.js')
+      ))
+  )
+}
+
 export function savePersistentAuditLogs(logs) {
+  // Never pollute the persistent audit log file with mock entries generated during automated test runs
+  if (isTestEnvironment()) {
+    return
+  }
   try {
     if (!existsSync(DATA_DIR)) {
       mkdirSync(DATA_DIR, { recursive: true })
@@ -496,6 +517,10 @@ export function updateEngineSettings(newSettings = {}, actor = 'moderator', acto
 }
 
 export function isSupabaseConfigured() {
+  // Never write mock/test data to remote Supabase database during automated test runs
+  if (isTestEnvironment() && SUPABASE_URL && !SUPABASE_URL.includes('127.0.0.1') && !SUPABASE_URL.includes('localhost')) {
+    return false
+  }
   return Boolean(SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY)
 }
 
@@ -654,7 +679,11 @@ export async function findDuplicatePendingReport(contentSha256, reportType, repo
 }
 
 export async function submitReport(payload) {
-  const contentSha256 = payload.contentSha256.toLowerCase()
+  let contentSha256 = payload.contentSha256?.toLowerCase()
+  if (!contentSha256) {
+    const textToHash = payload.text || payload.reportedDomain || randomUUID()
+    contentSha256 = createHash('sha256').update(textToHash.trim()).digest('hex')
+  }
   const reportType = payload.reportType
   const reportedDomain = payload.reportedDomain?.trim().toLowerCase() || null
 
@@ -1106,30 +1135,57 @@ export async function processModerationReview(
           if (checkRes.ok) {
             const [existing] = await checkRes.json()
             if (existing) {
-              const updatedCount = (existing.report_count || 1) + 1
-              const baseConf = Math.max(Number(existing.confidence) || 0.85, chosenConfidence)
-              const updatedConfidence = computeEffectiveConfidence(baseConf, updatedCount)
-              const updatedNotes = notes && !existing.notes?.includes(notes) ? `${existing.notes} | ${notes}` : existing.notes
-              const updatePayload = {
-                report_count: updatedCount,
-                confidence: updatedConfidence,
-                updated_at: new Date().toISOString(),
-                ...(updatedNotes ? { notes: updatedNotes } : {}),
-              }
-              const updateRes = await fetch(`${SUPABASE_URL}/rest/v1/verified_intelligence?id=eq.${existing.id}`, {
-                method: 'PATCH',
-                headers: getHeaders(),
-                body: JSON.stringify(updatePayload),
-                signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-              })
-              if (updateRes.ok) {
-                if (!verifiedIntelligenceId) verifiedIntelligenceId = existing.id
-                continue
+              if (existing.active && existing.risk_level !== intelRecord.risk_level) {
+                // OPPOSING INTEL CONFLICT: Revoke and deactivate existing indicator
+                await fetch(`${SUPABASE_URL}/rest/v1/verified_intelligence?id=eq.${existing.id}`, {
+                  method: 'PATCH',
+                  headers: getHeaders(),
+                  body: JSON.stringify({
+                    active: false,
+                    notes: `[REVOKED]: Superseded by approved ${report.report_type === 'false_positive' ? 'False Alarm' : 'Threat'} (Report ID: ${reportId.slice(0, 8)}). ${notes ? `Moderator note: ${notes}` : ''} | Prior notes: ${existing.notes || ''}`,
+                    updated_at: new Date().toISOString(),
+                  }),
+                  signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+                })
+                void recordAuditLog({
+                  reportId,
+                  action: 'RECLASSIFY_INDICATOR',
+                  targetIndicator: defang(primaryVal),
+                  threatCategory: report.report_type === 'false_positive' ? 'Threat Revocation' : 'Safe Declassification',
+                  actorEmail,
+                  actorRole,
+                  confidence: chosenConfidence,
+                  moderatorNotes: `[REVOKED & RECLASSIFIED]: ${existing.risk_level} superseded and reclassified to ${intelRecord.risk_level} by moderator. ${notes || ''}`,
+                  clientIp,
+                  userAgent,
+                })
+              } else if (existing.active) {
+                // CORROBORATING: Increment count and scale confidence
+                const updatedCount = (existing.report_count || 1) + 1
+                const baseConf = Math.max(Number(existing.confidence) || 0.85, chosenConfidence)
+                const updatedConfidence = computeEffectiveConfidence(baseConf, updatedCount)
+                const updatedNotes = notes && !existing.notes?.includes(notes) ? `${existing.notes} | ${notes}` : existing.notes
+                const updatePayload = {
+                  report_count: updatedCount,
+                  confidence: updatedConfidence,
+                  updated_at: new Date().toISOString(),
+                  ...(updatedNotes ? { notes: updatedNotes } : {}),
+                }
+                const updateRes = await fetch(`${SUPABASE_URL}/rest/v1/verified_intelligence?id=eq.${existing.id}`, {
+                  method: 'PATCH',
+                  headers: getHeaders(),
+                  body: JSON.stringify(updatePayload),
+                  signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+                })
+                if (updateRes.ok) {
+                  if (!verifiedIntelligenceId) verifiedIntelligenceId = existing.id
+                  continue
+                }
               }
             }
           }
 
-          // Not found, insert new indicator
+          // Not found or new opposing record, insert new indicator
           const intelRes = await fetch(`${SUPABASE_URL}/rest/v1/verified_intelligence`, {
             method: 'POST',
             headers: getHeaders(),
@@ -1147,22 +1203,50 @@ export async function processModerationReview(
         // In-memory Deduplication & Frequency Counter
         let existing = null
         for (const item of inMemoryIntel.values()) {
-          if (item.indicator_value === intelRecord.indicator_value) {
+          if (item.indicator_value === intelRecord.indicator_value && item.active) {
             existing = item
             break
           }
         }
 
         if (existing) {
-          existing.report_count = (existing.report_count || 1) + 1
-          const baseConf = Math.max(Number(existing.confidence) || 0.85, chosenConfidence)
-          existing.confidence = computeEffectiveConfidence(baseConf, existing.report_count)
-          existing.updated_at = new Date().toISOString()
-          if (notes && !existing.notes?.includes(notes)) {
-            existing.notes = `${existing.notes} | ${notes}`
+          if (existing.risk_level !== intelRecord.risk_level) {
+            // OPPOSING INTEL CONFLICT: Revoke and deactivate existing indicator
+            existing.active = false
+            existing.notes = `[REVOKED]: Superseded by approved ${report.report_type === 'false_positive' ? 'False Alarm' : 'Threat'} (Report ID: ${reportId.slice(0, 8)}). ${notes ? `Moderator note: ${notes}` : ''} | Prior notes: ${existing.notes || ''}`
+            existing.updated_at = new Date().toISOString()
+            inMemoryIntel.set(existing.id, existing)
+
+            void recordAuditLog({
+              reportId,
+              action: 'RECLASSIFY_INDICATOR',
+              targetIndicator: defang(primaryVal),
+              threatCategory: report.report_type === 'false_positive' ? 'Threat Revocation' : 'Safe Declassification',
+              actorEmail,
+              actorRole,
+              confidence: chosenConfidence,
+              moderatorNotes: `[REVOKED & RECLASSIFIED]: ${existing.risk_level} superseded and reclassified to ${intelRecord.risk_level} by moderator. ${notes || ''}`,
+              clientIp,
+              userAgent,
+            })
+
+            // Insert new active reclassified indicator
+            intelRecord.report_count = 1
+            intelRecord.confidence = chosenConfidence
+            inMemoryIntel.set(intelRecord.id, intelRecord)
+            if (!verifiedIntelligenceId) verifiedIntelligenceId = intelRecord.id
+          } else {
+            // CORROBORATING
+            existing.report_count = (existing.report_count || 1) + 1
+            const baseConf = Math.max(Number(existing.confidence) || 0.85, chosenConfidence)
+            existing.confidence = computeEffectiveConfidence(baseConf, existing.report_count)
+            existing.updated_at = new Date().toISOString()
+            if (notes && !existing.notes?.includes(notes)) {
+              existing.notes = `${existing.notes} | ${notes}`
+            }
+            inMemoryIntel.set(existing.id, existing)
+            if (!verifiedIntelligenceId) verifiedIntelligenceId = existing.id
           }
-          inMemoryIntel.set(existing.id, existing)
-          if (!verifiedIntelligenceId) verifiedIntelligenceId = existing.id
         } else {
           intelRecord.report_count = 1
           intelRecord.confidence = chosenConfidence
@@ -1181,6 +1265,156 @@ export async function processModerationReview(
     verifiedIntelligenceId,
   }
 }
+
+/**
+ * Inspects past intelligence and historical audit records for an indicator
+ * to provide situational context during moderator review.
+ */
+export async function getIndicatorIntelligenceContext(reportId) {
+  const report = await getReportById(reportId)
+  if (!report) return null
+
+  const storedDomain = report.reported_domain || ''
+  const rawDomain = rehydrate(storedDomain).toLowerCase().trim()
+  const contentSha256 = report.content_sha256 || null
+  const domainVariants = extractDomainVariants(rawDomain)
+  const targetCandidates = new Set([rawDomain, ...domainVariants, defang(rawDomain)].filter(Boolean))
+  if (contentSha256) targetCandidates.add(contentSha256.toLowerCase())
+
+  // 1. Query Active Intelligence
+  let activeIntel = null
+  if (isSupabaseConfigured()) {
+    try {
+      const quoted = Array.from(targetCandidates).map((c) => `"${c.replace(/"/g, '')}"`).join(',')
+      const q = `${SUPABASE_URL}/rest/v1/verified_intelligence?active=eq.true&or=(indicator_value.in.(${quoted}),defanged_value.in.(${quoted}))&order=updated_at.desc&limit=1`
+      const res = await fetch(q, { headers: getHeaders(), signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) })
+      if (res.ok) {
+        const items = await res.json()
+        if (items.length > 0) activeIntel = items[0]
+      }
+    } catch { }
+  } else {
+    for (const item of inMemoryIntel.values()) {
+      if (!item.active) continue
+      const val = (item.indicator_value || '').toLowerCase()
+      const def = (item.defanged_value || '').toLowerCase()
+      if (targetCandidates.has(val) || targetCandidates.has(def)) {
+        activeIntel = item
+        break
+      }
+    }
+  }
+
+  // 2. Query Historical Audit Logs
+  let targetAuditLogs = []
+  if (isSupabaseConfigured()) {
+    try {
+      const quoted = Array.from(targetCandidates).map((c) => `"${c.replace(/"/g, '')}"`).join(',')
+      const q = `${SUPABASE_URL}/rest/v1/moderation_audit_logs?or=(target_indicator.in.(${quoted}),raw_target_indicator.in.(${quoted}))&order=created_at.desc&limit=50`
+      const res = await fetch(q, { headers: getHeaders(), signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) })
+      if (res.ok) {
+        targetAuditLogs = await res.json()
+      }
+    } catch { }
+  }
+
+  if (!targetAuditLogs.length && inMemoryAuditLogs.length > 0) {
+    targetAuditLogs = inMemoryAuditLogs.filter((entry) => {
+      const target = (entry.target_indicator || entry.raw_target_indicator || '').toLowerCase()
+      const defangedTarget = defang(target).toLowerCase()
+      return Array.from(targetCandidates).some((c) => target === c || defangedTarget === c || (c && target.includes(c)))
+    })
+  }
+
+  // 3. Aggregate Prior Decisions
+  const rejections = targetAuditLogs.filter((l) => l.action === 'REJECT')
+  const approvals = targetAuditLogs.filter((l) => l.action === 'APPROVE')
+  const retirements = targetAuditLogs.filter((l) => l.action === 'RETIRE' || l.action === 'RECLASSIFY_INDICATOR')
+
+  const latestRejection = rejections.length > 0 ? {
+    actorEmail: rejections[0].actor_email || null,
+    actorRole: rejections[0].actor_role || 'moderator',
+    notes: rejections[0].moderator_notes || null,
+    createdAt: rejections[0].created_at,
+  } : null
+
+  const latestAction = targetAuditLogs.length > 0 ? {
+    action: targetAuditLogs[0].action,
+    actorEmail: targetAuditLogs[0].actor_email || null,
+    notes: targetAuditLogs[0].moderator_notes || null,
+    createdAt: targetAuditLogs[0].created_at,
+  } : null
+
+  // 4. Conflict & Corroboration Engine
+  let isConflict = false
+  let conflictType = 'NONE'
+  let conflictExplanation = null
+  let revocationConsequence = null
+
+  let isCorroborating = false
+  let corroborationSummary = null
+  let projectedConfidence = null
+  let projectedCount = null
+
+  if (activeIntel) {
+    if (activeIntel.risk_level === 'CONFIRMED_SCAM' && report.report_type === 'false_positive') {
+      isConflict = true
+      conflictType = 'FALSE_ALARM_AGAINST_SCAM'
+      conflictExplanation = `Active Intelligence already classifies this domain as a CONFIRMED SCAM (${(Number(activeIntel.confidence) * 100).toFixed(0)}% Confidence, ${activeIntel.report_count || 1} prior verified reports). The submitter claims this is a False Alarm / Legitimate Domain.`
+      revocationConsequence = `Approving this report will REVOKE the active CONFIRMED_SCAM status, deactivate the malicious indicator, and reclassify the domain as VERIFIED_SAFE in the intelligence feed.`
+    } else if (activeIntel.risk_level === 'VERIFIED_SAFE' && report.report_type === 'suspicious') {
+      isConflict = true
+      conflictType = 'SCAM_AGAINST_SAFE'
+      conflictExplanation = `Active Intelligence classifies this domain as VERIFIED SAFE (${(Number(activeIntel.confidence) * 100).toFixed(0)}% Confidence). The submitter reports this as a Scam / Phishing threat.`
+      revocationConsequence = `Approving this report will REVOKE the VERIFIED_SAFE status and escalate the domain to CONFIRMED_SCAM (HIGH Risk).`
+    } else if (activeIntel.risk_level === 'CONFIRMED_SCAM' && report.report_type === 'suspicious') {
+      isCorroborating = true
+      projectedCount = (activeIntel.report_count || 1) + 1
+      projectedConfidence = computeEffectiveConfidence(Math.max(Number(activeIntel.confidence) || 0.85, 0.9), projectedCount)
+      corroborationSummary = `Domain is already verified as an active threat. Approving will corroborate this threat intelligence, incrementing report count to ${projectedCount} and scaling Bayesian confidence to ${(projectedConfidence * 100).toFixed(0)}%.`
+    } else if (activeIntel.risk_level === 'VERIFIED_SAFE' && report.report_type === 'false_positive') {
+      isCorroborating = true
+      projectedCount = (activeIntel.report_count || 1) + 1
+      projectedConfidence = computeEffectiveConfidence(Math.max(Number(activeIntel.confidence) || 0.9, 0.95), projectedCount)
+      corroborationSummary = `Domain is already verified as legitimate. Approving will corroborate this safe intelligence (Report count: ${projectedCount}).`
+    }
+  }
+
+  return {
+    reportId,
+    targetIndicator: rawDomain || contentSha256,
+    hasActiveIntel: Boolean(activeIntel),
+    activeIntel: activeIntel ? {
+      id: activeIntel.id,
+      indicator_type: activeIntel.indicator_type || 'domain',
+      indicator_value: activeIntel.indicator_value || null,
+      risk_level: activeIntel.risk_level,
+      category: activeIntel.category || 'Threat Intelligence',
+      confidence: Number(activeIntel.confidence) || 1.0,
+      report_count: Number(activeIntel.report_count) || 1,
+      notes: activeIntel.notes || null,
+      created_at: activeIntel.created_at,
+      updated_at: activeIntel.updated_at,
+    } : null,
+    isConflict,
+    conflictType,
+    conflictExplanation,
+    revocationConsequence,
+    isCorroborating,
+    corroborationSummary,
+    projectedConfidence,
+    projectedCount,
+    priorDecisions: {
+      totalRejections: rejections.length,
+      totalApprovals: approvals.length,
+      totalRetirements: retirements.length,
+      totalPriorEvents: targetAuditLogs.length,
+      latestRejection,
+      latestAction,
+    },
+  }
+}
+
 
 export async function checkVerifiedIntelligence(entities = [], contentSha256 = null) {
   const rawDomains = entities.filter((e) => e.type === 'domain').map((e) => (e.normalizedValue || e.value || '').toLowerCase())
@@ -1336,7 +1570,7 @@ export async function recordAuditLog({
 
   const logEntry = candidate
 
-  if (isSupabaseConfigured()) {
+  if (isSupabaseConfigured() && !isTestEnvironment()) {
     try {
       // Attempt 1: Full insert with all enriched columns and cryptographic hash chaining
       const res = await fetch(`${SUPABASE_URL}/rest/v1/moderation_audit_logs`, {
@@ -1507,21 +1741,28 @@ export async function getModerationAuditLogs({
           }
 
           const expiresAt = row.expires_at || memMatch?.expires_at || new Date(new Date(row.created_at).getTime() + AUDIT_RETENTION_DAYS * 86400000).toISOString()
-          const prevHash = row.prev_hash || memMatch?.prev_hash || runningPrevHash
+          
+          // If the row already has a stored prev_hash in Supabase, preserve it.
+          // Otherwise, reconstruct sequential linkage: only trust memMatch.prev_hash if it matches runningPrevHash.
+          const prevHash = row.prev_hash || (memMatch?.prev_hash === runningPrevHash ? memMatch.prev_hash : null) || runningPrevHash
 
           const mapped = {
             ...row,
-            raw_target_indicator: row.target_indicator || memMatch?.raw_target_indicator || null,
-            target_indicator: target || (row.report_id ? `Report #${String(row.report_id).slice(0, 8)}` : 'System Policy'),
-            threat_category: category,
-            actor_email: row.actor_email || memMatch?.actor_email || 'moderator@trustlens.lk',
-            actor_role: row.actor_role || memMatch?.actor_role || 'moderator',
-            expires_at: expiresAt,
+            ...(memMatch || {}),
+            id: row.id,
+            created_at: memMatch?.created_at || row.created_at,
+            raw_target_indicator: (memMatch?.raw_target_indicator !== undefined && memMatch?.raw_target_indicator !== null) ? memMatch.raw_target_indicator : (row.target_indicator || null),
+            target_indicator: memMatch?.target_indicator || target || (row.report_id ? `Report #${String(row.report_id).slice(0, 8)}` : 'System Policy'),
+            threat_category: memMatch?.threat_category || category,
+            moderator_notes: memMatch?.moderator_notes || row.moderator_notes,
+            actor_email: memMatch?.actor_email || row.actor_email || 'moderator@trustlens.lk',
+            actor_role: memMatch?.actor_role || row.actor_role || 'moderator',
+            expires_at: memMatch?.expires_at || expiresAt,
             prev_hash: prevHash,
-            client_ip: row.client_ip || memMatch?.client_ip || null,
-            user_agent: row.user_agent || memMatch?.user_agent || null,
+            client_ip: memMatch?.client_ip || row.client_ip || null,
+            user_agent: memMatch?.user_agent || row.user_agent || null,
           }
-          const entryHash = row.entry_hash || memMatch?.entry_hash || computeAuditHash(prevHash, mapped)
+          const entryHash = row.entry_hash || (memMatch?.entry_hash && memMatch?.prev_hash === prevHash ? memMatch.entry_hash : computeAuditHash(prevHash, mapped))
           mapped.entry_hash = entryHash
 
           runningPrevHash = entryHash
@@ -1534,34 +1775,9 @@ export async function getModerationAuditLogs({
 
         let rows = mappedChronological.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime() || (Number(b.id) || 0) - (Number(a.id) || 0))
 
-        // Merge in-memory persistent audit entries not already in the Supabase result.
-        const dbIds = new Set(rows.map((r) => String(r.id)))
-        const memOnly = inMemoryAuditLogs.filter(
-          (m) => !dbIds.has(String(m.id)) && (!m.entry_hash || !rows.some((r) => r.entry_hash === m.entry_hash))
-        )
-        if (memOnly.length > 0) {
-          let merged = [...memOnly, ...rows]
-          merged.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-          if (searchTrim) {
-            merged = merged.filter((item) => {
-              return item.target_indicator?.toLowerCase().includes(searchTrim)
-                || item.actor_email?.toLowerCase().includes(searchTrim)
-                || item.moderator_notes?.toLowerCase().includes(searchTrim)
-                || item.threat_category?.toLowerCase().includes(searchTrim)
-                || item.report_id?.toString().toLowerCase().includes(searchTrim)
-                || item.client_ip?.toLowerCase().includes(searchTrim)
-            })
-          }
-          const mergedTotal = merged.length
-          const mergedTotalPages = Math.ceil(mergedTotal / limitNum) || 1
-          return {
-            auditLogs: merged.slice(offset, offset + limitNum),
-            total: mergedTotal,
-            page: pageNum,
-            limit: limitNum,
-            totalPages: mergedTotalPages,
-            retentionDays: AUDIT_RETENTION_DAYS,
-          }
+        // If Supabase has zero records (e.g. fresh environment or offline), fall back to inMemoryAuditLogs
+        if (rows.length === 0 && inMemoryAuditLogs.length > 0) {
+          rows = [...inMemoryAuditLogs]
         }
 
         if (searchTrim) {
@@ -2240,6 +2456,15 @@ export async function createManualIntelligenceEntry(
       })
       if (!insertRes.ok) {
         const text = await insertRes.text().catch(() => '')
+        try {
+          const err = JSON.parse(text)
+          if (err.code === '23505' || err.message?.includes('duplicate key') || err.message?.includes('unique constraint')) {
+            throw new Error(`Indicator "${record.indicator_value}" is already registered in verified intelligence.`)
+          }
+          if (err.message) throw new Error(err.message)
+        } catch (e) {
+          if (!e.message.startsWith('Failed to create')) throw e
+        }
         throw new Error(`Failed to create intelligence entry: ${text.slice(0, 300)}`)
       }
       const [saved] = await insertRes.json().catch(() => [])
@@ -2287,19 +2512,135 @@ export async function createManualIntelligenceEntry(
   return { ...record, report_count: 1 }
 }
 
-export async function seedDemoQueue() {
+const GEMINI_SEED_MODELS = [
+  'gemini-flash-lite-latest',
+  'gemini-1.5-flash',
+  'gemini-2.0-flash',
+]
+
+/**
+ * Generates synthetic Sri Lankan cyber-threat scam reports using Google Gemini API.
+ * Fails safely: Returns null on timeout, missing key, or API errors to seamlessly trigger static fallback.
+ */
+export async function fetchGeminiDemoReports(options = {}) {
+  // During automated tests, avoid outbound network calls unless explicitly opted-in
+  if (!GEMINI_API_KEY || (isTestEnvironment() && !options.allowAiInTest)) {
+    return null
+  }
+
+  const prompt = `You are an expert Sri Lankan cyber-threat intelligence analyst for TrustLens LK.
+Generate exactly 3 realistic, highly authentic citizen-reported cyber scam or threat messages for moderator queue evaluation in Sri Lanka.
+Include:
+1. One SMS or WhatsApp phishing scam targeting a Sri Lankan telecom or utility (e.g. Dialog Star Points, SLT-Mobitel, CEB electricity bill, e-Channelling).
+2. One banking / financial KYC phishing or OTP theft alert targeting a major Sri Lankan bank (e.g. Commercial Bank, Bank of Ceylon, Sampath Bank, People's Bank).
+3. One government notice or false-positive where a citizen reported a lookalike or legitimate .gov.lk site (e.g. Inland Revenue tax refund, Department of Immigration passport appointment, or MoHE university portal).
+
+Return STRICTLY a valid JSON array of 3 objects with NO markdown code fences and NO preamble, matching this exact JSON schema:
+[
+  {
+    "report_type": "suspicious" | "false_positive",
+    "reported_domain": "example-scam.xyz",
+    "raw_excerpt": "Full text of the message in English or Singlish",
+    "notes": "Brief submitter notes explaining where received and why flagged"
+  }
+]`
+
+  for (const model of GEMINI_SEED_MODELS) {
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(GEMINI_API_KEY)}`
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            responseMimeType: 'application/json',
+            temperature: 0.7,
+          },
+        }),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      })
+
+      if (!res.ok) continue
+
+      const data = await res.json()
+      const contentText = data?.candidates?.[0]?.content?.parts?.[0]?.text
+      if (!contentText) continue
+
+      let cleanJson = contentText.trim()
+      if (cleanJson.startsWith('```')) {
+        cleanJson = cleanJson.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim()
+      }
+      if (!cleanJson.startsWith('[')) {
+        const match = cleanJson.match(/\[[\s\S]*\]/)
+        if (match) cleanJson = match[0]
+      }
+
+      const parsed = JSON.parse(cleanJson)
+      if (Array.isArray(parsed) && parsed.length >= 1) {
+        return parsed.slice(0, 3).map((item) => ({
+          report_type: ['suspicious', 'false_positive', 'false_negative'].includes(item.report_type)
+            ? item.report_type
+            : 'suspicious',
+          reported_domain: (item.reported_domain || 'unknown-scam.xyz')
+            .toLowerCase()
+            .replace(/^https?:\/\//i, '')
+            .split('/')[0]
+            .trim(),
+          raw_excerpt: String(item.raw_excerpt || item.notes || 'Suspicious message received').trim(),
+          notes: String(item.notes || 'Citizen reported potential scam').trim(),
+          isAiGenerated: true,
+        }))
+      }
+    } catch {
+      // Continue to next model or fallback
+    }
+  }
+
+  return null
+}
+
+export async function seedDemoQueue(options = {}) {
+  let reportsToSeed = null
+  let generatorType = 'static'
+
+  if (!options.forceStatic) {
+    try {
+      const aiReports = await fetchGeminiDemoReports(options)
+      if (aiReports && aiReports.length > 0) {
+        reportsToSeed = aiReports
+        generatorType = 'gemini'
+      }
+    } catch {
+      // Fallback
+    }
+  }
+
+  if (!reportsToSeed || reportsToSeed.length === 0) {
+    reportsToSeed = DEMO_REPORTS.map((r) => ({
+      ...r,
+      isAiGenerated: false,
+    }))
+    generatorType = 'static'
+  }
+
   const seeded = []
-  for (const demo of DEMO_REPORTS) {
+  for (const demo of reportsToSeed) {
     const freshId = randomUUID()
+    const rawExcerpt = demo.raw_excerpt || demo.notes || ''
+    const contentHash = demo.content_sha256 || createHash('sha256').update(rawExcerpt.trim()).digest('hex')
+    const aiTag = demo.isAiGenerated ? '[DEMO_FIXTURE:GEMINI]' : '[DEMO_FIXTURE:STATIC]'
+
     const dbPayload = {
       id: freshId,
       report_type: demo.report_type,
-      content_sha256: demo.content_sha256,
+      content_sha256: contentHash,
       reported_domain: demo.reported_domain,
-      notes: `[Reported Message Excerpt]: "${demo.raw_excerpt}"\n\n[Submitter Context]: ${demo.notes} [DEMO_FIXTURE]`,
-      status: demo.status,
+      notes: `[Reported Message Excerpt]: "${rawExcerpt}"\n\n[Submitter Context]: ${demo.notes} ${aiTag} [DEMO_FIXTURE]`,
+      status: demo.status || 'PENDING',
       created_at: new Date().toISOString(),
     }
+
     if (isSupabaseConfigured()) {
       try {
         const res = await fetch(`${SUPABASE_URL}/rest/v1/user_reports`, {
@@ -2334,6 +2675,7 @@ export async function seedDemoQueue() {
     }
   }
 
+  seeded.generator = generatorType
   return seeded
 }
 

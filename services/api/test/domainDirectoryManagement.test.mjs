@@ -45,6 +45,17 @@ async function withServer(run) {
 
     if (req.method === 'POST' && req.url.startsWith('/rest/v1/approved_organizations')) {
       const data = JSON.parse(raw)
+      for (const item of directory.values()) {
+        if (item.official_domain === data.official_domain) {
+          res.writeHead(409, { 'content-type': 'application/json' })
+          return res.end(JSON.stringify({
+            code: '23505',
+            details: `Key (official_domain)=(${data.official_domain}) already exists.`,
+            hint: null,
+            message: 'duplicate key value violates unique constraint "approved_organizations_official_domain_key"'
+          }))
+        }
+      }
       const row = { id: nextId++, active: true, status: 'ACTIVE', ...data }
       directory.set(String(row.id), row)
       res.writeHead(201, { 'content-type': 'application/json' })
@@ -183,3 +194,18 @@ test('PATCH /api/moderation/domains/:id returns 404 for a nonexistent entry', as
     assert.equal(response.status, 404)
   })
 })
+
+test('POST /api/moderation/domains returns 409 with clean message when domain already exists', async () => {
+  await withServer(async (apiPort) => {
+    const response = await fetch(`http://localhost:${apiPort}/api/moderation/domains`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${validModeratorToken}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Bank of Ceylon Duplicate', officialDomain: 'boc.lk' }),
+    })
+    assert.equal(response.status, 409)
+    const body = await response.json()
+    assert.equal(body.code, 'DOMAIN_CONFLICT')
+    assert.match(body.message, /Domain "boc\.lk" already exists in the official directory/)
+  })
+})
+

@@ -1,7 +1,12 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { reconcileDecision } from '../src/services/reconcileIntelligence.mjs'
-import { extractDomainVariants } from '../src/services/reportingService.mjs'
+import {
+  extractDomainVariants,
+  getIndicatorIntelligenceContext,
+  submitReport,
+  processModerationReview,
+} from '../src/services/reportingService.mjs'
 
 test('reconcileDecision: Scenario 1 — Pure scam intelligence escalates to HIGH (CONFIRMED_SCAM)', () => {
   const baseDecision = {
@@ -375,5 +380,235 @@ test('reconcileDecision: Scenario 14 — Global platform with critical behaviora
   assert.equal(decision.recommendation, 'STOP_AND_AVOID')
   assert.ok(intelligenceOverlay.reconciliationTrace.some((line) => line.includes('Behavioral override active')))
 })
+
+test('Indicator Intelligence Context: Detects conflict when false alarm is submitted on active threat', async () => {
+  // 1. Submit a suspicious report for test-bank-alert.xyz and approve as CONFIRMED_SCAM
+  const scamReport = await submitReport({
+    reportType: 'suspicious',
+    text: 'Click here to update your account: http://test-bank-alert.xyz',
+    reportedDomain: 'test-bank-alert.xyz',
+    notes: 'Phishing domain sending fake alerts',
+  })
+  await processModerationReview({
+    reportId: scamReport.id,
+    action: 'APPROVE',
+    confidence: 0.95,
+    category: 'Banking Phishing',
+    notes: 'Verified malicious indicator',
+  })
+
+  // 2. A user later submits a false_positive report for the same domain
+  const disputeReport = await submitReport({
+    reportType: 'false_positive',
+    text: 'Legitimate portal: http://test-bank-alert.xyz',
+    reportedDomain: 'test-bank-alert.xyz',
+    notes: 'This is my business site, not a scam!',
+  })
+
+  // 3. Inspect intelligence context
+  const context = await getIndicatorIntelligenceContext(disputeReport.id)
+  assert.ok(context)
+  assert.equal(context.hasActiveIntel, true)
+  assert.equal(context.activeIntel.risk_level, 'CONFIRMED_SCAM')
+  assert.equal(context.isConflict, true)
+  assert.equal(context.conflictType, 'FALSE_ALARM_AGAINST_SCAM')
+  assert.ok(context.conflictExplanation.includes('Active Intelligence already classifies this domain as a CONFIRMED SCAM'))
+  assert.ok(context.revocationConsequence.includes('Approving this report will REVOKE'))
+})
+
+test('Dynamic Threat Revocation: Approving false positive supersedes and deactivates active scam indicator', async () => {
+  // 1. Submit a false alarm on test-bank-alert.xyz (which was active as CONFIRMED_SCAM)
+  const disputeReport = await submitReport({
+    reportType: 'false_positive',
+    text: 'Site verified clean: http://test-bank-alert.xyz',
+    reportedDomain: 'test-bank-alert.xyz',
+    notes: 'Security audit completed, cleaned up.',
+  })
+
+  // 2. Moderator approves the false positive report
+  const reviewResult = await processModerationReview({
+    reportId: disputeReport.id,
+    action: 'APPROVE',
+    confidence: 1.0,
+    category: 'False Alarm',
+    notes: 'Domain confirmed cleaned and legitimate.',
+  })
+  assert.equal(reviewResult.success, true)
+  assert.equal(reviewResult.status, 'APPROVED')
+
+  // 3. Inspect context now: active intel should now be VERIFIED_SAFE, not CONFIRMED_SCAM
+  const updatedContext = await getIndicatorIntelligenceContext(disputeReport.id)
+  assert.ok(updatedContext)
+  assert.equal(updatedContext.activeIntel.risk_level, 'VERIFIED_SAFE')
+  assert.equal(updatedContext.isConflict, false)
+})
+
+test('Historical Decision Memory: Reflects past rejections for an indicator', async () => {
+  const domain = `clean-blog-${Date.now()}.lk`
+  // 1. Submit a spammy report for domain and REJECT it
+  const spamReport = await submitReport({
+    reportType: 'suspicious',
+    text: `Citizen claims this is suspicious: http://${domain}`,
+    reportedDomain: domain,
+    notes: 'Vexatious report',
+  })
+  await processModerationReview({
+    reportId: spamReport.id,
+    action: 'REJECT',
+    notes: 'No phishing elements detected. Normal citizen blog.',
+  })
+
+  // 2. Another report comes in for the same domain
+  const secondReport = await submitReport({
+    reportType: 'suspicious',
+    text: `Look at this: http://${domain}`,
+    reportedDomain: domain,
+    notes: 'Second submission',
+  })
+
+  // 3. Inspect context: should show 1 prior rejection with moderator notes
+  const context = await getIndicatorIntelligenceContext(secondReport.id)
+  assert.ok(context)
+  assert.equal(context.priorDecisions.totalRejections, 1)
+  assert.equal(context.priorDecisions.latestRejection.notes, 'No phishing elements detected. Normal citizen blog.')
+})
+
+test('Dynamic Threat Escalation: Reconciles SCAM_AGAINST_SAFE conflict when safe entity is later compromised', async () => {
+  const domain = `initially-safe-${Date.now()}.lk`
+  // 1. Establish an active VERIFIED_SAFE indicator
+  const safeReport = await submitReport({
+    reportType: 'false_positive',
+    text: `Registered business portal: http://${domain}`,
+    reportedDomain: domain,
+    notes: 'Safe corporate portal',
+  })
+  await processModerationReview({
+    reportId: safeReport.id,
+    action: 'APPROVE',
+    confidence: 1.0,
+    category: 'False Alarm',
+    notes: 'Verified clean business site',
+  })
+
+  // 2. Later, a citizen reports it as a scam because it got compromised
+  const compromisedReport = await submitReport({
+    reportType: 'suspicious',
+    text: `Attacker injected credential stealer: http://${domain}`,
+    reportedDomain: domain,
+    notes: 'Injected banking form on home page',
+  })
+
+  // 3. Verify context flags SCAM_AGAINST_SAFE conflict
+  const context = await getIndicatorIntelligenceContext(compromisedReport.id)
+  assert.ok(context)
+  assert.equal(context.hasActiveIntel, true)
+  assert.equal(context.activeIntel.risk_level, 'VERIFIED_SAFE')
+  assert.equal(context.isConflict, true)
+  assert.equal(context.conflictType, 'SCAM_AGAINST_SAFE')
+  assert.ok(context.conflictExplanation.includes('VERIFIED SAFE'))
+  assert.ok(context.revocationConsequence.includes('REVOKE the VERIFIED_SAFE status'))
+
+  // 4. Moderator approves threat: VERIFIED_SAFE revoked and replaced by CONFIRMED_SCAM
+  const reviewResult = await processModerationReview({
+    reportId: compromisedReport.id,
+    action: 'APPROVE',
+    confidence: 0.95,
+    category: 'Compromised Website',
+    notes: 'Confirmed DNS and file compromise, revoking safe status',
+  })
+  assert.equal(reviewResult.success, true)
+  assert.equal(reviewResult.status, 'APPROVED')
+
+  const updatedContext = await getIndicatorIntelligenceContext(compromisedReport.id)
+  assert.ok(updatedContext)
+  assert.equal(updatedContext.activeIntel.risk_level, 'CONFIRMED_SCAM')
+  assert.equal(updatedContext.isConflict, false)
+})
+
+test('Threat Corroboration Engine: Calculates projected Bayesian confidence scaling for repeated threat submissions', async () => {
+  const domain = `corrob-tracker-${Date.now()}.com`
+  // 1. Establish initial confirmed scam with 0.80 base confidence
+  const report1 = await submitReport({
+    reportType: 'suspicious',
+    text: `Phishing: http://${domain}`,
+    reportedDomain: domain,
+    notes: 'First submission',
+  })
+  await processModerationReview({
+    reportId: report1.id,
+    action: 'APPROVE',
+    confidence: 0.80,
+    category: 'Phishing',
+    notes: 'Initial threat verification',
+  })
+
+  // 2. Submit second report for the same domain
+  const report2 = await submitReport({
+    reportType: 'suspicious',
+    text: `Another complaint: http://${domain}`,
+    reportedDomain: domain,
+    notes: 'Second submission',
+  })
+
+  // 3. Context should project corroboration and Bayesian scaling
+  const context = await getIndicatorIntelligenceContext(report2.id)
+  assert.ok(context)
+  assert.equal(context.isCorroborating, true)
+  assert.equal(context.isConflict, false)
+  assert.equal(context.projectedCount, 2)
+  assert.ok(context.projectedConfidence > 0.80, 'Projected confidence should scale above 0.80')
+
+  // 4. Moderator approves corroboration: report_count increases and confidence updates
+  await processModerationReview({
+    reportId: report2.id,
+    action: 'APPROVE',
+    confidence: 0.80,
+    category: 'Phishing',
+    notes: 'Corroborating evidence verified',
+  })
+
+  const updatedContext = await getIndicatorIntelligenceContext(report2.id)
+  assert.ok(updatedContext)
+  assert.equal(updatedContext.activeIntel.report_count, 2)
+  assert.ok(updatedContext.activeIntel.confidence > 0.80)
+})
+
+test('Subdomain Intel Resolution: Maps multi-level subdomain reports to apex indicator intelligence', async () => {
+  const apexDomain = `apex-scam-${Date.now()}.lk`
+  const subDomain = `auth.verify.${apexDomain}`
+
+  // 1. Establish active threat on apex domain
+  const apexReport = await submitReport({
+    reportType: 'suspicious',
+    text: `Apex phishing: http://${apexDomain}`,
+    reportedDomain: apexDomain,
+    notes: 'Apex scam domain',
+  })
+  await processModerationReview({
+    reportId: apexReport.id,
+    action: 'APPROVE',
+    confidence: 0.95,
+    category: 'Credential Harvester',
+    notes: 'Apex verified threat',
+  })
+
+  // 2. Subdomain report arrives
+  const subReport = await submitReport({
+    reportType: 'suspicious',
+    text: `Subdomain lure: http://${subDomain}`,
+    reportedDomain: subDomain,
+    notes: 'Subdomain targeting login',
+  })
+
+  // 3. Intelligence context maps to apex intelligence
+  const context = await getIndicatorIntelligenceContext(subReport.id)
+  assert.ok(context)
+  assert.equal(context.hasActiveIntel, true)
+  assert.equal(context.activeIntel.indicator_value, apexDomain)
+  assert.equal(context.isCorroborating, true)
+})
+
+
+
 
 
