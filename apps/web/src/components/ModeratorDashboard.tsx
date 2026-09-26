@@ -2820,7 +2820,7 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                         ? [
                             {
                               id: 'UPDATE_SETTINGS',
-                              label: `Policies (${(auditStorageStats?.actionBreakdown?.settings || 0) + (auditStorageStats?.actionBreakdown?.toggle || 0)})`,
+                              label: 'Policies',
                             },
                           ]
                         : []),
