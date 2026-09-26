@@ -730,7 +730,7 @@ function App() {
                 <div className="ai-spotlight-header">
                   <div className="ai-spotlight-title">
                     <Sparkles size={16} color="#8B5CF6" />
-                    <span>AI Reasoning (Gemini Intelligence)</span>
+                    <span>AI Reasoning</span>
                   </div>
                   <span className="ai-confidence-pill">
                     {Math.round(aiValidation.confidence * 100)}% Confidence
