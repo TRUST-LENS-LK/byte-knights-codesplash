@@ -100,7 +100,7 @@ export function evaluateHardInvariants({
   // Dynamic context check from AI or signal evidence
   const isAdvisoryNotice = Boolean(aiResult?.isAdvisory || aiResult?.intent === 'ADVISORY_WARNING')
   const isDeliveryOrCautionText = Boolean(
-    /\b(?:your otp (?:at|for|is)|otp (?:is|expires in)|do not share|never share|keep (?:your )?otp confidential)\b/i.test(text)
+    /\b(?:your otp (?:at|for|is)|otp (?:is|expires in)|do not share|never share|keep (?:your )?otp confidential|one[- ]time (?:password|code|pin))\b/i.test(text)
   )
   const isBenignNotification = Boolean(
     (aiResult?.intent === 'BENIGN_INFORMATIVE' || (aiResult?.verdict === 'DISAGREE' && !isAdvisoryNotice && aiResult?.intent !== 'COERCIVE_DEMAND')) &&
@@ -119,8 +119,8 @@ export function evaluateHardInvariants({
     }
   }
 
-  // INV-08: Genuine Transactional / OTP Delivery Notification Suppression
-  if (isBenignNotification && !hasDomainMismatch && !signals.has('known_malicious_domain') && !hasAdvanceFee) {
+  // INV-08: Genuine Transactional / OTP Delivery Notification Suppression (Only when message actually involves OTP)
+  if (isDeliveryOrCautionText && !hasDomainMismatch && !signals.has('known_malicious_domain') && !hasAdvanceFee) {
     return {
       code: 'INV-08',
       riskBand: 'LOW',
@@ -128,6 +128,18 @@ export function evaluateHardInvariants({
       reason: `Automated Transaction Notification: ${aiResult?.reasoning || 'Standard OTP issuance or transaction receipt. No credential harvesting or scam demand detected.'}`,
       invariantType: 'TRANSACTIONAL_NOTIFICATION_PRESERVATION',
       isTransactional: true,
+    }
+  }
+
+  // INV-09: Genuine Commercial Promotion / Informational Content Suppression
+  if (isBenignNotification && !hasDomainMismatch && !signals.has('known_malicious_domain') && !hasAdvanceFee) {
+    return {
+      code: 'INV-09',
+      riskBand: 'LOW',
+      recommendation: 'PROCEED_CAUTIOUSLY',
+      reason: `Legitimate Commercial / Informational Notice: ${aiResult?.reasoning || 'Standard promotional, commercial, or informational message. No fraud, credential harvesting, or scam demand detected.'}`,
+      invariantType: 'BENIGN_PROMOTION_PRESERVATION',
+      isPromotion: true,
     }
   }
 
@@ -291,6 +303,7 @@ export function arbitrateDecision({
     matchedOrg,
     hasOfficialDomain,
     aiResult,
+    text,
   })
 
   let finalRiskBand = 'LOW'
@@ -369,6 +382,7 @@ export function arbitrateDecision({
     sourceUrl,
     isAdvisory: invariantHit?.isAdvisory || false,
     isTransactional: invariantHit?.isTransactional || false,
+    isPromotion: invariantHit?.isPromotion || false,
     isCoercive: Boolean(aiResult?.intent === 'COERCIVE_DEMAND'),
     authorities,
   })
@@ -389,7 +403,7 @@ export function arbitrateDecision({
   // raw keyword findings (e.g. "credential_request" or "urgency") are false alarms and must not
   // pollute the user-facing findings list with "Critical Threat" or "credential request" badges.
   let sanitizedFindings = [...allFindings]
-  if (invariantHit?.isTransactional || invariantHit?.isAdvisory || (aiResult?.intent === 'BENIGN_INFORMATIVE' && (aiResult?.confidence || 0) >= 0.75)) {
+  if (invariantHit?.isTransactional || invariantHit?.isPromotion || invariantHit?.isAdvisory || (aiResult?.intent === 'BENIGN_INFORMATIVE' && (aiResult?.confidence || 0) >= 0.75)) {
     sanitizedFindings = sanitizedFindings.filter(
       (f) => f.canonicalSignal !== 'credential_request' && f.canonicalSignal !== 'urgency'
     )

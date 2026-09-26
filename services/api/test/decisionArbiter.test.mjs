@@ -228,5 +228,33 @@ test('Scenario 4: Legitimate Transactional OTP Notification suppresses false ala
   assert.ok(arbitrated.decision.findings.some((f) => f.canonicalSignal === 'transactional_otp_issuance'))
 })
 
+test('Scenario 5: Legitimate Commercial / Promotional message (e.g. KFC promo) triggers INV-09 with zero OTP findings', () => {
+  const arbitrated = arbitrateDecision({
+    baseDecision: {
+      riskBand: 'LOW',
+      findings: [],
+    },
+    aiResult: {
+      verdict: 'DISAGREE',
+      intent: 'BENIGN_INFORMATIVE',
+      confidence: 0.95,
+      reasoning: 'The message is a standard, legitimate promotional offer for KFC meals with no credential theft, urgency coercion, or scam indicators.',
+    },
+    text: 'Craving crispy chicken? Order your favorite KFC meals online at www.kfc.lk! Get 20% off on all bucket meals this weekend only. T&C apply.',
+  })
+
+  assert.equal(arbitrated.decision.riskBand, 'LOW')
+  assert.equal(arbitrated.decision.recommendation, 'PROCEED_CAUTIOUSLY')
+  // Must NOT contain OTP issuance or transactional findings
+  assert.ok(!arbitrated.decision.findings.some((f) => f.canonicalSignal === 'transactional_otp_issuance'))
+  assert.ok(!arbitrated.decision.findings.some((f) => f.canonicalSignal === 'credential_request'))
+  assert.equal(arbitrated.decision.findings.length, 0)
+  // Must NOT give OTP safe actions or tell user to freeze card
+  assert.ok(!arbitrated.decision.safeActions.some((a) => a.includes('OTP')))
+  assert.ok(!arbitrated.decision.safeActions.some((a) => a.includes('freeze your card')))
+  // Must provide commercial promotion safe guidance
+  assert.ok(arbitrated.decision.safeActions.some((a) => a.includes('legitimate commercial promotion')))
+})
+
 
 
