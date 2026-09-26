@@ -1859,7 +1859,7 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                       <img src="/TrustLens_Icon.png" alt="TrustLens LK" />
                     </div>
                     <div className="neo-brand-title">
-                      TrustLens<span>LK</span>
+                      Trust<span className="brand-lens">Lens</span> <span className="brand-lk">LK</span>
                     </div>
                   </div>
                   <button

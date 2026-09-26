@@ -190,17 +190,23 @@
 
 .neo-brand-title {
   font-size: 16px;
-  font-weight: 700;
-  letter-spacing: -0.015em;
-  color: var(--neo-navy);
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  color: var(--neo-navy, #0F172A);
   white-space: nowrap;
+  display: flex;
+  align-items: baseline;
 }
 
-.neo-brand-title span {
-  color: var(--neo-primary);
-  font-weight: 600;
-  font-size: 12px;
-  margin-left: 2px;
+.neo-brand-title .brand-lens {
+  color: #0066FF;
+}
+
+.neo-brand-title .brand-lk {
+  color: var(--neo-navy, #0F172A);
+  font-weight: 750;
+  font-size: 0.85em;
+  margin-left: 4px;
 }
 
 /* ChatGPT-Style Sidebar Toggle Button (Expanded State) */
@@ -3541,16 +3547,20 @@
   position: absolute;
   top: 24px;
   left: 24px;
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
+  height: 38px;
+  padding: 0 16px 0 12px;
+  border-radius: 999px;
   background: rgba(255, 255, 255, 0.85);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
   border: 1.5px solid rgba(255, 255, 255, 0.95);
-  color: #0F172A;
-  display: grid;
-  place-items: center;
+  color: #334155;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-heading);
+  font-size: 13px;
+  font-weight: 650;
   cursor: pointer;
   z-index: 20;
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
@@ -3562,8 +3572,10 @@
 .neo-login-page-back-btn:hover {
   background: #FFFFFF;
   color: #0066FF;
-  transform: scale(1.06);
-  box-shadow: 0 6px 20px rgba(6, 23, 51, 0.12);
+  transform: translateY(-1px);
+  box-shadow:
+    0 6px 20px rgba(6, 23, 51, 0.12),
+    inset 0 1px 2px rgba(255, 255, 255, 1);
 }
 
 .neo-login-close-btn {

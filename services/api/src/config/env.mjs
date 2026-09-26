@@ -10,8 +10,9 @@ function loadEnvFile(path) {
   }
 }
 
+// Load unified root .env (and local .env fallback if present)
+loadEnvFile(new URL('../../../../.env', import.meta.url))
 loadEnvFile(new URL('../../.env', import.meta.url))
-loadEnvFile(new URL('../../.env.development', import.meta.url))
 
 
 function positiveInteger(value, fallback) {
