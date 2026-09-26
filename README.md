@@ -52,10 +52,11 @@ When an SMS, chat transcript, screenshot, or URL is submitted to TrustLens LK, i
   - **Job & Task Scam Detector**: Flags "daily pay", "like YouTube videos", or "WhatsApp task" recruitment lures.
   - **Urgency & Coercion Detector**: Identifies artificial deadlines, threats of account suspension, or legal action.
 
-### 3. 3-Tier Domain Trust & Age Verification
-- **Tier 1 (L1 In-Memory Global Whitelist)**: Top 20,000 globally trusted domains cached in memory for sub-millisecond, zero-database lookup.
-- **Tier 2 (L2 Curated Sri Lankan Institutional Directory)**: Actively curated and continuously verified database of official Sri Lankan institutions (Central Bank of Sri Lanka, commercial banks, telecom operators, `gov.lk` government services, utilities). Protected with PostgreSQL Row-Level Security (RLS).
-- **Tier 3 (L3 Live Heuristics & Domain Age)**: Performs RDAP/WHOIS age verification. Newly registered domains (< 30 days old) impersonating familiar brands are immediately escalated to High Risk.
+### 3. Multi-Tier Domain Verification & Threat Intelligence
+- **Tier 1 (Tranco Global Whitelist)**: Integrates the Tranco Top 1M list (cached in-memory) for sub-millisecond, zero-database verification of globally trusted domains (e.g., `google.com`, `facebook.com`).
+- **Tier 2 (Google Safe Browsing API)**: Performs real-time checks against Google's live threat intelligence database to instantly detect and block known malware, phishing, and deceptive sites.
+- **Tier 3 (Curated Sri Lankan Institutional Directory)**: Actively curated local database of official Sri Lankan institutions (Central Bank of Sri Lanka, commercial banks, telecom operators, `gov.lk` government services). Protected with PostgreSQL Row-Level Security (RLS).
+- **Tier 4 (Live WHOIS & Domain Age Heuristics)**: Performs live RDAP/WHOIS age verification. Newly registered domains (< 30 days old) that attempt to impersonate familiar brands or collect data are immediately escalated to High Risk.
 
 ### 4. Isolated Headless Playwright Sandbox Detonation (`services/scanner`)
 - **Containerized Playwright Worker**: Safely detonates URLs in an isolated, headless Chromium container.
