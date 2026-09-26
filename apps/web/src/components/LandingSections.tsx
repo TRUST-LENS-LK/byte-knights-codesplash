@@ -454,7 +454,7 @@ export const HowItWorksSection: React.FC<{ onStartCheck: () => void }> = ({ onSt
             </button>
             <span className="no-signup-note">
               <CheckCircle2 size={14} className="no-signup-check-icon" />
-              This service is 100% free — no sign-up needed
+              This service is 100% free - no sign-up needed
             </span>
           </div>
         </div>
@@ -753,7 +753,7 @@ export const LandingFooter: React.FC<FooterProps> = ({ onOpenReportModal, onBack
         <p className="footer-copyright">
           © 2026 TrustLens LK. All rights reserved.
         </p>
-        <span className="bottom-badge">100% Private — Messages Never Saved</span>
+        <span className="bottom-badge">100% Private - Messages Never Saved</span>
       </div>
     </footer>
   )
