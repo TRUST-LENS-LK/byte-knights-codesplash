@@ -177,11 +177,65 @@ function App() {
   const [text, setText] = useState('')
   const [checked, setChecked] = useState(false)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
+  const [scanStageIndex, setScanStageIndex] = useState(0)
   const [apiAnalysis, setApiAnalysis] = useState<ReturnType<typeof analyzeSubmission> | null>(null)
   const [, setApiMode] = useState<'local' | 'api'>('local')
   const [inputType, setInputType] = useState<'message' | 'screenshot'>('message')
   const [intelligenceOverlay, setIntelligenceOverlay] = useState<IntelligenceOverlay | null>(null)
   const [aiValidation, setAiValidation] = useState<AiValidation | null>(null)
+
+  // Dynamic progress stages for the analyze button while scanning
+  useEffect(() => {
+    if (!isAnalyzing) {
+      setScanStageIndex(0)
+      return
+    }
+    const timer = setInterval(() => {
+      setScanStageIndex((prev) => prev + 1)
+    }, 1200)
+    return () => clearInterval(timer)
+  }, [isAnalyzing])
+
+  const scanStages = useMemo(() => {
+    const trimmed = text.trim()
+    const isUrlLike =
+      detectSubmissionType(trimmed) === 'url' ||
+      /^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(?:\/.*)?$/.test(trimmed) ||
+      /https?:\/\//i.test(trimmed)
+
+    if (inputType === 'screenshot') {
+      return [
+        'Extracting text with OCR...',
+        'Detecting fake logos & UI...',
+        'Checking embedded links...',
+        'Checking bank & gov records...',
+        'Running AI threat analysis...',
+        'Finalizing safety verdict...',
+      ]
+    }
+
+    if (isUrlLike) {
+      return [
+        'Checking scam signals...',
+        'Probing safely in sandbox...',
+        'Scanning for fake forms...',
+        'Checking bank & gov records...',
+        'Running AI threat analysis...',
+        'Finalizing safety verdict...',
+      ]
+    }
+
+    return [
+      'Scanning scam red flags...',
+      'Checking urgency patterns...',
+      'Verifying official claims...',
+      'Checking bank & gov records...',
+      'Running AI threat analysis...',
+      'Finalizing safety verdict...',
+    ]
+  }, [text, inputType])
+
+  const currentScanText = scanStages[Math.min(scanStageIndex, scanStages.length - 1)]
 
   const [activeTab, setActiveTab] = useState<'all' | 'signals' | 'sandbox' | 'intel' | 'layer5'>('all')
   const [copiedKey, setCopiedKey] = useState<string | null>(null)
@@ -614,7 +668,7 @@ function App() {
             </div>
             <button
               type="button"
-              className="btn-scan"
+              className={`btn-scan ${isAnalyzing ? 'scanning' : ''}`}
               onClick={() => void checkMessage()}
               disabled={!text.trim() || isAnalyzing}
               title="Press Enter ↵ to analyze (Shift+Enter for new line)"
@@ -622,7 +676,9 @@ function App() {
               {isAnalyzing ? (
                 <>
                   <span className="spinner" />
-                  <span>Analyzing message...</span>
+                  <span className="btn-scan-stage" key={currentScanText}>
+                    {currentScanText}
+                  </span>
                 </>
               ) : (
                 <>
@@ -782,7 +838,7 @@ function App() {
                 onClick={() => handleTabClick('sandbox')}
               >
                 <Terminal size={16} />
-                <span>Website Safety Scan</span>
+                <span>Website Scan</span>
                 {hasDangerousInputs ? (
                   <span className="tab-badge-pill red">Alert</span>
                 ) : (
@@ -798,7 +854,7 @@ function App() {
                 onClick={() => handleTabClick('intel')}
               >
                 <Building2 size={16} />
-                <span>Official Checks & Reports</span>
+                <span>Official Checks</span>
                 {isOfficialEntity ? (
                   <span className="tab-badge-pill official">Official</span>
                 ) : isConfirmedScam ? (
@@ -812,7 +868,7 @@ function App() {
                 onClick={() => handleTabClick('layer5')}
               >
                 <Sparkles size={16} />
-                <span>AI Scam Analysis</span>
+                <span>AI Analysis</span>
               </button>
             </nav>
           </div>
