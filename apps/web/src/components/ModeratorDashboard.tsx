@@ -29,6 +29,7 @@ import {
   FileSpreadsheet,
   Info,
   AlertTriangle,
+  LogOut,
 } from 'lucide-react'
 import {
   type ModerationQueueItem,
@@ -1984,6 +1985,60 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
 
         {/* ── Main Canvas (Offset by Fixed Sidebar, Natural Window Flow) ─ */}
         <main className={`neo-canvas ${isSidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
+          {/* Mobile Top Bar (Responsive for mobile viewports <= 768px) */}
+          <div className="neo-mobile-top-bar">
+            <div className="neo-mobile-top-brand">
+              <div className="neo-mobile-brand-icon">
+                <img src="/TrustLens_Icon.png" alt="TrustLens LK" />
+              </div>
+              <div className="neo-mobile-brand-text">
+                Trust<span className="brand-lens">Lens</span> <span className="brand-lk">LK</span>
+              </div>
+            </div>
+
+            <div className="neo-mobile-top-actions">
+              {/* Dynamic Threat Feedback Loop Simple Toggle Button */}
+              <button
+                type="button"
+                className={`neo-feedback-toggle-btn neo-feedback-toggle-btn-mobile ${engineEnabled ? 'on' : 'off'}`}
+                onClick={handleToggleEngine}
+                disabled={isTogglingEngine}
+                title={
+                  engineEnabled
+                    ? 'Threat Feedback Loop is ACTIVE'
+                    : 'Threat Feedback Loop is PAUSED'
+                }
+              >
+                <span className="neo-feedback-toggle-pill">
+                  <span className="neo-feedback-toggle-knob" />
+                  <span className="neo-feedback-toggle-status">{engineEnabled ? 'ON' : 'OFF'}</span>
+                </span>
+              </button>
+
+              {/* Public Scanner Button */}
+              <button
+                type="button"
+                className="neo-btn-mobile-header"
+                onClick={onBackToScanner}
+                title="Return to public scanner"
+                aria-label="Public Scanner"
+              >
+                <ArrowLeft size={14} aria-hidden="true" />
+              </button>
+
+              {/* Sign Out Button */}
+              <button
+                type="button"
+                className="neo-btn-mobile-header logout"
+                onClick={handleSignOut}
+                title="Sign out of moderation portal"
+                aria-label="Log Out"
+              >
+                <LogOut size={14} aria-hidden="true" />
+              </button>
+            </div>
+          </div>
+
           {/* Header */}
           <header className="neo-header">
             <div className="neo-header-titles">
@@ -2748,10 +2803,10 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
           {activeNav === 'AUDIT' && (
             <section key="AUDIT" className="neo-queue-view-layout neo-view-transition" aria-label="Audit Trail and Retention Governance">
               {/* Complete Resolution Audit Trail Table */}
-              <div className="neo-modern-table-card">
-                <div className="neo-modern-toolbar">
+              <div className="neo-modern-table-card neo-audit-table-card">
+                <div className="neo-modern-toolbar neo-audit-modern-toolbar">
                   {/* Segmented Filter Pills */}
-                  <div className="neo-segmented-filter-group">
+                  <div className="neo-segmented-filter-group neo-audit-segmented-filter-group">
                     {[
                       { id: 'ALL', label: `All (${allAuditCount || auditStorageStats?.totalRecords || auditTotal})` },
                       {
@@ -2785,8 +2840,8 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                   </div>
 
                   {/* Right: Search, Date Filter, Retention Selector, Export and Prune Actions */}
-                  <div className="neo-modern-toolbar-actions">
-                    <div className="neo-toolbar-search-box">
+                  <div className="neo-modern-toolbar-actions neo-audit-toolbar-actions">
+                    <div className="neo-toolbar-search-box neo-audit-search-box">
                       <Search size={14} className="neo-search-icon-inside" aria-hidden="true" />
                       <input
                         type="text"
@@ -2800,39 +2855,42 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                       />
                     </div>
 
-                    {/* Date Range Selector Dropdown */}
-                    <div className="neo-retention-selector-wrapper" title="Filter audit events by timeframe">
-                      <select
-                        className="neo-retention-select"
-                        value={auditDateFilter}
-                        onChange={(e) => {
-                          setAuditDateFilter(e.target.value as any)
-                          setAuditPage(1)
-                        }}
-                        title="Filter audit trail by time period"
-                      >
-                        <option value="ALL">All Dates</option>
-                        <option value="TODAY">Today (24h)</option>
-                        <option value="7DAYS">Last 7 Days</option>
-                        <option value="30DAYS">Last 30 Days</option>
-                      </select>
-                    </div>
+                    {/* Date Range & Retention Selectors Row */}
+                    <div className="neo-audit-selectors-row">
+                      {/* Date Range Selector Dropdown */}
+                      <div className="neo-retention-selector-wrapper" title="Filter audit events by timeframe">
+                        <select
+                          className="neo-retention-select"
+                          value={auditDateFilter}
+                          onChange={(e) => {
+                            setAuditDateFilter(e.target.value as any)
+                            setAuditPage(1)
+                          }}
+                          title="Filter audit trail by time period"
+                        >
+                          <option value="ALL">All Dates</option>
+                          <option value="TODAY">Today (24h)</option>
+                          <option value="7DAYS">Last 7 Days</option>
+                          <option value="30DAYS">Last 30 Days</option>
+                        </select>
+                      </div>
 
-                    {/* Retention Setting Selector Dropdown */}
-                    <div className="neo-retention-selector-wrapper" title="Manually configure data retention TTL policy">
-                      <select
-                        className="neo-retention-select"
-                        value={retentionDays}
-                        disabled={isUpdatingRetention}
-                        onChange={(e) => void handleRetentionDaysChange(Number(e.target.value))}
-                        title="Set audit trail data retention period"
-                      >
-                        <option value={30}>TTL: 30 Days</option>
-                        <option value={60}>TTL: 60 Days</option>
-                        <option value={90}>TTL: 90 Days (Default)</option>
-                        <option value={180}>TTL: 180 Days (6 Mos)</option>
-                        <option value={365}>TTL: 365 Days (1 Yr)</option>
-                      </select>
+                      {/* Retention Setting Selector Dropdown */}
+                      <div className="neo-retention-selector-wrapper" title="Manually configure data retention TTL policy">
+                        <select
+                          className="neo-retention-select"
+                          value={retentionDays}
+                          disabled={isUpdatingRetention}
+                          onChange={(e) => void handleRetentionDaysChange(Number(e.target.value))}
+                          title="Set audit trail data retention period"
+                        >
+                          <option value={30}>TTL: 30 Days</option>
+                          <option value={60}>TTL: 60 Days</option>
+                          <option value={90}>TTL: 90 Days (Default)</option>
+                          <option value={180}>TTL: 180 Days (6 Mos)</option>
+                          <option value={365}>TTL: 365 Days (1 Yr)</option>
+                        </select>
+                      </div>
                     </div>
 
                   </div>
@@ -3945,6 +4003,77 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
             </section>
           )}
         </main>
+
+        {/* ── Mobile Frosted Bottom Navigation Dock (Visible on mobile <= 768px) ── */}
+        <nav className="neo-mobile-bottom-nav" aria-label="Moderator Mobile Navigation Dock">
+          <button
+            type="button"
+            className={`neo-mobile-nav-btn ${activeNav === 'DASHBOARD' ? 'active' : ''}`}
+            onClick={() => setActiveNav('DASHBOARD')}
+            title="Dashboard Overview"
+          >
+            <div className="neo-mobile-nav-icon-wrap">
+              <LayoutDashboard size={19} aria-hidden="true" />
+            </div>
+            <span>Overview</span>
+          </button>
+
+          <button
+            type="button"
+            className={`neo-mobile-nav-btn ${activeNav === 'QUEUE' ? 'active' : ''}`}
+            onClick={() => {
+              setActiveNav('QUEUE')
+              setActiveTab('PENDING')
+            }}
+            title="Citizen Queue"
+          >
+            <div className="neo-mobile-nav-icon-wrap">
+              <Clock size={19} aria-hidden="true" />
+              {pendingCount > 0 && (
+                <span className="neo-mobile-badge-pill" title={`${pendingCount} pending`}>
+                  {pendingCount > 99 ? '99+' : pendingCount}
+                </span>
+              )}
+            </div>
+            <span>Queue</span>
+          </button>
+
+          <button
+            type="button"
+            className={`neo-mobile-nav-btn ${activeNav === 'INTELLIGENCE' ? 'active' : ''}`}
+            onClick={() => setActiveNav('INTELLIGENCE')}
+            title="Verified Threat Intelligence"
+          >
+            <div className="neo-mobile-nav-icon-wrap">
+              <ShieldCheck size={19} aria-hidden="true" />
+            </div>
+            <span>Intel</span>
+          </button>
+
+          <button
+            type="button"
+            className={`neo-mobile-nav-btn ${activeNav === 'DOMAINS' ? 'active' : ''}`}
+            onClick={() => setActiveNav('DOMAINS')}
+            title="Official Domains Directory"
+          >
+            <div className="neo-mobile-nav-icon-wrap">
+              <Globe size={19} aria-hidden="true" />
+            </div>
+            <span>Domains</span>
+          </button>
+
+          <button
+            type="button"
+            className={`neo-mobile-nav-btn ${activeNav === 'AUDIT' ? 'active' : ''}`}
+            onClick={() => setActiveNav('AUDIT')}
+            title="Moderation Audit Trail"
+          >
+            <div className="neo-mobile-nav-icon-wrap">
+              <FileText size={19} aria-hidden="true" />
+            </div>
+            <span>Audit</span>
+          </button>
+        </nav>
       </div>
 
       {/* ── Review Decision Modal (Consensus, Classification & Sanitization) ── */}

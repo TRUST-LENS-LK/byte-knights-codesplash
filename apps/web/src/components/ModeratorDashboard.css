@@ -76,6 +76,7 @@
   padding: 0;
   margin: 0;
   box-sizing: border-box;
+  overflow-x: hidden;
   font-family: 'Inter', 'Poppins', 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   color: var(--neo-ink);
   display: block;
@@ -92,6 +93,7 @@
   border: none;
   display: block;
   position: relative;
+  overflow-x: hidden;
 }
 
 /* ── Fixed Left Sidebar (Permanently Docked to Viewport, Non-Scrolling) ─── */
@@ -1999,6 +2001,12 @@
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.neo-audit-selectors-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .neo-audit-action-buttons {
@@ -4708,9 +4716,664 @@
   .neo-btn-toolbar-verify,
   .neo-btn-toolbar-verify.is-verifying,
   .neo-spin-icon,
-  .neo-nav-btn {
+  .neo-nav-btn,
+  .neo-mobile-nav-btn {
     animation: none !important;
     transition: none !important;
     transform: none !important;
   }
 }
+
+/* ==========================================================================
+   TrustLens LK — Mobile Responsiveness & Native App Experience (Member 5)
+   Breakpoints: <= 768px (Tablet & Mobile), <= 480px (Smartphones)
+   ========================================================================== */
+
+/* ── Mobile Top Bar (Desktop Default: Hidden) ───────────────────────────── */
+.neo-mobile-top-bar {
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(226, 232, 240, 0.85);
+  border-radius: 16px;
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.04);
+  margin-bottom: 2px;
+  box-sizing: border-box;
+}
+
+.neo-mobile-top-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.neo-mobile-brand-icon {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.neo-mobile-brand-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.neo-mobile-brand-text {
+  font-size: 15px;
+  font-weight: 800;
+  color: #0F172A;
+  letter-spacing: -0.02em;
+}
+
+.neo-mobile-brand-text .brand-lens {
+  color: #0066FF;
+}
+
+.neo-mobile-brand-text .brand-lk {
+  font-size: 0.85em;
+  font-weight: 750;
+  color: #0F172A;
+  margin-left: 2px;
+}
+
+.neo-mobile-top-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.neo-feedback-toggle-btn-mobile {
+  padding: 3px 6px !important;
+  height: 32px !important;
+}
+
+.neo-btn-mobile-header {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  color: #334155;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+}
+
+.neo-btn-mobile-header:hover {
+  background: #F8FAFC;
+  color: #0066FF;
+  border-color: #CBD5E1;
+}
+
+.neo-btn-mobile-header.logout:hover {
+  color: #EF4444;
+  border-color: #FECACA;
+  background: #FEF2F2;
+}
+
+/* ── Mobile Frosted Bottom Navigation Dock (Desktop Default: Hidden) ───── */
+.neo-mobile-bottom-nav {
+  display: none;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 64px;
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-top: 1px solid rgba(226, 232, 240, 0.9);
+  box-shadow: 0 -4px 20px rgba(15, 23, 42, 0.07);
+  z-index: 9999;
+  align-items: center;
+  justify-content: space-around;
+  padding: 0 4px;
+  box-sizing: border-box;
+}
+
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  .neo-mobile-bottom-nav {
+    padding-bottom: env(safe-area-inset-bottom);
+    height: calc(64px + env(safe-area-inset-bottom));
+  }
+}
+
+.neo-mobile-nav-btn {
+  flex: 1;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: #64748B;
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 6px 2px;
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.neo-mobile-nav-icon-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 26px;
+  border-radius: 12px;
+  transition: all 0.18s ease;
+}
+
+.neo-mobile-nav-btn.active {
+  color: #0066FF;
+  font-weight: 750;
+}
+
+.neo-mobile-nav-btn.active .neo-mobile-nav-icon-wrap {
+  background: rgba(0, 102, 255, 0.08);
+  color: #0066FF;
+  transform: translateY(-1px);
+}
+
+.neo-mobile-badge-pill {
+  position: absolute;
+  top: -4px;
+  right: -6px;
+  background: #EF4444;
+  color: #FFFFFF;
+  font-size: 9px;
+  font-weight: 800;
+  padding: 1px 5px;
+  border-radius: 999px;
+  border: 1.5px solid #FFFFFF;
+  line-height: 1.1;
+  box-shadow: 0 2px 6px rgba(239, 68, 68, 0.3);
+}
+
+/* ==========================================================================
+   TABLET & MOBILE VIEWPORT ADAPTATION (<= 768px)
+   ========================================================================== */
+@media (max-width: 768px) {
+  /* 1. Hide Desktop Sidebar & Display Native Mobile Navs */
+  .neo-sidebar {
+    display: none !important;
+  }
+
+  .neo-mobile-top-bar {
+    display: flex !important;
+  }
+
+  .neo-mobile-bottom-nav {
+    display: flex !important;
+  }
+
+  /* 2. Reset Main Canvas to Full Width with Bottom Dock Clearance */
+  .neo-canvas,
+  .neo-canvas.sidebar-collapsed {
+    margin-left: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    padding: 12px 12px 86px !important;
+    gap: 14px !important;
+  }
+
+  /* 3. Mobile Header */
+  .neo-header {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 4px !important;
+    margin-bottom: 2px !important;
+  }
+
+  .neo-header-titles h1 {
+    font-size: 19px !important;
+    line-height: 1.25 !important;
+    margin: 0 !important;
+  }
+
+  .neo-header-date {
+    font-size: 11px !important;
+    color: #64748B !important;
+  }
+
+  .neo-header-actions {
+    display: none !important;
+  }
+
+  /* 4. Dashboard View: 2x2 KPI Cards Grid */
+  .neo-kpi-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 10px !important;
+  }
+
+  .neo-kpi-card {
+    padding: 12px 10px !important;
+    border-radius: 14px !important;
+    min-height: auto !important;
+  }
+
+  .neo-kpi-value {
+    font-size: 20px !important;
+  }
+
+  .neo-kpi-label {
+    font-size: 11px !important;
+  }
+
+  .neo-kpi-trend {
+    font-size: 10px !important;
+    padding: 2px 6px !important;
+  }
+
+  .neo-kpi-sparkline {
+    width: 52px !important;
+  }
+
+  /* 5. Threat Inflow Velocity Chart */
+  .neo-velocity-row .neo-card {
+    padding: 16px 12px !important;
+    border-radius: 16px !important;
+  }
+
+  .neo-card-header {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 8px !important;
+  }
+
+  .neo-card-title {
+    font-size: 15px !important;
+  }
+
+  .neo-card-subtitle {
+    font-size: 11px !important;
+  }
+
+  .neo-velocity-chart-wrapper {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+    padding-bottom: 6px !important;
+  }
+
+  .neo-velocity-columns {
+    min-width: 280px !important;
+  }
+
+  .neo-velocity-bar {
+    width: 14px !important;
+  }
+
+  .neo-chart-legend {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 6px !important;
+    font-size: 11px !important;
+  }
+
+  /* 6. Dashboard Bottom Cards: Stacked Single Column */
+  .neo-bottom-cards-row {
+    grid-template-columns: 1fr !important;
+    flex-direction: column !important;
+    gap: 14px !important;
+  }
+
+  .neo-bottom-modern-card {
+    width: 100% !important;
+    border-radius: 16px !important;
+    padding: 16px 14px !important;
+  }
+
+  /* 7. Queue & Tables: Touch Scroll & Responsive Padding */
+  .neo-modern-table-card {
+    padding: 14px 10px !important;
+    border-radius: 16px !important;
+  }
+
+  .neo-modern-toolbar {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 10px !important;
+  }
+
+  .neo-segmented-filter-group {
+    overflow-x: auto !important;
+    max-width: 100% !important;
+    -webkit-overflow-scrolling: touch !important;
+    padding: 3px !important;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .neo-segmented-filter-group::-webkit-scrollbar {
+    display: none;
+  }
+
+  .neo-seg-pill {
+    font-size: 12px !important;
+    padding: 5px 11px !important;
+    flex-shrink: 0 !important;
+  }
+
+  .neo-filter-toolbar,
+  .neo-intel-filter-strip,
+  .neo-modern-toolbar-actions {
+    overflow-x: auto !important;
+    max-width: 100% !important;
+    -webkit-overflow-scrolling: touch !important;
+    flex-wrap: nowrap !important;
+    padding-bottom: 4px !important;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .neo-filter-toolbar::-webkit-scrollbar,
+  .neo-intel-filter-strip::-webkit-scrollbar,
+  .neo-modern-toolbar-actions::-webkit-scrollbar {
+    display: none;
+  }
+
+  .neo-toolbar-search-box {
+    width: 100% !important;
+    min-width: 100% !important;
+  }
+
+  .neo-modern-search-input {
+    width: 100% !important;
+    font-size: 13px !important;
+  }
+
+  .neo-modern-table-wrapper {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+    width: 100% !important;
+    border-radius: 10px !important;
+  }
+
+  .neo-modern-table th,
+  .neo-modern-table td {
+    padding: 10px 8px !important;
+    font-size: 12px !important;
+    white-space: nowrap !important;
+  }
+
+  .neo-target-cell {
+    min-width: 130px;
+  }
+
+  .neo-target-domain {
+    font-size: 12.5px !important;
+    max-width: 130px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .neo-btn-action-lime,
+  .neo-btn-reject-mini,
+  .neo-btn-secondary-sm {
+    padding: 6px 10px !important;
+    font-size: 11.5px !important;
+    min-height: 32px;
+  }
+
+  /* 8. Pagination Responsive Centering */
+  .neo-pagination-bar {
+    flex-direction: column !important;
+    align-items: center !important;
+    gap: 10px !important;
+    padding: 12px 8px !important;
+    text-align: center !important;
+  }
+
+  .neo-pagination-info {
+    flex-direction: column !important;
+    gap: 6px !important;
+    align-items: center !important;
+    font-size: 11.5px !important;
+  }
+
+  .neo-pagination-actions {
+    flex-wrap: wrap !important;
+    justify-content: center !important;
+    gap: 4px !important;
+  }
+
+  /* 9. Verified Intelligence 2x2 Metric Cards */
+  .neo-intel-metrics-row {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 10px !important;
+  }
+
+  .neo-intel-stat-card {
+    padding: 14px 12px !important;
+    border-radius: 14px !important;
+  }
+
+  .neo-intel-stat-value {
+    font-size: 20px !important;
+  }
+
+  /* 10. Official Domain Directory Form Panel */
+  .neo-modern-panel {
+    padding: 14px 12px !important;
+    border-radius: 14px !important;
+  }
+
+  .neo-modern-panel div[style*="display: flex"] {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 10px !important;
+  }
+
+  .neo-modern-panel label {
+    width: 100% !important;
+    min-width: 100% !important;
+  }
+
+  .neo-modern-panel input {
+    width: 100% !important;
+    min-width: 100% !important;
+    box-sizing: border-box;
+  }
+
+  .neo-modern-panel .neo-btn-primary {
+    width: 100% !important;
+    padding: 12px !important;
+    justify-content: center !important;
+  }
+
+  /* 11. Audit Subsystem Mobile Responsiveness & Grid Reflow */
+  .neo-audit-table-card {
+    overflow: hidden !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  .neo-audit-modern-toolbar {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 12px !important;
+    width: 100% !important;
+  }
+
+  .neo-audit-segmented-filter-group {
+    overflow-x: auto !important;
+    max-width: 100% !important;
+    -webkit-overflow-scrolling: touch !important;
+    padding: 3px !important;
+    scrollbar-width: none !important;
+    -ms-overflow-style: none !important;
+  }
+
+  .neo-audit-segmented-filter-group::-webkit-scrollbar {
+    display: none !important;
+  }
+
+  .neo-audit-toolbar-actions {
+    display: flex !important;
+    flex-direction: column !important;
+    width: 100% !important;
+    gap: 8px !important;
+    overflow: visible !important;
+  }
+
+  .neo-audit-search-box {
+    width: 100% !important;
+    min-width: 100% !important;
+  }
+
+  .neo-audit-search-box .neo-modern-search-input {
+    width: 100% !important;
+    min-width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  .neo-audit-selectors-row {
+    display: flex !important;
+    width: 100% !important;
+    gap: 8px !important;
+    align-items: center !important;
+  }
+
+  .neo-audit-selectors-row .neo-retention-selector-wrapper {
+    flex: 1 !important;
+    min-width: 0 !important;
+    width: 50% !important;
+    box-sizing: border-box !important;
+  }
+
+  .neo-audit-selectors-row .neo-retention-select {
+    width: 100% !important;
+    min-width: 0 !important;
+    font-size: 11.5px !important;
+    text-overflow: ellipsis !important;
+  }
+
+  .neo-audit-action-buttons {
+    width: 100% !important;
+    margin-left: 0 !important;
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    gap: 8px !important;
+    box-sizing: border-box !important;
+  }
+
+  .neo-audit-action-buttons .neo-btn-toolbar-verify {
+    grid-column: 1 / -1 !important;
+    width: 100% !important;
+    justify-content: center !important;
+    height: 38px !important;
+    font-size: 12.5px !important;
+    box-sizing: border-box !important;
+  }
+
+  .neo-audit-action-buttons .neo-btn-toolbar-reset {
+    width: 100% !important;
+    justify-content: center !important;
+    height: 36px !important;
+    font-size: 11.5px !important;
+    box-sizing: border-box !important;
+  }
+
+  .neo-audit-action-buttons .neo-btn-toolbar-prune {
+    grid-column: 1 / -1 !important;
+    width: 100% !important;
+    justify-content: center !important;
+    height: 36px !important;
+    font-size: 12px !important;
+    box-sizing: border-box !important;
+  }
+
+  .neo-chain-banner {
+    flex-direction: column !important;
+    gap: 8px !important;
+    text-align: center !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  /* 12. Moderator Login View on Mobile */
+  .neo-login-viewport {
+    padding: 20px 14px !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
+    min-height: 100vh !important;
+    min-height: 100dvh !important;
+  }
+
+  .neo-login-page-back-btn {
+    position: relative !important;
+    top: auto !important;
+    left: auto !important;
+    align-self: flex-start !important;
+    margin-bottom: 12px !important;
+    font-size: 12.5px !important;
+  }
+
+  .neo-login-container {
+    width: 100% !important;
+    margin-top: 6px !important;
+  }
+
+  .neo-login-card {
+    border-radius: 22px !important;
+  }
+
+  .neo-login-card-content {
+    padding: 22px 18px 28px !important;
+  }
+
+  .neo-dark-input {
+    font-size: 16px !important; /* Prevents auto-zoom on iOS Safari */
+    min-height: 44px !important;
+  }
+}
+
+/* ==========================================================================
+   EXTRA-SMALL PHONES (<= 380px)
+   ========================================================================== */
+@media (max-width: 380px) {
+  .neo-kpi-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .neo-intel-metrics-row {
+    grid-template-columns: 1fr !important;
+  }
+
+  .neo-mobile-bottom-nav {
+    height: 58px !important;
+  }
+
+  .neo-mobile-nav-btn span {
+    font-size: 9.5px !important;
+  }
+
+  .neo-mobile-brand-text {
+    font-size: 13.5px !important;
+  }
+
+  .neo-audit-selectors-row {
+    flex-direction: column !important;
+  }
+
+  .neo-audit-selectors-row .neo-retention-selector-wrapper {
+    width: 100% !important;
+  }
+}
+
