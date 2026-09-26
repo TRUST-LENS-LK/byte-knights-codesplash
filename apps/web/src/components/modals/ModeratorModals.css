@@ -1,0 +1,1311 @@
+/* ==========================================================================
+   TrustLens LK — Moderator Modals (Inspection & Decision Popups)
+   Aesthetic: Modern Light Futuristic Security Interface (Card-Based, Clean White)
+   Palette: Primary Blue (#0066FF), Deep Slate (#0F172A), Muted (#64748B), White (#FFFFFF)
+   ========================================================================== */
+
+/* ── Modal Backdrop Overlay (Glassmorphism) ───────────────────────── */
+.neo-modal-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 999999;
+  box-sizing: border-box;
+  overflow-y: auto;
+  animation: modalFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes modalFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* ── Modal Container Dialog (Card-Based with Crisp Border & Soft Shadow) ─── */
+.neo-modal-dialog {
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 24px;
+  box-shadow:
+    0 25px 60px -12px rgba(15, 23, 42, 0.16),
+    0 10px 24px -6px rgba(0, 102, 255, 0.06);
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-height: 88vh;
+  box-sizing: border-box;
+  overflow: hidden;
+  position: relative;
+  margin: auto;
+  animation: modalSlideUp 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes modalSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.neo-modal-dialog.detail-size {
+  max-width: 760px;
+}
+
+.neo-modal-dialog.decision-size {
+  max-width: 820px;
+}
+
+/* ── Modal Header ───────────────────────────────────────────────── */
+.neo-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 22px 28px 18px;
+  border-bottom: 1px solid #E2E8F0;
+  background: #FFFFFF;
+  flex-shrink: 0;
+}
+
+.neo-modal-header-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.neo-modal-header-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  transition: all 0.2s ease;
+}
+
+.neo-modal-header-icon.blue {
+  background: #EFF6FF;
+  border: 1px solid #DBEAFE;
+  color: #0066FF;
+}
+
+.neo-modal-header-icon.amber {
+  background: #FFFBEB;
+  border: 1px solid #FDE68A;
+  color: #D97706;
+}
+
+.neo-modal-header-icon.red {
+  background: #FEF2F2;
+  border: 1px solid #FECACA;
+  color: #EF4444;
+}
+
+.neo-modal-title {
+  font-size: 18px;
+  font-weight: 800;
+  color: #0F172A;
+  margin: 0 0 3px;
+  letter-spacing: -0.02em;
+}
+
+.neo-modal-subtitle {
+  font-size: 12.5px;
+  color: #64748B;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.neo-report-id-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: #F1F5F9;
+  border: 1px solid #E2E8F0;
+  border-radius: 5px;
+  padding: 1.5px 6px;
+  font-size: 11.5px;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-family: inherit;
+  line-height: 1.3;
+}
+
+.neo-report-id-copy-btn:hover {
+  background: #E2E8F0;
+  color: #0F172A;
+  border-color: #CBD5E1;
+}
+
+.neo-report-id-label {
+  color: #64748B;
+  font-weight: 500;
+}
+
+.neo-report-id-code {
+  font-family: 'SF Mono', Monaco, Inconsolata, 'Fira Code', monospace;
+  font-weight: 600;
+  color: #0F172A;
+}
+
+.neo-report-id-copy-btn .neo-copied-text {
+  color: #10B981;
+  font-weight: 700;
+  font-size: 11px;
+}
+
+.neo-modal-btn-close {
+  background: #F8FAFC;
+  border: 1px solid #E2E8F0;
+  cursor: pointer;
+  color: #64748B;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  transition: all 0.15s ease;
+}
+
+.neo-modal-btn-close:hover {
+  background: #F1F5F9;
+  color: #0F172A;
+  border-color: #CBD5E1;
+  transform: scale(1.05);
+}
+
+/* ── Modal Scrollable Body ──────────────────────────────────────── */
+.neo-modal-body {
+  padding: 24px 28px;
+  overflow-y: auto;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  box-sizing: border-box;
+}
+
+/* Sleek Scrollbar */
+.neo-modal-body::-webkit-scrollbar,
+.neo-modal-code-block::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.neo-modal-body::-webkit-scrollbar-track,
+.neo-modal-code-block::-webkit-scrollbar-track {
+  background: #F8FAFC;
+}
+
+.neo-modal-body::-webkit-scrollbar-thumb,
+.neo-modal-code-block::-webkit-scrollbar-thumb {
+  background: #CBD5E1;
+  border-radius: 3px;
+}
+
+.neo-modal-body::-webkit-scrollbar-thumb:hover,
+.neo-modal-code-block::-webkit-scrollbar-thumb:hover {
+  background: #94A3B8;
+}
+
+/* ── Metadata Grid (Card-Based) ─────────────────────────────────── */
+.neo-modal-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  background: #F8FAFC;
+  border: 1px solid #E2E8F0;
+  border-radius: 16px;
+  padding: 16px 20px;
+  flex-shrink: 0;
+}
+
+.neo-modal-meta-item {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.neo-modal-meta-item.full-width {
+  grid-column: 1 / -1;
+}
+
+.neo-modal-meta-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #64748B;
+}
+
+.neo-modal-meta-val {
+  font-size: 13px;
+  font-weight: 600;
+  color: #0F172A;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ── Submitter Notes Callout ────────────────────────────────────── */
+.neo-modal-notes-callout {
+  background: #ECFDF5;
+  border: 1px solid #A7F3D0;
+  border-radius: 14px;
+  padding: 14px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.neo-modal-notes-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: #065F46;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.neo-modal-notes-text {
+  font-size: 13px;
+  color: #047857;
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* ── Large Text Excerpt Viewport ─────────────────────────────────── */
+.neo-modal-text-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.neo-modal-text-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.neo-modal-text-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #0F172A;
+}
+
+.neo-modal-text-badge {
+  font-size: 11px;
+  font-weight: 600;
+  color: #0066FF;
+  background: #EFF6FF;
+  border: 1px solid #DBEAFE;
+  border-radius: 20px;
+  padding: 2px 8px;
+}
+
+.neo-modal-btn-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 8px;
+  padding: 5px 10px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.neo-modal-btn-copy:hover {
+  background: #EFF6FF;
+  color: #0066FF;
+  border-color: #93C5FD;
+}
+
+.neo-modal-code-block {
+  background: #0F172A;
+  color: #F8FAFC;
+  border: 1px solid #1E293B;
+  border-radius: 14px;
+  padding: 18px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12.5px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 240px;
+  overflow-y: auto;
+  margin: 0;
+  user-select: text;
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.25);
+}
+
+/* ── Decision Form Styling (Inside Decision Modal) ──────────────── */
+.neo-modal-decision-card {
+  background: #F8FAFC;
+  border: 1px solid #E2E8F0;
+  border-radius: 16px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  flex-shrink: 0;
+}
+
+.neo-modal-decision-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.neo-form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.neo-form-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #334155;
+  letter-spacing: -0.01em;
+}
+
+.neo-modal-select,
+.neo-modal-input {
+  height: 40px;
+  border-radius: 12px;
+  border: 1px solid #CBD5E1;
+  background: #FFFFFF;
+  color: #0F172A;
+  padding: 0 12px;
+  font-size: 13px;
+  font-weight: 500;
+  outline: none;
+  font-family: inherit;
+  transition: all 0.15s ease;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.neo-modal-select:focus,
+.neo-modal-input:focus {
+  border-color: #0066FF;
+  box-shadow: 0 0 0 3px rgba(0, 102, 255, 0.12);
+}
+
+.neo-modal-pii-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #059669;
+  background: #ECFDF5;
+  border: 1px solid #A7F3D0;
+  border-radius: 10px;
+  padding: 8px 14px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+/* ── Modal Footer ───────────────────────────────────────────────── */
+.neo-modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 28px;
+  background: #FFFFFF;
+  border-top: 1px solid #E2E8F0;
+  flex-shrink: 0;
+  gap: 12px;
+}
+
+.neo-modal-footer-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+}
+
+.neo-modal-btn-subtle {
+  background: #F8FAFC;
+  color: #475569;
+  border: 1px solid #E2E8F0;
+  border-radius: 12px;
+  padding: 10px 18px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.neo-modal-btn-subtle:hover {
+  background: #F1F5F9;
+  color: #0F172A;
+  border-color: #CBD5E1;
+  transform: translateY(-1px);
+}
+
+.neo-modal-btn-subtle:active {
+  transform: translateY(0) scale(0.98);
+}
+
+.neo-modal-btn-action-lime {
+  background: #0066FF;
+  color: #FFFFFF;
+  border: none;
+  border-radius: 12px;
+  padding: 10px 22px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 4px 14px rgba(0, 102, 255, 0.28);
+}
+
+.neo-modal-btn-action-lime:hover:not(:disabled) {
+  background: #0052CC;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(0, 102, 255, 0.38);
+}
+
+.neo-modal-btn-action-lime:active:not(:disabled) {
+  transform: translateY(0) scale(0.98);
+  box-shadow: 0 2px 8px rgba(0, 102, 255, 0.24);
+}
+
+.neo-modal-btn-action-lime:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+.neo-modal-btn-reject {
+  background: #FEF2F2;
+  color: #EF4444;
+  border: 1px solid #FECACA;
+  border-radius: 12px;
+  padding: 10px 18px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.neo-modal-btn-reject:hover:not(:disabled) {
+  background: #FEE2E2;
+  border-color: #F87171;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.12);
+}
+
+.neo-modal-btn-reject:active:not(:disabled) {
+  transform: translateY(0) scale(0.98);
+}
+
+.neo-modal-btn-reject:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+/* Responsive: Transform into Native Mobile Bottom Sheet on <= 640px */
+@media (max-width: 640px) {
+  .neo-modal-backdrop {
+    align-items: flex-end !important;
+    padding: 0 !important;
+    background: rgba(15, 23, 42, 0.55) !important;
+  }
+
+  .neo-modal-dialog,
+  .neo-modal-dialog.detail-size,
+  .neo-modal-dialog.decision-size {
+    width: 100% !important;
+    max-width: 100% !important;
+    border-radius: 24px 24px 0 0 !important;
+    max-height: 92vh !important;
+    max-height: 92dvh !important;
+    margin: 0 !important;
+    border-bottom: none !important;
+    box-shadow: 0 -10px 40px rgba(15, 23, 42, 0.25) !important;
+    animation: modalSlideUpMobile 0.28s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  }
+
+  @keyframes modalSlideUpMobile {
+    from {
+      transform: translateY(100%);
+    }
+    to {
+      transform: translateY(0);
+    }
+  }
+
+  .neo-modal-header {
+    padding: 14px 16px !important;
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 10 !important;
+    background: #FFFFFF !important;
+  }
+
+  .neo-modal-header-icon {
+    width: 36px !important;
+    height: 36px !important;
+    border-radius: 10px !important;
+  }
+
+  .neo-modal-title {
+    font-size: 16px !important;
+  }
+
+  .neo-modal-subtitle {
+    font-size: 11.5px !important;
+  }
+
+  .neo-modal-body {
+    padding: 14px 16px 20px !important;
+    gap: 14px !important;
+  }
+
+  .neo-modal-meta-grid {
+    grid-template-columns: 1fr !important;
+    padding: 12px 14px !important;
+    gap: 8px !important;
+  }
+
+  .neo-modal-decision-grid {
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+  }
+
+  .neo-modal-footer {
+    position: sticky !important;
+    bottom: 0 !important;
+    background: #FFFFFF !important;
+    padding: 12px 16px !important;
+    border-top: 1px solid #E2E8F0 !important;
+    z-index: 20 !important;
+    flex-direction: column !important;
+    gap: 10px !important;
+    box-shadow: 0 -4px 14px rgba(15, 23, 42, 0.05) !important;
+  }
+
+  .neo-modal-footer-actions {
+    width: 100% !important;
+    display: flex !important;
+    flex-direction: row !important;
+    gap: 8px !important;
+    justify-content: stretch !important;
+  }
+
+  .neo-modal-btn-action-lime,
+  .neo-modal-btn-reject,
+  .neo-modal-btn-subtle {
+    flex: 1 !important;
+    justify-content: center !important;
+    text-align: center !important;
+    min-height: 44px !important;
+    font-size: 13px !important;
+    padding: 10px 12px !important;
+  }
+
+  .neo-audit-detail-tabs {
+    overflow-x: auto !important;
+    max-width: 100% !important;
+    -webkit-overflow-scrolling: touch !important;
+    padding-bottom: 2px !important;
+  }
+
+  .neo-intel-skeleton-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* ── Protected Entity Guardrail Banner ──────────────────────────── */
+.neo-protected-entity-banner {
+  background: #FAFAFC;
+  border: 1px solid #E2E8F0;
+  border-radius: 14px;
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
+  position: relative;
+  flex-shrink: 0;
+  min-height: fit-content;
+  box-sizing: border-box;
+}
+
+.neo-protected-entity-banner.national {
+  background: linear-gradient(180deg, #FDFBF7 0%, #FAF8F5 100%);
+  border: 1px solid #F1E5D1;
+  border-left: 4px solid #D97706;
+}
+
+.neo-protected-entity-banner.global {
+  background: linear-gradient(180deg, #F8FAFC 0%, #F1F5F9 100%);
+  border: 1px solid #CBD5E1;
+  border-left: 4px solid #2563EB;
+}
+
+.neo-protected-banner-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.neo-protected-badge-lg {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 3.5px 9px;
+  border-radius: 6px;
+  letter-spacing: 0.01em;
+}
+
+.neo-protected-entity-banner.national .neo-protected-badge-lg {
+  border: 1px solid #FDE68A;
+  color: #92400E;
+  background: #FEF3C7;
+}
+
+.neo-protected-entity-banner.global .neo-protected-badge-lg {
+  border: 1px solid #BFDBFE;
+  color: #1E40AF;
+  background: #EFF6FF;
+}
+
+.neo-protected-entity-title {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #0F172A;
+}
+
+.neo-protected-domain-pill {
+  font-size: 11px;
+  font-family: 'SF Mono', Monaco, Inconsolata, 'Fira Code', monospace;
+  font-weight: 600;
+  color: #475569;
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+
+.neo-protected-warning-text {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: #475569;
+}
+
+.neo-protected-entity-banner.national .neo-protected-warning-text {
+  color: #57534E;
+}
+
+.neo-protected-entity-banner.global .neo-protected-warning-text {
+  color: #334155;
+}
+
+/* ── Modern Recommendation Card (Inner Box) ───────────────────── */
+.neo-protected-recommendation-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 10px;
+  padding: 12px 16px;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+}
+
+.neo-protected-entity-banner.national .neo-protected-recommendation-card {
+  border-color: #E7DFD5;
+}
+
+.neo-recom-left {
+  flex: 1;
+  min-width: 0;
+}
+
+.neo-recom-tag-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.neo-recom-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  padding: 2.5px 8px;
+  border-radius: 5px;
+  text-transform: uppercase;
+}
+
+.neo-recom-pill.reject {
+  background: #FEF2F2;
+  color: #B91C1C;
+  border: 1px solid #FECACA;
+}
+
+.neo-recom-pill.safe {
+  background: #ECFDF5;
+  color: #047857;
+  border: 1px solid #A7F3D0;
+}
+
+.neo-recom-desc {
+  margin: 5px 0 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #334155;
+  font-weight: 500;
+}
+
+.neo-recom-right {
+  flex-shrink: 0;
+}
+
+.neo-btn-dismiss-recommended {
+  background: #059669;
+  color: #FFFFFF;
+  border: 1px solid #047857;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  box-shadow: 0 1px 2px rgba(5, 150, 105, 0.15);
+}
+
+.neo-btn-dismiss-recommended:hover:not(:disabled) {
+  background: #047857;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(5, 150, 105, 0.2);
+}
+
+@media (max-width: 680px) {
+  .neo-protected-recommendation-card {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .neo-btn-dismiss-recommended {
+    justify-content: center;
+    width: 100%;
+  }
+}
+
+/* ── Circuit Breaker Card ───────────────────────────────────────── */
+.neo-circuit-breaker-card {
+  background: #FFF1F2;
+  border: 1px solid #FECDD3;
+  border-radius: 14px;
+  padding: 16px 18px;
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.neo-circuit-breaker-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #9F1239;
+}
+
+.neo-circuit-breaker-desc {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #881337;
+}
+
+.neo-circuit-breaker-checkbox-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #0F172A;
+  cursor: pointer;
+  padding: 8px 10px;
+  background: #FFFFFF;
+  border: 1px solid #FDA4AF;
+  border-radius: 8px;
+}
+
+.neo-circuit-breaker-checkbox-label input[type='checkbox'] {
+  margin-top: 2px;
+  width: 16px;
+  height: 16px;
+  accent-color: #E11D48;
+  cursor: pointer;
+}
+
+.neo-guardrail-error-banner {
+  background: #FEF2F2;
+  border: 1px solid #F87171;
+  border-radius: 10px;
+  padding: 10px 14px;
+  color: #991B1B;
+  font-size: 12px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+/* ── Intelligence Radar & Historical Decisions Card ─────────────── */
+.neo-intel-history-card {
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 14px;
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.04);
+  flex-shrink: 0;
+  min-height: fit-content;
+  box-sizing: border-box;
+}
+
+.neo-intel-history-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #F1F5F9;
+}
+
+.neo-intel-history-title-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.neo-intel-icon-wrapper {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: #F1F5F9;
+  color: #475569;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.neo-intel-title {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #0F172A;
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+
+.neo-intel-subtitle {
+  font-size: 11.5px;
+  color: #64748B;
+  margin: 2px 0 0 0;
+  line-height: 1.35;
+}
+
+.neo-intel-target-pill {
+  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  background: #F8FAFC;
+  border: 1px solid #CBD5E1;
+  color: #334155;
+  border-radius: 6px;
+  letter-spacing: 0.02em;
+}
+
+.neo-intel-loading-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #64748B;
+  background: #F8FAFC;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid #E2E8F0;
+}
+
+.neo-intel-loading-pill .spinner-sm {
+  width: 10px;
+  height: 10px;
+  border: 2px solid #CBD5E1;
+  border-top-color: #0066FF;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.neo-intel-history-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.neo-intel-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+@media (max-width: 600px) {
+  .neo-intel-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.neo-intel-grid-col {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.neo-intel-col-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #64748B;
+}
+
+.neo-intel-status-row {
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+}
+
+.neo-intel-status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 11px;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.neo-intel-status-chip.threat {
+  background: #FFF1F2;
+  border: 1px solid #FECDD3;
+  color: #BE123C;
+}
+
+.neo-intel-status-chip.safe {
+  background: #ECFDF5;
+  border: 1px solid #A7F3D0;
+  color: #047857;
+}
+
+.neo-intel-status-chip.clean {
+  background: #F8FAFC;
+  border: 1px solid #E2E8F0;
+  color: #475569;
+}
+
+.neo-intel-chip-meta {
+  font-size: 10.5px;
+  font-weight: 600;
+  opacity: 0.85;
+  margin-left: 2px;
+}
+
+.neo-intel-history-pills {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.neo-intel-history-pill {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 6px;
+  letter-spacing: 0.01em;
+}
+
+.neo-intel-history-pill.reject {
+  background: #FEF2F2;
+  border: 1px solid #FECACA;
+  color: #B91C1C;
+}
+
+.neo-intel-history-pill.approve {
+  background: #EFF6FF;
+  border: 1px solid #BFDBFE;
+  color: #1D4ED8;
+}
+
+.neo-intel-history-pill.retire {
+  background: #F8FAFC;
+  border: 1px solid #CBD5E1;
+  color: #475569;
+}
+
+.neo-intel-dim-text {
+  font-size: 12px;
+  color: #94A3B8;
+  font-style: italic;
+}
+
+/* Conflict Alert */
+.neo-intel-conflict-alert {
+  background: #FFF1F2;
+  border: 1px solid #FECDD3;
+  border-left: 4px solid #E11D48;
+  border-radius: 10px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.neo-intel-conflict-header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.neo-intel-conflict-title {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #9F1239;
+  letter-spacing: -0.01em;
+}
+
+.neo-intel-conflict-desc {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #881337;
+}
+
+.neo-intel-conflict-consequence {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: #9A3412;
+  background: #FEF3C7;
+  border: 1px solid #FDE68A;
+  border-radius: 6px;
+  padding: 6px 9px;
+  margin-top: 2px;
+}
+
+.neo-intel-conflict-consequence span {
+  flex: 1;
+  font-weight: 600;
+}
+
+.neo-intel-conflict-confirm-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #4C0519;
+  cursor: pointer;
+  padding: 8px 10px;
+  background: #FFFFFF;
+  border: 1px solid #FDA4AF;
+  border-radius: 8px;
+  margin-top: 4px;
+}
+
+.neo-intel-conflict-confirm-label input[type='checkbox'] {
+  margin-top: 1.5px;
+  width: 15px;
+  height: 15px;
+  accent-color: #E11D48;
+  cursor: pointer;
+}
+
+/* Corroboration Alert */
+.neo-intel-corroboration-alert {
+  background: #F0F9FF;
+  border: 1px solid #BAE6FD;
+  border-left: 4px solid #0284C7;
+  border-radius: 10px;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.neo-intel-corroboration-header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #0369A1;
+}
+
+.neo-intel-corroboration-desc {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: #0C4A6E;
+}
+
+/* Past Rejection Callout */
+.neo-intel-past-rejection-callout {
+  background: #F8FAFC;
+  border: 1px solid #E2E8F0;
+  border-radius: 8px;
+  padding: 9px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.neo-intel-rejection-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #475569;
+}
+
+.neo-intel-rejection-time {
+  font-size: 10.5px;
+  font-weight: 500;
+  color: #94A3B8;
+  margin-left: auto;
+}
+
+.neo-intel-rejection-notes {
+  margin: 0;
+  font-size: 12px;
+  color: #334155;
+  font-style: italic;
+  line-height: 1.4;
+}
+
+/* ── Skeleton Loading for Intelligence Radar ────────────────────────── */
+.neo-intel-skeleton-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  padding: 4px 0;
+}
+
+.neo-intel-skeleton-box {
+  min-height: 52px;
+  border-radius: 10px;
+  background: linear-gradient(90deg, #F1F5F9 0%, #E2E8F0 50%, #F1F5F9 100%);
+  background-size: 200% 100%;
+  animation: neoSkeletonShimmer 1.5s infinite ease-in-out;
+}
+
+@keyframes neoSkeletonShimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* Smooth reveal container once radar async fetch resolves */
+.neo-intel-content-reveal {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  animation: neoFadeInUp 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
+  will-change: opacity, transform;
+}
+
+@keyframes neoFadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Accessibility: Respect Reduced Motion Preference */
+@media (prefers-reduced-motion: reduce) {
+  .neo-modal-backdrop,
+  .neo-modal-dialog,
+  .neo-intel-content-reveal,
+  .neo-intel-skeleton-box,
+  .neo-modal-btn-subtle,
+  .neo-modal-btn-action-lime,
+  .neo-modal-btn-reject {
+    animation: none !important;
+    transition: none !important;
+    transform: none !important;
+  }
+}
+
+

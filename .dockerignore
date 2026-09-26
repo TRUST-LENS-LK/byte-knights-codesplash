@@ -1,0 +1,15 @@
+node_modules
+apps/web/node_modules
+services/api/node_modules
+services/scanner/node_modules
+packages/contracts/node_modules
+packages/domain/node_modules
+packages/extraction/node_modules
+packages/rules/node_modules
+.git
+.dist
+.vscode
+.env
+.DS_Store
+dist
+build

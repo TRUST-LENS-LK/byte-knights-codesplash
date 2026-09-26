@@ -141,3 +141,18 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# Personal reference docs (not part of the shared codebase)
+member3_docs/
+
+# Documents
+TrustLens_LK_Five_Member_Equal_Work_Division.pdf
+TrustLens_LK_Full_Development_Plan.pdf
+
+# Agents
+AGENTS.md
+
+# Nested package-lock files (monorepo uses root lock file only)
+apps/web/package-lock.json
+packages/*/package-lock.json
+services/*/package-lock.json
