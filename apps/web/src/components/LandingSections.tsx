@@ -14,6 +14,7 @@ import {
   Landmark,
   Package,
   Briefcase,
+  CheckCircle2,
 } from 'lucide-react'
 import './LandingSections.css'
 
@@ -452,7 +453,10 @@ export const HowItWorksSection: React.FC<{ onStartCheck: () => void }> = ({ onSt
               <ShieldCheck size={16} />
               <span>Check a Message Now</span>
             </button>
-            <span className="no-signup-note">Free public service — no sign-up or download needed</span>
+            <span className="no-signup-note">
+              <CheckCircle2 size={14} className="no-signup-check-icon" />
+              This service is 100% free — no sign-up needed
+            </span>
           </div>
         </div>
 
@@ -563,11 +567,13 @@ export const AboutMissionSection: React.FC<{ onStartCheck: () => void }> = ({ on
   return (
     <section id="about" className="landing-section about-mission-section">
       <div className="about-mission-card">
-        <div className="mission-eyebrow-pill">
-          <ShieldCheck size={14} />
-          <span>PUBLIC CYBER DEFENSE INITIATIVE</span>
+        <div className="about-mission-header">
+          <div className="mission-eyebrow-pill">
+            <ShieldCheck size={14} />
+            <span>PUBLIC CYBER DEFENSE INITIATIVE</span>
+          </div>
+          <h2 className="mission-title">Scams are evolving. Your protection should too.</h2>
         </div>
-        <h2 className="mission-title">Scams are evolving. Your protection should too.</h2>
         <div className="mission-grid">
           <div className="mission-grid-item">
             <div className="mission-icon-box">
@@ -633,87 +639,81 @@ export const LandingFooter: React.FC<FooterProps> = ({ onOpenReportModal, onBack
     <footer className="rich-landing-footer">
       <div className="footer-columns-grid">
         
-        {/* Column 1: Brand & Emergency */}
+        {/* Column 1: Brand & Direct Helpline */}
         <div className="footer-col footer-col-brand">
           <div className="footer-brand-header">
             <div className="footer-logo-box">
               <img src="/TrustLens_Icon.png" alt="TrustLens LK" className="footer-logo-img" />
             </div>
             <span className="footer-brand-name">
-              TrustLens <span className="nav-brand-badge">LK</span>
+              Trust<span className="brand-lens">Lens</span> <span className="brand-lk">LK</span>
             </span>
           </div>
           <p className="footer-brand-mission">
-            Sri Lanka’s Scam Decision Support & Threat Intelligence Platform. Protecting citizens, families, and digital banking consumers against phishing and cyber fraud.
+            Public cyber defense platform providing instant scam verification, threat intelligence, and digital safety for Sri Lanka.
           </p>
-          <div className="footer-hotline-box">
-            <span className="footer-hotline-label">Emergency Cyber Incident Hotline:</span>
-            <a href="tel:1937" className="footer-hotline-number">
-              <PhoneCall size={14} />
-              <span>Dial 1937 (Sri Lanka CERT)</span>
-            </a>
-          </div>
+          <a href="tel:1937" className="footer-hotline-pill" title="Call Sri Lanka CERT">
+            <PhoneCall size={13} />
+            <span>Sri Lanka CERT Hotline: <strong>1937</strong></span>
+          </a>
         </div>
 
-        {/* Column 2: Scam Check Tools */}
+        {/* Column 2: Platform & Defense */}
         <div className="footer-col">
-          <h4 className="footer-col-title">Scam Check Tools</h4>
+          <h4 className="footer-col-title">Platform</h4>
           <ul className="footer-links-list">
             <li>
-              <a href="#checker" onClick={(e) => { e.preventDefault(); onBackToScanner(); }}>
-                Link & URL Safety Scanner
+              <a href="#checker-console" onClick={(e) => { e.preventDefault(); onBackToScanner(); }}>
+                Scam &amp; URL Scanner
               </a>
             </li>
             <li>
-              <a href="#checker" onClick={(e) => { e.preventDefault(); onBackToScanner(); }}>
-                Screenshot OCR Reader
+              <a href="#scam-trends" onClick={(e) => { e.preventDefault(); scrollTo('scam-trends'); }}>
+                How Scams Work
               </a>
             </li>
             <li>
-              <a href="#checker" onClick={(e) => { e.preventDefault(); onBackToScanner(); }}>
-                SMS & WhatsApp Scam Detector
+              <a href="#how-it-works" onClick={(e) => { e.preventDefault(); scrollTo('how-it-works'); }}>
+                How Verification Works
               </a>
             </li>
-            <li>
-              <a href="#checker" onClick={(e) => { e.preventDefault(); onBackToScanner(); }}>
-                Bank Spoofing Verifier
-              </a>
-            </li>
-            <li>
-              <button type="button" className="footer-action-link" onClick={onOpenReportModal}>
-                Report a New Scam
-              </button>
-            </li>
+            {onOpenReportModal && (
+              <li>
+                <button type="button" className="footer-action-link" onClick={onOpenReportModal}>
+                  Report Suspicious Scam
+                </button>
+              </li>
+            )}
           </ul>
         </div>
 
-        {/* Column 3: Common Sri Lanka Scams */}
+        {/* Column 3: Navigation */}
         <div className="footer-col">
-          <h4 className="footer-col-title">Common LK Scams</h4>
+          <h4 className="footer-col-title">Navigation</h4>
           <ul className="footer-links-list">
             <li>
-              <a href="#scam-trends" onClick={(e) => { e.preventDefault(); scrollTo('scam-trends'); }}>
-                Electricity Bill (CEB) SMS Scams
+              <a href="#checker-console" onClick={(e) => { e.preventDefault(); onBackToScanner(); }}>
+                Check a Message
               </a>
             </li>
             <li>
               <a href="#scam-trends" onClick={(e) => { e.preventDefault(); scrollTo('scam-trends'); }}>
-                Commercial Bank / BOC Phishing
+                Scam Trends
               </a>
             </li>
             <li>
-              <a href="#scam-trends" onClick={(e) => { e.preventDefault(); scrollTo('scam-trends'); }}>
-                Sri Lanka Post Customs Clearance
+              <a href="#how-it-works" onClick={(e) => { e.preventDefault(); scrollTo('how-it-works'); }}>
+                How It Works
               </a>
             </li>
             <li>
-              <a href="#scam-trends" onClick={(e) => { e.preventDefault(); scrollTo('scam-trends'); }}>
-                WhatsApp Daily Task & Job Scams
+              <a href="#faq" onClick={(e) => { e.preventDefault(); scrollTo('faq'); }}>
+                FAQ
               </a>
             </li>
             <li>
-              <a href="#scam-trends" onClick={(e) => { e.preventDefault(); scrollTo('scam-trends'); }}>
-                Telegram Crypto Investment Fraud
+              <a href="#about" onClick={(e) => { e.preventDefault(); scrollTo('about'); }}>
+                About Initiative
               </a>
             </li>
           </ul>
@@ -736,35 +736,25 @@ export const LandingFooter: React.FC<FooterProps> = ({ onOpenReportModal, onBack
               </a>
             </li>
             <li>
-              <span className="footer-static-info">Police CID Cyber Crime: 011-2320141</span>
-            </li>
-            <li>
-              <a href="#faq" onClick={(e) => { e.preventDefault(); scrollTo('faq'); }}>
-                Frequently Asked Questions
+              <a href="tel:0112320141" className="external-link-item">
+                <PhoneCall size={12} />
+                <span>Police Cyber Crime: 011-2320141</span>
               </a>
             </li>
             <li>
-              <a href="#how-it-works" onClick={(e) => { e.preventDefault(); scrollTo('how-it-works'); }}>
-                How Scam Verification Works
-              </a>
+              <span className="footer-static-info">National Cyber Defense</span>
             </li>
           </ul>
         </div>
 
       </div>
 
-      {/* Bottom Bar */}
+      {/* Bottom Bar: Copyright & Privacy */}
       <div className="footer-bottom-bar">
         <p className="footer-copyright">
-          © 2026 TrustLens LK — Sri Lanka National Scam Defense. Built for public cyber resilience.
+          © 2026 TrustLens LK. All rights reserved.
         </p>
-        <div className="footer-bottom-badges">
-          <span className="bottom-badge">Privacy-First Architecture</span>
-          <span className="bottom-divider">•</span>
-          <span className="bottom-badge">Real-Time Threat Analysis</span>
-          <span className="bottom-divider">•</span>
-          <span className="bottom-badge">Sri Lanka Cyber Resilience</span>
-        </div>
+        <span className="bottom-badge">100% Private — Messages Never Saved</span>
       </div>
     </footer>
   )

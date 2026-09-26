@@ -267,10 +267,10 @@ function App() {
     ? 'official-entity'
     : isVerifiedSafe
       ? 'verified-safe'
-      : isConflicted
-        ? 'conflicted'
-        : decision.riskBand === 'HIGH' || isConfirmedScam
-          ? 'high-risk'
+      : (decision.riskBand === 'HIGH' || isConfirmedScam || isImpersonation)
+        ? 'high-risk'
+        : isConflicted
+          ? 'conflicted'
           : decision.riskBand === 'MEDIUM'
             ? 'suspicious'
             : 'verified-safe'
@@ -419,7 +419,7 @@ function App() {
               <img src="/TrustLens_Icon.png" alt="TrustLens LK" className="nav-logo-img" />
             </div>
             <div className="nav-brand-title">
-              TrustLens <span className="nav-brand-badge">LK</span>
+              Trust<span className="brand-lens">Lens</span> <span className="brand-lk">LK</span>
             </div>
           </div>
 
@@ -514,15 +514,15 @@ function App() {
           <div className="hero-trust-strip">
             <div className="trust-item">
               <ShieldCheck size={16} className="trust-icon" />
-              <span>Automated Sandbox Inspection</span>
+              <span>Safely Checks Links for Danger</span>
             </div>
             <div className="trust-item">
               <CheckCircle2 size={16} className="trust-icon" />
-              <span>Verified LK Bank & Gov Registry</span>
+              <span>Checks Official Bank &amp; Gov Sites</span>
             </div>
             <div className="trust-item">
               <Lock size={16} className="trust-icon" />
-              <span>Zero-Log Privacy Protection</span>
+              <span>100% Private — Messages Never Saved</span>
             </div>
           </div>
         </div>
@@ -589,7 +589,16 @@ function App() {
                     setChecked(false)
                     setIntelligenceOverlay(null)
                   }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                      e.preventDefault()
+                      if (text.trim() && !isAnalyzing) {
+                        void checkMessage()
+                      }
+                    }
+                  }}
                   placeholder="Paste suspicious SMS, WhatsApp message, email, or URL link here..."
+                  title="Type your message or URL and press Enter to analyze (Shift+Enter for newline)"
                 />
               </div>
             )}
@@ -600,7 +609,7 @@ function App() {
               <span className="char-counter">{text.length.toLocaleString()} / 10,000 characters</span>
               <span className="privacy-badge">
                 <Info size={13} />
-                <span>Private & zero-log scanning</span>
+                <span>100% private — nothing saved</span>
               </span>
             </div>
             <button
@@ -608,6 +617,7 @@ function App() {
               className="btn-scan"
               onClick={() => void checkMessage()}
               disabled={!text.trim() || isAnalyzing}
+              title="Press Enter ↵ to analyze (Shift+Enter for new line)"
             >
               {isAnalyzing ? (
                 <>
@@ -632,7 +642,7 @@ function App() {
         <section
           ref={resultRef}
           id="results-dashboard"
-          className="result-section"
+          className={`result-section risk-border-${verdictVariantClass}`}
           aria-live="polite"
         >
           {/* ── 1. Clean Verdict Card ───────────────────────────────── */}
@@ -644,24 +654,24 @@ function App() {
                 <span className="status-badge-text">
                   {isOfficialEntity && 'Verified Official Institution'}
                   {!isOfficialEntity && isVerifiedSafe && 'Verified Safe Content'}
-                  {isImpersonation && 'Spoofing / Impersonation Alert'}
-                  {isConflicted && 'Disputed Threat Signals'}
-                  {!isOfficialEntity && !isVerifiedSafe && !isImpersonation && !isConflicted && (decision.riskBand === 'HIGH' || isConfirmedScam) && 'Phishing Scam Detected'}
+                  {isImpersonation && 'Fake / Impersonation Alert'}
+                  {isConflicted && 'Mixed Signals / Needs Caution'}
+                  {!isOfficialEntity && !isVerifiedSafe && !isImpersonation && !isConflicted && (decision.riskBand === 'HIGH' || isConfirmedScam) && 'Scam Detected'}
                   {!isOfficialEntity && !isVerifiedSafe && !isImpersonation && !isConflicted && decision.riskBand === 'MEDIUM' && 'Suspicious Activity Warning'}
-                  {!isOfficialEntity && !isVerifiedSafe && !isImpersonation && !isConflicted && decision.riskBand === 'LOW' && 'Verified Legitimate'}
+                  {!isOfficialEntity && !isVerifiedSafe && !isImpersonation && !isConflicted && decision.riskBand === 'LOW' && 'Verified Safe & Normal'}
                 </span>
               </div>
 
               {detectedDomain && (
                 <div className="target-domain-badge">
                   <Globe size={13} />
-                  <span className="target-domain-label">Domain:</span>
+                  <span className="target-domain-label">Website:</span>
                   <span className="target-domain-val">{defangUrl(detectedDomain)}</span>
                   <button
                     type="button"
                     className="copy-chip-btn"
                     onClick={() => handleCopy(defangUrl(detectedDomain), 'target-url')}
-                    title="Copy Defanged URL"
+                    title="Copy Link"
                   >
                     {copiedKey === 'target-url' ? <Check size={12} color="#059669" /> : <Copy size={12} />}
                   </button>
@@ -687,18 +697,18 @@ function App() {
                   {aiValidation?.reasoning
                     ? aiValidation.reasoning
                     : isOfficialEntity
-                      ? `This domain is verified in the official Sri Lankan national registry as belonging to ${intelligenceOverlay?.officialOrganization || 'an authorized institution'}.`
+                      ? `This website is verified in official Sri Lankan directories as belonging to ${intelligenceOverlay?.officialOrganization || 'an authorized institution'}.`
                       : isImpersonation
-                        ? 'This message references a recognized organization but asks for credentials or payments through an unofficial channel.'
+                        ? 'This message pretends to be a recognized bank or government service, but asks for login details or payment through an unauthorized channel.'
                         : isVerifiedSafe
-                          ? 'This content has been reviewed and confirmed safe by community intelligence.'
+                          ? 'This content has been reviewed and confirmed safe.'
                           : isConfirmedScam
-                            ? 'This message matches confirmed threat intelligence for online phishing.'
+                            ? 'This message matches confirmed fraud and scam reports in Sri Lanka.'
                             : decision.riskBand === 'HIGH'
-                              ? 'This message contains deceptive patterns typical of financial scams or phishing.'
+                              ? 'This message contains deceptive tricks typical of online banking and phishing scams.'
                               : decision.riskBand === 'MEDIUM'
                                 ? 'Warning signs were identified. Verify the sender independently before taking action.'
-                                : 'No phishing or financial scam patterns were detected in this message.'}
+                                : 'No scam or phishing patterns were detected in this message.'}
                 </p>
               </div>
 
@@ -760,7 +770,7 @@ function App() {
                 onClick={() => handleTabClick('signals')}
               >
                 <Activity size={16} />
-                <span>Threat Signals</span>
+                <span>Warning Signs</span>
                 <span className={`tab-counter ${decision.findings.length > 0 ? 'danger' : 'clean'}`}>
                   {decision.findings.length}
                 </span>
@@ -772,7 +782,7 @@ function App() {
                 onClick={() => handleTabClick('sandbox')}
               >
                 <Terminal size={16} />
-                <span>Website Scan Evidence</span>
+                <span>Website Safety Scan</span>
                 {hasDangerousInputs ? (
                   <span className="tab-badge-pill red">Alert</span>
                 ) : (
@@ -788,7 +798,7 @@ function App() {
                 onClick={() => handleTabClick('intel')}
               >
                 <Building2 size={16} />
-                <span>National Intel & Consensus</span>
+                <span>Official Checks & Reports</span>
                 {isOfficialEntity ? (
                   <span className="tab-badge-pill official">Official</span>
                 ) : isConfirmedScam ? (
@@ -802,7 +812,7 @@ function App() {
                 onClick={() => handleTabClick('layer5')}
               >
                 <Sparkles size={16} />
-                <span>AI Context</span>
+                <span>AI Scam Analysis</span>
               </button>
             </nav>
           </div>
@@ -817,7 +827,7 @@ function App() {
                   <h3 className="at-a-glance-title">Analysis Summary</h3>
                   <div className="summary-guidance-msg" style={{ margin: '-10px 0 24px 0', color: 'var(--text-muted)', fontSize: '14px', lineHeight: '1.5', display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <Info size={16} color="var(--brand-secondary)" />
-                    <span>Click the tabs above to explore detailed technical evidence and complete AI context evaluation.</span>
+                    <span>Click the tabs above to see website safety scans, official records, and AI analysis.</span>
                   </div>
                   <div className="at-a-glance-grid">
                     <div className="at-a-glance-card">
@@ -836,7 +846,7 @@ function App() {
                       </div>
                       <div className="at-a-glance-info">
                         <span className="at-a-glance-val">{decision.findings.length} Signals</span>
-                        <span className="at-a-glance-label">Deceptive Triggers</span>
+                        <span className="at-a-glance-label">Warning Signs</span>
                       </div>
                     </div>
 
@@ -848,7 +858,7 @@ function App() {
                         <span className="at-a-glance-val">
                           {scannerEvidence?.length ? 'Link Inspected' : 'Text Analysis'}
                         </span>
-                        <span className="at-a-glance-label">DOM Sandbox Scan</span>
+                        <span className="at-a-glance-label">Website Safety Check</span>
                       </div>
                     </div>
 
@@ -860,7 +870,7 @@ function App() {
                         <span className="at-a-glance-val">
                           {isOfficialEntity ? 'Verified Official' : 'Unregistered'}
                         </span>
-                        <span className="at-a-glance-label">Sri Lanka Registry</span>
+                        <span className="at-a-glance-label">Official Bank & Gov Match</span>
                       </div>
                     </div>
                   </div>
@@ -879,22 +889,22 @@ function App() {
                       <li style={{ display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
                         <Activity size={20} color="#f59e0b" style={{ flexShrink: 0, marginTop: '1px' }} />
                         <span style={{ fontSize: '14.5px', color: 'var(--text-muted)', lineHeight: '1.5' }}>
-                          <strong style={{ color: 'var(--text-primary)', marginRight: '6px' }}>Deceptive Triggers:</strong>
-                          Specific red flags like urgency, fear, or promises of free money detected in the text.
+                          <strong style={{ color: 'var(--text-primary)', marginRight: '6px' }}>Warning Signs:</strong>
+                          Specific scam tricks like false urgency, threats, or fake prize promises detected in the text.
                         </span>
                       </li>
                       <li style={{ display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
                         <Globe size={20} color="#3b82f6" style={{ flexShrink: 0, marginTop: '1px' }} />
                         <span style={{ fontSize: '14.5px', color: 'var(--text-muted)', lineHeight: '1.5' }}>
-                          <strong style={{ color: 'var(--text-primary)', marginRight: '6px' }}>DOM Sandbox Scan:</strong>
-                          Indicates if any links were safely opened and analyzed for phishing forms or malicious scripts.
+                          <strong style={{ color: 'var(--text-primary)', marginRight: '6px' }}>Website Safety Check:</strong>
+                          Shows if links were safely inspected in a protected environment for fake login forms or malicious downloads.
                         </span>
                       </li>
                       <li style={{ display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
                         <Building2 size={20} color="#10b981" style={{ flexShrink: 0, marginTop: '1px' }} />
                         <span style={{ fontSize: '14.5px', color: 'var(--text-muted)', lineHeight: '1.5' }}>
-                          <strong style={{ color: 'var(--text-primary)', marginRight: '6px' }}>Sri Lanka Registry:</strong>
-                          Cross-checks against national databases to confirm if the sender is a recognized official entity.
+                          <strong style={{ color: 'var(--text-primary)', marginRight: '6px' }}>Official Bank &amp; Gov Match:</strong>
+                          Cross-checks against Sri Lankan bank and government records to confirm if the sender is authentic.
                         </span>
                       </li>
                     </ul>
@@ -970,13 +980,13 @@ function App() {
                     </div>
                   </div>
 
-                  {/* Right Column: Extracted Indicators of Compromise (IOCs) */}
+                  {/* Right Column: Detected Links, Phone Numbers & Details */}
                   <div className="pane-column-side">
                     <div className="pane-card">
                       <div className="pane-card-header">
                         <div className="pane-title-group">
                           <Globe size={18} color="var(--brand-secondary)" />
-                          <h3>Extracted Indicators (IOCs)</h3>
+                          <h3>Detected Links &amp; Details</h3>
                         </div>
                         <span className="pane-meta-tag">{entities.length} items</span>
                       </div>
@@ -996,7 +1006,7 @@ function App() {
                                     type="button"
                                     className="ioc-copy-btn"
                                     onClick={() => handleCopy(displayVal, copyKey)}
-                                    title="Copy indicator value"
+                                    title="Copy value"
                                   >
                                     {copiedKey === copyKey ? (
                                       <span className="copied-tag"><Check size={11} /> Copied</span>
@@ -1012,7 +1022,7 @@ function App() {
                         </div>
                       ) : (
                         <div className="empty-ioc-box">
-                          <span>No URLs, phone numbers, or amounts detected in input.</span>
+                          <span>No website links, phone numbers, or account amounts found in message.</span>
                         </div>
                       )}
                     </div>
@@ -1063,13 +1073,13 @@ function App() {
                               </div>
                               <div className="sandbox-intro-text">
                                 <h3>Live Website Scanner</h3>
-                                <p>Safely loads the website in an isolated environment to check for malicious content without risking your device.</p>
+                                <p>Opens the website safely in a secure test room to check for fake pages and scams without putting your phone or computer at risk.</p>
                               </div>
                             </div>
                             <div className="sandbox-badges-row">
-                              <span className="sandbox-sec-tag">Network Security Enforced</span>
+                              <span className="sandbox-sec-tag">Protected Safe Browsing</span>
                               <span className="sandbox-sec-tag">Fast Scanning</span>
-                              <span className="sandbox-sec-tag">Isolated Container</span>
+                              <span className="sandbox-sec-tag">Isolated Test Room</span>
                               {ev.isAdultContent && (
                                 <span className="sandbox-sec-tag adult-badge-tag" title="Domain flagged as age-restricted or explicit adult material. Visual screenshot suppressed.">
                                   18+ Content Filtered
@@ -1087,11 +1097,11 @@ function App() {
                           <div className="sandbox-metrics-row">
                             <div className="sb-metric-card">
                               <div className="sb-metric-top">
-                                <span>Total HTML Forms</span>
+                                <span>Input Forms on Page</span>
                                 <FileText size={15} />
                               </div>
                               <div className="sb-metric-val">{ev.forms ?? 0}</div>
-                              <span className="sb-metric-desc">Form elements detected</span>
+                              <span className="sb-metric-desc">Data collection forms found</span>
                             </div>
 
                             <div className={`sb-metric-card ${hasPasswordHarvesting ? 'danger-alert' : ''}`}>
@@ -1101,7 +1111,7 @@ function App() {
                               </div>
                               <div className="sb-metric-val">{ev.passwordFields ?? 0}</div>
                               <span className="sb-metric-desc">
-                                {hasPasswordHarvesting ? 'Credential Harvest Attempt' : 'No password inputs found'}
+                                {hasPasswordHarvesting ? 'Stealing Passwords Detected!' : 'No password fields found'}
                               </span>
                             </div>
 
@@ -1112,17 +1122,17 @@ function App() {
                               </div>
                               <div className="sb-metric-val">{ev.paymentFields ?? 0}</div>
                               <span className="sb-metric-desc">
-                                {hasPaymentCoercion ? 'Financial Input Detected' : 'No credit card inputs'}
+                                {hasPaymentCoercion ? 'Asking for Bank/Card Details!' : 'No bank card fields found'}
                               </span>
                             </div>
 
                             <div className="sb-metric-card">
                               <div className="sb-metric-top">
-                                <span>Email / Auth Fields</span>
+                                <span>Email / Username Fields</span>
                                 <Mail size={15} />
                               </div>
                               <div className="sb-metric-val">{ev.emailFields ?? 0}</div>
-                              <span className="sb-metric-desc">User identifier inputs</span>
+                              <span className="sb-metric-desc">Login inputs found</span>
                             </div>
                           </div>
 
@@ -1154,10 +1164,10 @@ function App() {
                                   </div>
                                   <h4>18+ Explicit Content Detected</h4>
                                   <p>
-                                    Live visual capture has been automatically suppressed by the TrustLens LK Safety Filter to prevent displaying explicit adult material.
+                                    Live screenshot is hidden by the safety filter to avoid displaying explicit adult material.
                                   </p>
                                   <span className="adult-guard-subtext">
-                                    Form security diagnostics and third-party network telemetry remain fully active below.
+                                    Checks for fake login forms and password theft remain fully active below.
                                   </span>
                                 </div>
                               </div>
@@ -1219,7 +1229,7 @@ function App() {
                             <div className="external-connections-card">
                               <div className="ext-conn-header">
                                 <Radio size={14} color="var(--brand-secondary)" />
-                                <span>Third-Party Network Connections Contacted ({ev.externalDomains.length}):</span>
+                                <span>Other Websites Contacted in Background ({ev.externalDomains.length}):</span>
                               </div>
                               <div className="ext-conn-chips">
                                 {ev.externalDomains.map((domain, dIdx) => (
@@ -1238,8 +1248,8 @@ function App() {
                 ) : (
                   <div className="empty-sandbox-state">
                     <Terminal size={40} color="var(--text-muted)" />
-                    <h4>No External Link Detonation Required</h4>
-                    <p>The submitted content is text-only without active URLs. When messages contain hyperlinks, TrustLens spins up an isolated Playwright browser container to safely render and inspect the destination DOM.</p>
+                    <h4>No Website Links to Inspect</h4>
+                    <p>This message contains text only. If a message contains a website link, TrustLens safely visits and inspects it in a protected environment to check for fake login screens and scams without risking your device.</p>
                   </div>
                 )}
 
@@ -1258,7 +1268,7 @@ function App() {
                     <div className="intel-box-header">
                       <div className="intel-box-title-group">
                         <Building2 size={20} color="var(--brand-primary)" />
-                        <h3>Sri Lanka National Entity Directory Verification</h3>
+                        <h3>Official Sri Lankan Organization Check</h3>
                       </div>
                       <span className={`intel-status-pill ${isOfficialEntity ? 'verified' : 'unverified'}`}>
                         {isOfficialEntity ? 'Verified Official' : 'Unregistered'}
@@ -1292,7 +1302,7 @@ function App() {
                       <div className="intel-box-header">
                         <div className="intel-box-title-group">
                           <ShieldCheck size={20} color="var(--brand-primary)" />
-                          <h3>Community Intelligence Consensus</h3>
+                          <h3>Community Reports &amp; Verification</h3>
                         </div>
                         <span className="consensus-summary-pill">{intelligenceOverlay.consensusSummary}</span>
                       </div>
@@ -1322,7 +1332,7 @@ function App() {
                         </div>
                         <div className="consensus-metric-labels">
                           <span className="label-safe">{intelligenceOverlay.safeCount} Verified Safe Reports</span>
-                          <span className="label-scam">{intelligenceOverlay.scamCount} Phishing Threat Reports</span>
+                          <span className="label-scam">{intelligenceOverlay.scamCount} Scam Reports</span>
                         </div>
                       </div>
                     </div>
@@ -1334,7 +1344,7 @@ function App() {
                       <div className="intel-box-header">
                         <div className="intel-box-title-group">
                           <Info size={18} color="var(--risk-medium)" />
-                          <h3>Scanner Scope & Environmental Limitations</h3>
+                          <h3>Important Safety Notes</h3>
                         </div>
                       </div>
                       <ul className="sanitized-limitations-list">
@@ -1356,7 +1366,7 @@ function App() {
                     >
                       <div className="accordion-title-group">
                         <Terminal size={17} />
-                        <span>Technical Details (For Advanced Users)</span>
+                        <span>Technical Details (For IT Specialists)</span>
                         <span className="policy-pill">Policy: {decision.policyVersion}</span>
                       </div>
                       {showTechnicalTrace ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
@@ -1377,7 +1387,7 @@ function App() {
                               ))}
                             </div>
                           ) : (
-                            <p className="no-trace-text">Standard heuristic decision pipeline executed without conflict.</p>
+                            <p className="no-trace-text">Standard scam detection rules executed cleanly without conflict.</p>
                           )}
                         </div>
                       )
@@ -1397,7 +1407,7 @@ function App() {
                     <div className="intel-box-header">
                       <div className="intel-box-title-group">
                         <Sparkles size={18} color="#8B5CF6" />
-                        <h3>Layer 5: AI Context Evaluation (Gemini 3.5 Flash)</h3>
+                        <h3>AI Scam Analysis (Powered by Gemini AI)</h3>
                       </div>
                       <span className={`intel-status-pill ai-action-pill ${aiValidation.appliedAction.toLowerCase()}`}>
                         {aiValidation.appliedAction === 'DOWNGRADED'
@@ -1405,7 +1415,7 @@ function App() {
                           : aiValidation.appliedAction === 'UPGRADED'
                           ? `Upgraded (${aiValidation.originalRiskBand} ➔ ${aiValidation.adjustedRiskBand})`
                           : aiValidation.appliedAction === 'HARD_BLOCKED'
-                          ? 'Hard Block Preserved'
+                          ? 'High Alert Preserved'
                           : 'Verdict Retained'}
                       </span>
                     </div>
@@ -1423,15 +1433,15 @@ function App() {
                     <div className="ai-explanation-note">
                       <h4 style={{ margin: '0 0 16px 0', fontSize: '15px', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <Sparkles size={16} color="var(--brand-primary)" />
-                        Understanding AI Context Evaluation
+                        How AI Scam Analysis Helps You
                       </h4>
                       <p style={{ fontSize: '14px', color: 'var(--text-muted)', lineHeight: '1.6', margin: '0 0 16px 0' }}>
-                        Layer 5 employs advanced large language models (like Gemini 3.5 Flash) to analyze the semantic context, tone, and hidden intent of the message. While traditional scanners look for hardcoded malicious patterns, our AI engine understands nuanced human language, allowing it to accurately detect zero-day phishing attempts or cleverly disguised social engineering.
+                        Our AI reads between the lines to catch sneaky psychological manipulation, urgent threats, or fake promises that standard keyword filters might miss. It understands local context and everyday language to give you a clear, human explanation.
                       </p>
                       <div style={{ padding: '16px', backgroundColor: 'var(--bg-surface-hover)', borderRadius: '10px', borderLeft: '3px solid var(--risk-medium)' }}>
                         <p style={{ fontSize: '14px', color: 'var(--text-primary)', lineHeight: '1.6', margin: 0 }}>
-                          <strong style={{ color: 'var(--risk-medium)', marginRight: '6px' }}>Choose Wisely:</strong> 
-                          Although the AI boasts high confidence, attackers constantly evolve their tactics. Always use this context alongside the technical evidence provided in other tabs before engaging with unexpected messages.
+                          <strong style={{ color: 'var(--risk-medium)', marginRight: '6px' }}>Helpful Tip:</strong> 
+                          While our AI has high accuracy, scammers constantly invent new tricks. Always verify with official helplines before sending money or passwords.
                         </p>
                       </div>
                     </div>
@@ -1440,8 +1450,8 @@ function App() {
                 ) : (
                   <div className="empty-sandbox-state">
                     <Sparkles size={40} color="var(--text-muted)" />
-                    <h4>No AI Evaluation Executed</h4>
-                    <p>The standard heuristic models reached a decisive verdict without requiring the Layer 5 AI fallback evaluation.</p>
+                    <h4>AI Evaluation Not Needed</h4>
+                    <p>Standard safety rules gave a clear, decisive answer immediately without needing extra AI processing.</p>
                   </div>
                 )}
               </div>
@@ -1474,7 +1484,7 @@ function App() {
         <div className="lightbox-overlay" onClick={() => setSelectedScreenshot(null)}>
           <div className="lightbox-dialog" onClick={(e) => e.stopPropagation()}>
             <div className="lightbox-header">
-              <span className="lightbox-title">Captured DOM Sandbox Render</span>
+              <span className="lightbox-title">Captured Website Screenshot</span>
               <button
                 type="button"
                 className="btn-close-lightbox"
