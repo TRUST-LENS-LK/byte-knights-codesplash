@@ -242,16 +242,15 @@ export const ScamTrendsSection: React.FC<ScamTrendsProps> = () => {
           aria-label="Previous scam"
         >
           <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M13 4L7 10L13 16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            <path d="M13 4L7 10L13 16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </button>
 
         {/* Slide Content */}
         <div className="slideshow-viewport">
           <div
-            className={`slide-content-wrapper ${
-              animating ? (direction === 'next' ? 'slide-exit-left' : 'slide-exit-right') : 'slide-enter'
-            }`}
+            className={`slide-content-wrapper ${animating ? (direction === 'next' ? 'slide-exit-left' : 'slide-exit-right') : 'slide-enter'
+              }`}
           >
             {/* Compact Structured Slide Card */}
             <div className="slide-compact-container">
@@ -292,7 +291,7 @@ export const ScamTrendsSection: React.FC<ScamTrendsProps> = () => {
                 {/* Arrow */}
                 <div className="slide-step-arrow" aria-hidden="true">
                   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M5 12H19M19 12L13 6M19 12L13 18" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+                    <path d="M5 12H19M19 12L13 6M19 12L13 18" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                 </div>
 
@@ -306,7 +305,7 @@ export const ScamTrendsSection: React.FC<ScamTrendsProps> = () => {
                 {/* Arrow */}
                 <div className="slide-step-arrow" aria-hidden="true">
                   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M5 12H19M19 12L13 6M19 12L13 18" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+                    <path d="M5 12H19M19 12L13 6M19 12L13 18" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                 </div>
 
@@ -324,7 +323,7 @@ export const ScamTrendsSection: React.FC<ScamTrendsProps> = () => {
                 <span className="defense-rule-lead">Real Rule:</span>
                 <span className="defense-rule-body">{current.defense.policy}</span>
               </div>
-            
+
             </div>
           </div>
         </div>
@@ -337,7 +336,7 @@ export const ScamTrendsSection: React.FC<ScamTrendsProps> = () => {
           aria-label="Next scam"
         >
           <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M7 4L13 10L7 16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            <path d="M7 4L13 10L7 16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </button>
 
@@ -384,7 +383,7 @@ export const HowItWorksSection: React.FC<{ onStartCheck: () => void }> = ({ onSt
   return (
     <section id="how-it-works" className="landing-section how-it-works-section" ref={sectionRef}>
       <div className={`how-it-works-container ${isVisible ? 'animate-cards' : ''}`}>
-        
+
         {/* Left Column: Process Steps */}
         <div className="how-it-works-left">
           <div className="section-eyebrow">
@@ -455,7 +454,7 @@ export const HowItWorksSection: React.FC<{ onStartCheck: () => void }> = ({ onSt
             </button>
             <span className="no-signup-note">
               <CheckCircle2 size={14} className="no-signup-check-icon" />
-              This service is 100% free — no sign-up needed
+              This service is 100% free, no sign-up needed
             </span>
           </div>
         </div>
@@ -638,7 +637,7 @@ export const LandingFooter: React.FC<FooterProps> = ({ onOpenReportModal, onBack
   return (
     <footer className="rich-landing-footer">
       <div className="footer-columns-grid">
-        
+
         {/* Column 1: Brand & Direct Helpline */}
         <div className="footer-col footer-col-brand">
           <div className="footer-brand-header">
@@ -754,7 +753,7 @@ export const LandingFooter: React.FC<FooterProps> = ({ onOpenReportModal, onBack
         <p className="footer-copyright">
           © 2026 TrustLens LK. All rights reserved.
         </p>
-        <span className="bottom-badge">100% Private — Messages Never Saved</span>
+        <span className="bottom-badge">100% Private, Messages Never Saved</span>
       </div>
     </footer>
   )
