@@ -539,6 +539,7 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
   const [auditPage, setAuditPage] = useState(1)
   const [auditPageSize, setAuditPageSize] = useState<number>(10)
   const [auditTotal, setAuditTotal] = useState(0)
+  const [allAuditCount, setAllAuditCount] = useState<number>(0)
   const [auditTotalPages, setAuditTotalPages] = useState(1)
   const [isLoadingAudit, setIsLoadingAudit] = useState(false)
   const [auditError, setAuditError] = useState<string | null>(null)
@@ -812,6 +813,9 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
       if (res.success && res.auditLogs) {
         setAuditLogsList(res.auditLogs)
         setAuditTotal(res.total || 0)
+        if (auditActionFilter === 'ALL' && !auditSearchQuery && !fromDate) {
+          setAllAuditCount(res.total || 0)
+        }
         setAuditTotalPages(res.totalPages || 1)
       } else {
         setAuditError(res.error || 'Could not load audit logs.')
@@ -2749,7 +2753,7 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                   {/* Segmented Filter Pills */}
                   <div className="neo-segmented-filter-group">
                     {[
-                      { id: 'ALL', label: `All (${auditTotal})` },
+                      { id: 'ALL', label: `All (${allAuditCount || auditStorageStats?.totalRecords || auditTotal})` },
                       {
                         id: 'REVIEWS',
                         label: 'Queue Reviews',

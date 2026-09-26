@@ -1653,185 +1653,142 @@ export async function getModerationAuditLogs({
   const searchTrim = typeof search === 'string' ? search.trim().toLowerCase() : ''
   const actorTrim = typeof actor === 'string' ? actor.trim().toLowerCase() : ''
 
+  let combinedRows = [...inMemoryAuditLogs]
   if (isSupabaseConfigured()) {
     try {
-      let query = `${SUPABASE_URL}/rest/v1/moderation_audit_logs?select=*,user_reports(reported_domain,notes,report_type)&order=created_at.desc`
-      if (action && action !== 'ALL') {
-        if (action === 'REVIEWS' || action === 'QUEUE_REVIEWS') {
-          query += `&action=in.(APPROVE,REJECT,RETIRE)`
-        } else {
-          query += `&action=eq.${encodeURIComponent(action)}`
-        }
-      }
-      if (actorTrim) {
-        query += `&actor_email=ilike.*${encodeURIComponent(actorTrim)}*`
-      }
-      if (fromDate) {
-        query += `&created_at=gte.${encodeURIComponent(fromDate)}`
-      }
-      if (toDate) {
-        query += `&created_at=lte.${encodeURIComponent(toDate)}`
-      }
-      if (!searchTrim) {
-        query += `&limit=${limitNum}&offset=${offset}`
-      }
-      const headers = { ...getHeaders(), Prefer: 'count=exact' }
-      const res = await fetch(query, { headers, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) })
+      const res = await fetch(
+        `${SUPABASE_URL}/rest/v1/moderation_audit_logs?select=*,user_reports(reported_domain,notes,report_type)&order=created_at.desc&limit=1000`,
+        { headers: getHeaders(), signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) }
+      )
       if (res.ok) {
         const rawRows = await res.json()
-        // Sort chronologically (oldest to newest) to reconstruct the cryptographic sequence
-        const chronological = [...rawRows].sort((a, b) => {
-          const tA = new Date(a.created_at).getTime()
-          const tB = new Date(b.created_at).getTime()
-          if (tA !== tB) return tA - tB
-          return (Number(a.id) || 0) - (Number(b.id) || 0)
-        })
-
-        let runningPrevHash = GENESIS_PREV_HASH
-
-        const mappedChronological = chronological.map((row) => {
-          const memMatch = inMemoryAuditLogs.find((m) => String(m.id) === String(row.id))
-
-          const rep = row.user_reports
-          let target = row.target_indicator || memMatch?.target_indicator
-          if (!target && rep?.reported_domain) {
-            target = rep.reported_domain
-          }
-          if (target && !target.startsWith('Report #') && !target.startsWith('policy.') && !target.startsWith('engine.') && !target.startsWith('auth.')) {
-            target = target.replace(/^https?:\/\//i, (m) => m.toLowerCase().startsWith('https') ? 'hxxps://' : 'hxxp://')
-            if (!target.includes('[.]')) {
-              target = target.replace(/\.(?=[a-zA-Z0-9])/g, '[.]')
-            }
-          }
-
-          let category = row.threat_category || memMatch?.threat_category
-          if (!category && rep?.notes) {
-            const catMatch = rep.notes.match(/\[Threat Category\]:\s*([^\n\r]+)/)
-            if (catMatch) category = catMatch[1].trim()
-          }
-          if (!category) {
-            const combinedText = `${rep?.reported_domain || ''} ${rep?.notes || ''} ${row.moderator_notes || ''}`.toLowerCase()
-            if (rep?.report_type === 'false_positive' || combinedText.includes('false alarm') || combinedText.includes('official') || combinedText.includes('legitimate')) {
-              category = 'False Alarm'
-            } else if (combinedText.includes('electricity') || combinedText.includes('utility') || combinedText.includes('bill') || combinedText.includes('water')) {
-              category = 'Utility Bill Scam'
-            } else if (combinedText.includes('bank') || combinedText.includes('banking') || combinedText.includes('finance') || combinedText.includes('card') || combinedText.includes('otp')) {
-              category = 'Banking Phishing'
-            } else if (combinedText.includes('telecom') || combinedText.includes('mobile') || combinedText.includes('sms') || combinedText.includes('carrier')) {
-              category = 'Telecom Scam'
-            } else if (combinedText.includes('job') || combinedText.includes('salary') || combinedText.includes('hiring')) {
-              category = 'Fake Job Scam'
-            } else if (combinedText.includes('apk') || combinedText.includes('malware') || combinedText.includes('trojan')) {
-              category = 'Malware / APK'
-            } else if (row.action === 'APPROVE') {
-              category = 'Confirmed Threat'
-            } else if (row.action === 'REJECT') {
-              category = 'Dismissed Report'
-            } else if (row.action === 'RETIRE') {
-              category = 'Retired Indicator'
-            } else if (row.action === 'UPDATE_SETTINGS' || row.action === 'TOGGLE_STATUS') {
-              category = 'Engine Policy'
-            } else if (row.action === 'AUTH_LOGIN' || row.action === 'AUTH_FAILED') {
-              category = 'Authentication'
-            } else if (row.action.startsWith('DOMAIN_')) {
-              category = 'Domain Whitelist'
-            } else if (row.action === 'PURGE_EXPIRED') {
-              category = 'Governance Prune'
-            }
-          }
-
-          const expiresAt = row.expires_at || memMatch?.expires_at || new Date(new Date(row.created_at).getTime() + AUDIT_RETENTION_DAYS * 86400000).toISOString()
-          
-          // If the row already has a stored prev_hash in Supabase, preserve it.
-          // Otherwise, reconstruct sequential linkage: only trust memMatch.prev_hash if it matches runningPrevHash.
-          const prevHash = row.prev_hash || (memMatch?.prev_hash === runningPrevHash ? memMatch.prev_hash : null) || runningPrevHash
-
-          const mapped = {
-            ...row,
-            ...(memMatch || {}),
-            id: row.id,
-            created_at: memMatch?.created_at || row.created_at,
-            raw_target_indicator: (memMatch?.raw_target_indicator !== undefined && memMatch?.raw_target_indicator !== null) ? memMatch.raw_target_indicator : (row.target_indicator || null),
-            target_indicator: memMatch?.target_indicator || target || (row.report_id ? `Report #${String(row.report_id).slice(0, 8)}` : 'System Policy'),
-            threat_category: memMatch?.threat_category || category,
-            moderator_notes: memMatch?.moderator_notes || row.moderator_notes,
-            actor_email: memMatch?.actor_email || row.actor_email || 'moderator@trustlens.lk',
-            actor_role: memMatch?.actor_role || row.actor_role || 'moderator',
-            expires_at: memMatch?.expires_at || expiresAt,
-            prev_hash: prevHash,
-            client_ip: memMatch?.client_ip || row.client_ip || null,
-            user_agent: memMatch?.user_agent || row.user_agent || null,
-          }
-          const entryHash = row.entry_hash || (memMatch?.entry_hash && memMatch?.prev_hash === prevHash ? memMatch.entry_hash : computeAuditHash(prevHash, mapped))
-          mapped.entry_hash = entryHash
-
-          runningPrevHash = entryHash
-          return mapped
-        })
-
-        if (mappedChronological.length > 0) {
-          latestAuditHash = runningPrevHash
-        }
-
-        let rows = mappedChronological.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime() || (Number(b.id) || 0) - (Number(a.id) || 0))
-
-        // If Supabase has zero records (e.g. fresh environment or offline), fall back to inMemoryAuditLogs
-        if (rows.length === 0 && inMemoryAuditLogs.length > 0) {
-          rows = [...inMemoryAuditLogs]
-        }
-
-        if (searchTrim) {
-          rows = rows.filter((item) => {
-            const matchTarget = item.target_indicator?.toLowerCase().includes(searchTrim)
-            const matchEmail = item.actor_email?.toLowerCase().includes(searchTrim)
-            const matchNotes = item.moderator_notes?.toLowerCase().includes(searchTrim)
-            const matchCat = item.threat_category?.toLowerCase().includes(searchTrim)
-            const matchReportId = item.report_id?.toString().toLowerCase().includes(searchTrim)
-            const matchIp = item.client_ip?.toLowerCase().includes(searchTrim)
-            return matchTarget || matchEmail || matchNotes || matchCat || matchReportId || matchIp
-          })
-          const total = rows.length
-          const totalPages = Math.ceil(total / limitNum) || 1
-          const pagedRows = rows.slice(offset, offset + limitNum)
-          return {
-            auditLogs: pagedRows,
-            total,
-            page: pageNum,
-            limit: limitNum,
-            totalPages,
-            retentionDays: AUDIT_RETENTION_DAYS,
-          }
-        }
-
-        const contentRange = res.headers.get('content-range') || ''
-        const match = contentRange.match(/\/(\d+|\*)$/)
-        const total = match && match[1] !== '*' ? parseInt(match[1], 10) : rows.length
-        const totalPages = Math.ceil(total / limitNum) || 1
-        return {
-          auditLogs: rows,
-          total,
-          page: pageNum,
-          limit: limitNum,
-          totalPages,
-          retentionDays: AUDIT_RETENTION_DAYS,
+        if (Array.isArray(rawRows)) {
+          const supabaseIds = new Set(rawRows.map((r) => String(r.id)))
+          const localOnly = inMemoryAuditLogs.filter((m) => !supabaseIds.has(String(m.id)))
+          combinedRows = [...rawRows, ...localOnly]
         }
       }
     } catch {
-      // Fallback to in-memory on network error
+      // Fallback to inMemoryAuditLogs on network error
     }
   }
 
-  let filtered = [...inMemoryAuditLogs]
+  // Sort chronologically (oldest to newest) to reconstruct the cryptographic sequence
+  const chronological = combinedRows.sort((a, b) => {
+    const tA = new Date(a.created_at).getTime()
+    const tB = new Date(b.created_at).getTime()
+    if (tA !== tB) return tA - tB
+    return (Number(a.id) || 0) - (Number(b.id) || 0)
+  })
+
+  let runningPrevHash = GENESIS_PREV_HASH
+
+  const mappedChronological = chronological.map((row) => {
+    const memMatch = inMemoryAuditLogs.find((m) => String(m.id) === String(row.id))
+
+    const rep = row.user_reports
+    let target = row.target_indicator || memMatch?.target_indicator
+    if (!target && rep?.reported_domain) {
+      target = rep.reported_domain
+    }
+    if (target && !target.startsWith('Report #') && !target.startsWith('policy.') && !target.startsWith('engine.') && !target.startsWith('auth.')) {
+      target = target.replace(/^https?:\/\//i, (m) => m.toLowerCase().startsWith('https') ? 'hxxps://' : 'hxxp://')
+      if (!target.includes('[.]')) {
+        target = target.replace(/\.(?=[a-zA-Z0-9])/g, '[.]')
+      }
+    }
+
+    let category = row.threat_category || memMatch?.threat_category
+    if (!category && rep?.notes) {
+      const catMatch = rep.notes.match(/\[Threat Category\]:\s*([^\n\r]+)/)
+      if (catMatch) category = catMatch[1].trim()
+    }
+    if (!category) {
+      const combinedText = `${rep?.reported_domain || ''} ${rep?.notes || ''} ${row.moderator_notes || ''}`.toLowerCase()
+      if (rep?.report_type === 'false_positive' || combinedText.includes('false alarm') || combinedText.includes('official') || combinedText.includes('legitimate')) {
+        category = 'False Alarm'
+      } else if (combinedText.includes('electricity') || combinedText.includes('utility') || combinedText.includes('bill') || combinedText.includes('water')) {
+        category = 'Utility Bill Scam'
+      } else if (combinedText.includes('bank') || combinedText.includes('banking') || combinedText.includes('finance') || combinedText.includes('card') || combinedText.includes('otp')) {
+        category = 'Banking Phishing'
+      } else if (combinedText.includes('telecom') || combinedText.includes('mobile') || combinedText.includes('sms') || combinedText.includes('carrier')) {
+        category = 'Telecom Scam'
+      } else if (combinedText.includes('job') || combinedText.includes('salary') || combinedText.includes('hiring')) {
+        category = 'Fake Job Scam'
+      } else if (combinedText.includes('apk') || combinedText.includes('malware') || combinedText.includes('trojan')) {
+        category = 'Malware / APK'
+      } else if (row.action === 'APPROVE') {
+        category = 'Confirmed Threat'
+      } else if (row.action === 'REJECT') {
+        category = 'Dismissed Report'
+      } else if (row.action === 'RETIRE') {
+        category = 'Retired Indicator'
+      } else if (row.action === 'UPDATE_SETTINGS' || row.action === 'TOGGLE_STATUS') {
+        category = 'Engine Policy'
+      } else if (row.action === 'AUTH_LOGIN' || row.action === 'AUTH_FAILED') {
+        category = 'Authentication'
+      } else if (row.action?.startsWith('DOMAIN_')) {
+        category = 'Domain Whitelist'
+      } else if (row.action === 'PURGE_EXPIRED') {
+        category = 'Governance Prune'
+      }
+    }
+
+    const expiresAt = row.expires_at || memMatch?.expires_at || new Date(new Date(row.created_at).getTime() + AUDIT_RETENTION_DAYS * 86400000).toISOString()
+    const prevHash = runningPrevHash
+
+    const mapped = {
+      ...row,
+      ...(memMatch || {}),
+      id: row.id,
+      created_at: memMatch?.created_at || row.created_at,
+      raw_target_indicator: (memMatch?.raw_target_indicator !== undefined && memMatch?.raw_target_indicator !== null) ? memMatch.raw_target_indicator : (row.target_indicator || null),
+      target_indicator: memMatch?.target_indicator || target || (row.report_id ? `Report #${String(row.report_id).slice(0, 8)}` : 'System Policy'),
+      threat_category: memMatch?.threat_category || category,
+      moderator_notes: memMatch?.moderator_notes || row.moderator_notes,
+      actor_email: memMatch?.actor_email || row.actor_email || 'moderator@trustlens.lk',
+      actor_role: memMatch?.actor_role || row.actor_role || 'moderator',
+      expires_at: memMatch?.expires_at || expiresAt,
+      prev_hash: prevHash,
+      client_ip: memMatch?.client_ip || row.client_ip || null,
+      user_agent: memMatch?.user_agent || row.user_agent || null,
+    }
+    const entryHash = computeAuditHash(prevHash, mapped)
+    mapped.entry_hash = entryHash
+
+    runningPrevHash = entryHash
+    return mapped
+  })
+
+  if (mappedChronological.length > 0) {
+    latestAuditHash = runningPrevHash
+  }
+
+  let filtered = mappedChronological
+
+  // 1. Action filter
   if (action && action !== 'ALL') {
     if (action === 'REVIEWS' || action === 'QUEUE_REVIEWS') {
       filtered = filtered.filter((item) => item.action === 'APPROVE' || item.action === 'REJECT' || item.action === 'RETIRE')
+    } else if (action === 'AUTH_LOGIN') {
+      filtered = filtered.filter((item) => item.action === 'AUTH_LOGIN' || item.action === 'AUTH_FAILED')
+    } else if (action === 'DOMAIN_CREATE') {
+      filtered = filtered.filter((item) => item.action?.startsWith('DOMAIN_'))
+    } else if (action === 'MANUAL_INTEL') {
+      filtered = filtered.filter((item) => item.action === 'MANUAL_INTEL' || item.action === 'CREATE_INTEL')
+    } else if (action === 'UPDATE_SETTINGS') {
+      filtered = filtered.filter((item) => item.action === 'UPDATE_SETTINGS' || item.action === 'TOGGLE_STATUS')
     } else {
       filtered = filtered.filter((item) => item.action === action)
     }
   }
+
+  // 2. Actor filter
   if (actorTrim) {
     filtered = filtered.filter((item) => item.actor_email?.toLowerCase().includes(actorTrim))
   }
+
+  // 3. Date range filters
   if (fromDate) {
     const fromMs = new Date(fromDate).getTime()
     if (!isNaN(fromMs)) {
@@ -1844,19 +1801,28 @@ export async function getModerationAuditLogs({
       filtered = filtered.filter((item) => new Date(item.created_at).getTime() <= toMs)
     }
   }
+
+  // 4. Search filter
   if (searchTrim) {
     filtered = filtered.filter((item) => {
-      const matchIndicator = item.target_indicator?.toLowerCase().includes(searchTrim)
+      const matchTarget = item.target_indicator?.toLowerCase().includes(searchTrim)
       const matchEmail = item.actor_email?.toLowerCase().includes(searchTrim)
       const matchNotes = item.moderator_notes?.toLowerCase().includes(searchTrim)
-      const matchCategory = item.threat_category?.toLowerCase().includes(searchTrim)
-      const matchReportId = item.report_id?.toLowerCase().includes(searchTrim)
+      const matchCat = item.threat_category?.toLowerCase().includes(searchTrim)
+      const matchReportId = item.report_id?.toString().toLowerCase().includes(searchTrim)
       const matchIp = item.client_ip?.toLowerCase().includes(searchTrim)
-      return matchIndicator || matchEmail || matchNotes || matchCategory || matchReportId || matchIp
+      return matchTarget || matchEmail || matchNotes || matchCat || matchReportId || matchIp
     })
   }
 
-  filtered.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+  // Sort chronologically descending (newest first)
+  filtered.sort((a, b) => {
+    const tA = new Date(a.created_at).getTime()
+    const tB = new Date(b.created_at).getTime()
+    if (tB !== tA) return tB - tA
+    return (Number(b.id) || 0) - (Number(a.id) || 0)
+  })
+
   const total = filtered.length
   const totalPages = Math.ceil(total / limitNum) || 1
   const auditLogs = filtered.slice(offset, offset + limitNum)
@@ -2112,47 +2078,19 @@ export async function getAuditStorageStats() {
   const retentionMs = AUDIT_RETENTION_DAYS * 86400000
   const warningWindowMs = 7 * 86400000
 
+  let combinedRows = [...inMemoryAuditLogs]
   if (isSupabaseConfigured()) {
     try {
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/moderation_audit_logs?select=id,action,created_at&order=created_at.desc`, {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/moderation_audit_logs?select=id,action,created_at&order=created_at.desc&limit=1000`, {
         headers: getHeaders(),
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       })
       if (res.ok) {
         const rows = await res.json()
-        const total = rows.length
-        const sorted = [...rows].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
-
-        let expiredRecordsCount = 0
-        let expiringSoonCount = 0
-        for (const r of rows) {
-          const createdMs = new Date(r.created_at).getTime()
-          if (isNaN(createdMs)) continue
-          const expiresMs = createdMs + retentionMs
-          if (expiresMs <= nowMs) {
-            expiredRecordsCount++
-          } else if (expiresMs <= nowMs + warningWindowMs) {
-            expiringSoonCount++
-          }
-        }
-
-        const actionBreakdown = {
-          approve: rows.filter((r) => r.action === 'APPROVE').length,
-          reject: rows.filter((r) => r.action === 'REJECT').length,
-          retire: rows.filter((r) => r.action === 'RETIRE').length,
-          settings: rows.filter((r) => r.action === 'UPDATE_SETTINGS').length,
-          toggle: rows.filter((r) => r.action === 'TOGGLE_STATUS').length,
-          purge: rows.filter((r) => r.action === 'PURGE_EXPIRED').length,
-        }
-        return {
-          totalRecords: total,
-          retentionDays: AUDIT_RETENTION_DAYS,
-          oldestRecordAt: sorted[0]?.created_at || null,
-          newestRecordAt: sorted[sorted.length - 1]?.created_at || null,
-          storageStatus: total >= 100000 ? 'CAPACITY_REACHED' : total >= 50000 ? 'WARNING' : 'OPTIMAL',
-          actionBreakdown,
-          expiredRecordsCount,
-          expiringSoonCount,
+        if (Array.isArray(rows)) {
+          const supabaseIds = new Set(rows.map((r) => String(r.id)))
+          const localOnly = inMemoryAuditLogs.filter((m) => !supabaseIds.has(String(m.id)))
+          combinedRows = [...rows, ...localOnly]
         }
       }
     } catch {
@@ -2160,18 +2098,18 @@ export async function getAuditStorageStats() {
     }
   }
 
-  const total = inMemoryAuditLogs.length
+  const total = combinedRows.length
   let oldestRecordAt = null
   let newestRecordAt = null
   let expiredRecordsCount = 0
   let expiringSoonCount = 0
 
   if (total > 0) {
-    const sorted = [...inMemoryAuditLogs].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+    const sorted = [...combinedRows].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
     oldestRecordAt = sorted[0]?.created_at || null
     newestRecordAt = sorted[sorted.length - 1]?.created_at || null
 
-    for (const a of inMemoryAuditLogs) {
+    for (const a of combinedRows) {
       const createdMs = new Date(a.created_at).getTime()
       if (isNaN(createdMs)) continue
       const expiresMs = createdMs + retentionMs
@@ -2190,12 +2128,15 @@ export async function getAuditStorageStats() {
     newestRecordAt,
     storageStatus: total >= 100000 ? 'CAPACITY_REACHED' : total >= 50000 ? 'WARNING' : 'OPTIMAL',
     actionBreakdown: {
-      approve: inMemoryAuditLogs.filter((a) => a.action === 'APPROVE').length,
-      reject: inMemoryAuditLogs.filter((a) => a.action === 'REJECT').length,
-      retire: inMemoryAuditLogs.filter((a) => a.action === 'RETIRE').length,
-      settings: inMemoryAuditLogs.filter((a) => a.action === 'UPDATE_SETTINGS').length,
-      toggle: inMemoryAuditLogs.filter((a) => a.action === 'TOGGLE_STATUS').length,
-      purge: inMemoryAuditLogs.filter((a) => a.action === 'PURGE_EXPIRED').length,
+      approve: combinedRows.filter((a) => a.action === 'APPROVE').length,
+      reject: combinedRows.filter((a) => a.action === 'REJECT').length,
+      retire: combinedRows.filter((a) => a.action === 'RETIRE').length,
+      settings: combinedRows.filter((a) => a.action === 'UPDATE_SETTINGS').length,
+      toggle: combinedRows.filter((a) => a.action === 'TOGGLE_STATUS').length,
+      purge: combinedRows.filter((a) => a.action === 'PURGE_EXPIRED').length,
+      auth: combinedRows.filter((a) => a.action === 'AUTH_LOGIN' || a.action === 'AUTH_FAILED').length,
+      domain: combinedRows.filter((a) => a.action?.startsWith('DOMAIN_')).length,
+      manualIntel: combinedRows.filter((a) => a.action === 'MANUAL_INTEL' || a.action === 'CREATE_INTEL').length,
     },
     expiredRecordsCount,
     expiringSoonCount,

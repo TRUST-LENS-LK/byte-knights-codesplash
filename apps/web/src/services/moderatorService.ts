@@ -635,6 +635,9 @@ export interface AuditStorageStats {
     settings: number
     toggle: number
     purge: number
+    auth?: number
+    domain?: number
+    manualIntel?: number
   }
   expiredRecordsCount?: number
   expiringSoonCount?: number
