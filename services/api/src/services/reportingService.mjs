@@ -788,11 +788,19 @@ export async function getModerationQueue(statusOrOptions = 'PENDING') {
   let status = 'PENDING'
   let limit = null
   let offset = 0
+  let search = ''
+  let reportType = ''
+  let threatType = ''
+  let dateFilter = ''
 
   if (typeof statusOrOptions === 'object' && statusOrOptions !== null) {
     status = statusOrOptions.status || 'PENDING'
     limit = Number.isFinite(Number(statusOrOptions.limit)) ? Number(statusOrOptions.limit) : null
     offset = Number.isFinite(Number(statusOrOptions.offset)) ? Number(statusOrOptions.offset) : 0
+    search = typeof statusOrOptions.search === 'string' ? statusOrOptions.search.trim().toLowerCase() : ''
+    reportType = statusOrOptions.reportType || statusOrOptions.type || ''
+    threatType = statusOrOptions.threatType || statusOrOptions.threat || ''
+    dateFilter = statusOrOptions.dateFilter || statusOrOptions.date || ''
   } else if (typeof statusOrOptions === 'string') {
     status = statusOrOptions
   }
@@ -801,6 +809,28 @@ export async function getModerationQueue(statusOrOptions = 'PENDING') {
     let url = `${SUPABASE_URL}/rest/v1/user_reports?select=*&order=created_at.desc`
     if (status && status !== 'ALL') {
       url += `&status=eq.${encodeURIComponent(status)}`
+    }
+    if (reportType && reportType !== 'ALL') {
+      url += `&report_type=eq.${encodeURIComponent(reportType)}`
+    }
+    if (threatType && threatType !== 'ALL') {
+      url += `&notes.ilike.*${encodeURIComponent(threatType)}*`
+    }
+    if (search) {
+      url += `&or=(reported_domain.ilike.*${encodeURIComponent(search)}*,notes.ilike.*${encodeURIComponent(search)}*,content_sha256.ilike.*${encodeURIComponent(search)}*)`
+    }
+    if (dateFilter && dateFilter !== 'ALL') {
+      const now = new Date()
+      if (dateFilter === 'today') {
+        const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString()
+        url += `&created_at=gte.${encodeURIComponent(todayStart)}`
+      } else if (dateFilter === '7days') {
+        const past = new Date(now.getTime() - 7 * 86400000).toISOString()
+        url += `&created_at=gte.${encodeURIComponent(past)}`
+      } else if (dateFilter === '30days') {
+        const past = new Date(now.getTime() - 30 * 86400000).toISOString()
+        url += `&created_at=gte.${encodeURIComponent(past)}`
+      }
     }
     if (limit !== null && limit > 0) {
       url += `&limit=${limit}&offset=${offset}`
@@ -827,7 +857,38 @@ export async function getModerationQueue(statusOrOptions = 'PENDING') {
   const list = Array.from(inMemoryReports.values()).sort(
     (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
   )
-  const filtered = status && status !== 'ALL' ? list.filter((r) => r.status === status) : list
+  let filtered = status && status !== 'ALL' ? list.filter((r) => r.status === status) : list
+  if (reportType && reportType !== 'ALL') {
+    filtered = filtered.filter((r) => r.report_type === reportType)
+  }
+  if (threatType && threatType !== 'ALL') {
+    filtered = filtered.filter((r) => {
+      const n = (r.notes || '').toLowerCase()
+      return n.includes(threatType.toLowerCase())
+    })
+  }
+  if (search) {
+    filtered = filtered.filter((r) => {
+      const d = (r.reported_domain || '').toLowerCase()
+      const n = (r.notes || '').toLowerCase()
+      const e = (r.raw_excerpt || '').toLowerCase()
+      const h = (r.content_sha256 || '').toLowerCase()
+      return d.includes(search) || n.includes(search) || e.includes(search) || h.includes(search)
+    })
+  }
+  if (dateFilter && dateFilter !== 'ALL') {
+    const now = Date.now()
+    if (dateFilter === 'today') {
+      const todayStart = new Date().setHours(0, 0, 0, 0)
+      filtered = filtered.filter((r) => new Date(r.created_at).getTime() >= todayStart)
+    } else if (dateFilter === '7days') {
+      const cutoff = now - 7 * 86400000
+      filtered = filtered.filter((r) => new Date(r.created_at).getTime() >= cutoff)
+    } else if (dateFilter === '30days') {
+      const cutoff = now - 30 * 86400000
+      filtered = filtered.filter((r) => new Date(r.created_at).getTime() >= cutoff)
+    }
+  }
   const total = filtered.length
   const reports = limit !== null && limit > 0 ? filtered.slice(offset, offset + limit) : filtered
   const enriched = await Promise.all(reports.map(enrichReportWithTriage))

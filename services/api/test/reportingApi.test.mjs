@@ -908,14 +908,15 @@ test('GET /api/moderation/reports/:id/context: Delivers context radar for fresh 
 })
 
 test('GET /api/moderation/reports/:id/context: Surfaces past rejections for indicator', async () => {
-  // 1. Submit a report for spammy-domain.xyz and REJECT it
+  const uniqueSpamDomain = `spammy-${Date.now()}-${Math.random().toString(36).slice(2, 6)}.xyz`
+  // 1. Submit a report for uniqueSpamDomain and REJECT it
   const submit1 = await fetch(`http://localhost:${apiPort}/api/reports`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
       reportType: 'suspicious',
       contentSha256: 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a102',
-      reportedDomain: 'spammy-domain.xyz',
+      reportedDomain: uniqueSpamDomain,
       rawExcerpt: 'Fake alarm',
     }),
   })
@@ -942,7 +943,7 @@ test('GET /api/moderation/reports/:id/context: Surfaces past rejections for indi
     body: JSON.stringify({
       reportType: 'suspicious',
       contentSha256: 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a103',
-      reportedDomain: 'spammy-domain.xyz',
+      reportedDomain: uniqueSpamDomain,
       rawExcerpt: 'Second report',
     }),
   })
@@ -1278,14 +1279,15 @@ test('POST /api/moderation/review: Approving corroborating threat updates existi
 })
 
 test('POST /api/moderation/review: Rejecting a conflicting dispute preserves existing threat intelligence intact and logs rejection', async () => {
-  // 1. Submit and approve scam for malware-host-domain.net
+  const hostDomain = `malware-host-${Date.now()}-${Math.random().toString(36).slice(2, 6)}.net`
+  // 1. Submit and approve scam for hostDomain
   const scamRes = await fetch(`http://localhost:${apiPort}/api/reports`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
       reportType: 'suspicious',
       contentSha256: '11d2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f61101',
-      reportedDomain: 'malware-host-domain.net',
+      reportedDomain: hostDomain,
       rawExcerpt: 'Malicious payload dropper',
     }),
   })
@@ -1314,7 +1316,7 @@ test('POST /api/moderation/review: Rejecting a conflicting dispute preserves exi
     body: JSON.stringify({
       reportType: 'false_positive',
       contentSha256: '11d2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f61102',
-      reportedDomain: 'malware-host-domain.net',
+      reportedDomain: hostDomain,
       rawExcerpt: 'Unblock request from domain registrant',
     }),
   })

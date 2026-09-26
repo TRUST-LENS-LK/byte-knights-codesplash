@@ -29,6 +29,7 @@ import {
   FileSpreadsheet,
   Info,
   AlertTriangle,
+  LogOut,
 } from 'lucide-react'
 import {
   type ModerationQueueItem,
@@ -486,7 +487,8 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
   // Dedicated Aggregated Stats State (High-performance metrics decoupled from full table arrays)
   const [stats, setStats] = useState<ModerationStats | null>(null)
 
-  // Real Database Reports (Full dataset)
+  // Real Database Reports (Server-Paginated Slice)
+  const [queueReports, setQueueReports] = useState<ModerationQueueItem[]>([])
   const [allReports, setAllReports] = useState<ModerationQueueItem[]>([])
   const [activeTab, setActiveTab] = useState<'PENDING' | 'APPROVED' | 'REJECTED' | 'ALL'>('PENDING')
   const [searchQuery, setSearchQuery] = useState('')
@@ -511,9 +513,11 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
   const [intelError, setIntelError] = useState<string | null>(null)
   const [isUpdatingIntel, setIsUpdatingIntel] = useState(false)
 
-  // Queue Pagination State
+  // Queue Pagination State (Server-Side Network Pagination)
   const [queuePage, setQueuePage] = useState(1)
   const [queuePageSize, setQueuePageSize] = useState<number>(10)
+  const [queueTotal, setQueueTotal] = useState(0)
+  const [queueTotalPages, setQueueTotalPages] = useState(1)
 
   // Dedicated Real Audit Logs State & Retention Governance
   const [auditLogsList, setAuditLogsList] = useState<ModerationAuditLogItem[]>([])
@@ -634,16 +638,32 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
     }
   }, [token])
 
-  // Load all reports from database to compute real dynamic metrics & feeds
+  // Server-Paginated Queue Loading (On-Demand network retrieval)
   const loadReports = useCallback(
     async (showSpinner = false) => {
       if (!token) return
       if (showSpinner) setIsLoadingQueue(true)
       setQueueError(null)
       try {
-        const res = await fetchModerationQueue(token, 'ALL', 1, 100)
+        const res = await fetchModerationQueue(
+          token,
+          activeTab,
+          queuePage,
+          queuePageSize,
+          {
+            search: searchQuery,
+            type: filterType,
+            threat: filterThreat,
+            date: filterDate,
+          }
+        )
         if (res.success && res.reports) {
+          setQueueReports(res.reports)
           setAllReports(res.reports)
+          const total = res.total || 0
+          setQueueTotal(total)
+          const pages = res.totalPages || Math.ceil(total / queuePageSize) || 1
+          setQueueTotalPages(pages)
         } else {
           setQueueError(res.error || 'Could not load moderation reports.')
           if (res.error?.includes('expired') || res.error?.includes('Unauthorized')) {
@@ -657,7 +677,7 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
       }
       void loadStats()
     },
-    [token, handleSignOut, loadStats]
+    [token, activeTab, queuePage, queuePageSize, searchQuery, filterType, filterThreat, filterDate, handleSignOut, loadStats]
   )
 
   useEffect(() => {
@@ -674,41 +694,29 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
       }
     })
 
-    fetchModerationQueue(token, 'ALL', 1, 100)
-      .then((res) => {
-        if (!active) return
-        if (res.success && res.reports) {
-          setAllReports(res.reports)
-        } else {
-          setQueueError(res.error || 'Could not load reports.')
-          if (res.error?.includes('expired') || res.error?.includes('Unauthorized')) {
-            handleSignOut()
-          }
-        }
-      })
-      .catch((err) => {
-        if (!active) return
-        setQueueError(err instanceof Error ? err.message : 'Network error connecting to moderation registry.')
-      })
-      .finally(() => {
-        if (active) setIsLoadingQueue(false)
-      })
-
     return () => {
       active = false
     }
-  }, [token, handleSignOut])
+  }, [token])
 
+  // Trigger loadReports when queue parameters change or when activeNav is QUEUE/DASHBOARD
   useEffect(() => {
-    if (activeNav === 'QUEUE' && token) {
+    if (token && (activeNav === 'QUEUE' || activeNav === 'DASHBOARD')) {
       void loadReports(true)
     }
-  }, [activeNav, token, loadReports])
+  }, [token, activeNav, activeTab, queuePage, queuePageSize, searchQuery, filterType, filterThreat, filterDate, loadReports])
 
   // Automatically reset queue page to 1 whenever tab or any filter changes
   useEffect(() => {
     setQueuePage(1)
-  }, [activeTab, searchQuery, filterThreat, filterDate])
+  }, [activeTab, searchQuery, filterType, filterThreat, filterDate, queuePageSize])
+
+  // Clamp queuePage if it exceeds queueTotalPages
+  useEffect(() => {
+    if (queuePage > queueTotalPages && queueTotalPages > 0) {
+      setQueuePage(queueTotalPages)
+    }
+  }, [queuePage, queueTotalPages])
 
 
   // Load initial engine settings
@@ -771,7 +779,11 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
       if (res.success && res.intelligence) {
         setIntelligenceList(res.intelligence)
         setIntelTotal(res.total || 0)
-        setIntelTotalPages(res.totalPages || 1)
+        const pages = res.totalPages || 1
+        setIntelTotalPages(pages)
+        if (intelPage > pages) {
+          setIntelPage(pages)
+        }
       } else {
         setIntelError(res.error || 'Could not load verified intelligence.')
       }
@@ -816,7 +828,11 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
         if (auditActionFilter === 'ALL' && !auditSearchQuery && !fromDate) {
           setAllAuditCount(res.total || 0)
         }
-        setAuditTotalPages(res.totalPages || 1)
+        const pages = res.totalPages || 1
+        setAuditTotalPages(pages)
+        if (auditPage > pages) {
+          setAuditPage(pages)
+        }
       } else {
         setAuditError(res.error || 'Could not load audit logs.')
       }
@@ -1101,10 +1117,17 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
   }, [domainEntries, domainStatusFilter, domainSearchQuery])
 
   const domainTotalPages = Math.max(1, Math.ceil(filteredDomainEntries.length / domainPageSize))
+  const validDomainPage = Math.min(domainPage, domainTotalPages)
   const paginatedDomainEntries = filteredDomainEntries.slice(
-    (domainPage - 1) * domainPageSize,
-    domainPage * domainPageSize
+    (validDomainPage - 1) * domainPageSize,
+    validDomainPage * domainPageSize
   )
+
+  useEffect(() => {
+    if (domainPage > domainTotalPages) {
+      setDomainPage(domainTotalPages)
+    }
+  }, [domainPage, domainTotalPages])
 
   const [editingIntelId, setEditingIntelId] = useState<string | null>(null)
   const [editingIntelNoteText, setEditingIntelNoteText] = useState('')
@@ -1232,19 +1255,27 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
     }
   }
 
-  const handleExportData = () => {
-    if (!allReports.length) {
-      showToast('No reports currently in database to export.')
-      return
+  const handleExportData = async () => {
+    if (!token) return
+    showToast('Preparing full export...', 'info')
+    try {
+      const res = await fetchModerationQueue(token, 'ALL', 1, 500)
+      const list = res.success && res.reports?.length ? res.reports : queueReports
+      if (!list.length) {
+        showToast('No reports currently in database to export.')
+        return
+      }
+      const jsonStr = `data:text/json;charset=utf-8,${encodeURIComponent(JSON.stringify(list, null, 2))}`
+      const downloadAnchor = document.createElement('a')
+      downloadAnchor.setAttribute('href', jsonStr)
+      downloadAnchor.setAttribute('download', `trustlens_threat_intelligence_${new Date().toISOString().slice(0, 10)}.json`)
+      document.body.appendChild(downloadAnchor)
+      downloadAnchor.click()
+      downloadAnchor.remove()
+      showToast('Threat intelligence feed exported successfully.')
+    } catch {
+      showToast('Export failed. Network error.', 'warning')
     }
-    const jsonStr = `data:text/json;charset=utf-8,${encodeURIComponent(JSON.stringify(allReports, null, 2))}`
-    const downloadAnchor = document.createElement('a')
-    downloadAnchor.setAttribute('href', jsonStr)
-    downloadAnchor.setAttribute('download', `trustlens_threat_intelligence_${new Date().toISOString().slice(0, 10)}.json`)
-    document.body.appendChild(downloadAnchor)
-    downloadAnchor.click()
-    downloadAnchor.remove()
-    showToast('Threat intelligence feed exported successfully.')
   }
 
   // ── REAL DATABASE METRICS COMPUTATION (Priority: Stats Endpoint, Fallback: allReports) ──
@@ -1253,6 +1284,9 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
   const rejectedReports = useMemo(() => allReports.filter((r) => r.status === 'REJECTED'), [allReports])
 
   const pendingCount = stats?.metrics.pendingCount ?? pendingReports.length
+  const approvedCount = stats?.metrics.approvedCount ?? approvedReports.length
+  const rejectedCount = stats?.metrics.rejectedCount ?? rejectedReports.length
+  const totalReportsCount = stats?.metrics.totalReports ?? (pendingCount + approvedCount + rejectedCount)
   const confirmedThreatCount =
     stats?.metrics.confirmedThreatCount ?? approvedReports.filter((r) => r.report_type === 'suspicious').length
   const clearedSafeCount =
@@ -1332,75 +1366,9 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
     showToast('✓ Filters and search reset to defaults.')
   }
 
-  // Filtered reports for current tab & search & advanced filters
-  const tabFilteredReports = useMemo(() => {
-    if (activeTab === 'PENDING') return pendingReports
-    if (activeTab === 'APPROVED') return approvedReports
-    if (activeTab === 'REJECTED') return rejectedReports
-    return allReports
-  }, [activeTab, pendingReports, approvedReports, rejectedReports, allReports])
-
-  const displayedReports = useMemo(() => {
-    let list = tabFilteredReports
-
-    // 1. Text search
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase().trim()
-      list = list.filter((r) => {
-        const ind = (r.reported_domain || '').toLowerCase()
-        const notes = (r.notes || '').toLowerCase()
-        const excerpt = (r.raw_excerpt || '').toLowerCase()
-        const hash = (r.content_sha256 || '').toLowerCase()
-        return ind.includes(q) || notes.includes(q) || excerpt.includes(q) || hash.includes(q)
-      })
-    }
-
-    // 2. Report Type filter (Unreported Threat, False Alarm, Evaded Detection)
-    if (filterType !== 'ALL') {
-      list = list.filter((r) => r.report_type === filterType)
-    }
-
-    // 3. Threat category filter
-    if (filterThreat !== 'ALL') {
-      list = list.filter((r) => {
-        const t = getThreatDetails(r).type
-        return t === filterThreat
-      })
-    }
-
-    // 3. Date filter
-    if (filterDate !== 'ALL') {
-      const now = new Date()
-      if (filterDate === 'today') {
-        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-        list = list.filter((r) => {
-          const d = new Date(r.created_at)
-          return !isNaN(d.getTime()) && d >= today
-        })
-      } else if (filterDate === '7days') {
-        const past = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
-        list = list.filter((r) => {
-          const d = new Date(r.created_at)
-          return !isNaN(d.getTime()) && d >= past
-        })
-      } else if (filterDate === '30days') {
-        const past = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
-        list = list.filter((r) => {
-          const d = new Date(r.created_at)
-          return !isNaN(d.getTime()) && d >= past
-        })
-      }
-    }
-
-    return list
-  }, [tabFilteredReports, searchQuery, filterType, filterThreat, filterDate])
-
-  // Paginated Queue Slices
-  const queueTotalPages = Math.max(1, Math.ceil(displayedReports.length / queuePageSize))
-  const paginatedReports = useMemo(() => {
-    const start = (queuePage - 1) * queuePageSize
-    return displayedReports.slice(start, start + queuePageSize)
-  }, [displayedReports, queuePage, queuePageSize])
+  // Server-Paginated Queue Slices (Retrieved on-demand over the wire)
+  const displayedReports = queueReports
+  const paginatedReports = queueReports
 
   // ── DYNAMIC WEEKLY INFLOW VELOCITY (Priority: Stats Endpoint, Fallback: allReports) ──
   const weeklyActivity = useMemo(() => {
@@ -1589,7 +1557,7 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
         <div className="neo-kpi-content">
           <div className="neo-kpi-body">
             <div className="neo-kpi-metric-row">
-              <span className="neo-kpi-value">{String(approvedReports.length).padStart(2, '0')}</span>
+              <span className="neo-kpi-value">{String(approvedCount).padStart(2, '0')}</span>
               <span className="neo-kpi-label">Approved</span>
             </div>
             <div className="neo-kpi-trend green">
@@ -1623,7 +1591,7 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
         <div className="neo-kpi-content">
           <div className="neo-kpi-body">
             <div className="neo-kpi-metric-row">
-              <span className="neo-kpi-value">{String(rejectedReports.length).padStart(2, '0')}</span>
+              <span className="neo-kpi-value">{String(rejectedCount).padStart(2, '0')}</span>
               <span className="neo-kpi-label">Rejected</span>
             </div>
             <div className="neo-kpi-trend orange">
@@ -1984,6 +1952,60 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
 
         {/* ── Main Canvas (Offset by Fixed Sidebar, Natural Window Flow) ─ */}
         <main className={`neo-canvas ${isSidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
+          {/* Mobile Top Bar (Responsive for mobile viewports <= 768px) */}
+          <div className="neo-mobile-top-bar">
+            <div className="neo-mobile-top-brand">
+              <div className="neo-mobile-brand-icon">
+                <img src="/TrustLens_Icon.png" alt="TrustLens LK" />
+              </div>
+              <div className="neo-mobile-brand-text">
+                Trust<span className="brand-lens">Lens</span> <span className="brand-lk">LK</span>
+              </div>
+            </div>
+
+            <div className="neo-mobile-top-actions">
+              {/* Dynamic Threat Feedback Loop Simple Toggle Button */}
+              <button
+                type="button"
+                className={`neo-feedback-toggle-btn neo-feedback-toggle-btn-mobile ${engineEnabled ? 'on' : 'off'}`}
+                onClick={handleToggleEngine}
+                disabled={isTogglingEngine}
+                title={
+                  engineEnabled
+                    ? 'Threat Feedback Loop is ACTIVE'
+                    : 'Threat Feedback Loop is PAUSED'
+                }
+              >
+                <span className="neo-feedback-toggle-pill">
+                  <span className="neo-feedback-toggle-knob" />
+                  <span className="neo-feedback-toggle-status">{engineEnabled ? 'ON' : 'OFF'}</span>
+                </span>
+              </button>
+
+              {/* Public Scanner Button */}
+              <button
+                type="button"
+                className="neo-btn-mobile-header"
+                onClick={onBackToScanner}
+                title="Return to public scanner"
+                aria-label="Public Scanner"
+              >
+                <ArrowLeft size={14} aria-hidden="true" />
+              </button>
+
+              {/* Sign Out Button */}
+              <button
+                type="button"
+                className="neo-btn-mobile-header logout"
+                onClick={handleSignOut}
+                title="Sign out of moderation portal"
+                aria-label="Log Out"
+              >
+                <LogOut size={14} aria-hidden="true" />
+              </button>
+            </div>
+          </div>
+
           {/* Header */}
           <header className="neo-header">
             <div className="neo-header-titles">
@@ -2364,10 +2386,10 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                         {tab === 'PENDING'
                           ? `Pending ${pendingCount}`
                           : tab === 'APPROVED'
-                            ? `Approved ${approvedReports.length}`
+                            ? `Approved ${approvedCount}`
                             : tab === 'REJECTED'
-                              ? `Rejected ${rejectedReports.length}`
-                              : `All Reports ${allReports.length}`}
+                              ? `Rejected ${rejectedCount}`
+                              : `All Reports ${totalReportsCount}`}
                       </button>
                     ))}
                   </div>
@@ -2670,13 +2692,13 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                 </div>
 
                 {/* Modern Pagination Bar */}
-                {displayedReports.length > 0 && (
+                {queueTotal > 0 && (
                   <div className="neo-pagination-bar">
                     <div className="neo-pagination-info">
                       <span>
-                        Showing <strong>{(queuePage - 1) * queuePageSize + 1}</strong> to{' '}
-                        <strong>{Math.min(queuePage * queuePageSize, displayedReports.length)}</strong> of{' '}
-                        <strong>{displayedReports.length}</strong> reports
+                        Showing <strong>{Math.min((queuePage - 1) * queuePageSize + 1, queueTotal)}</strong> to{' '}
+                        <strong>{Math.min(queuePage * queuePageSize, queueTotal)}</strong> of{' '}
+                        <strong>{queueTotal}</strong> reports
                       </span>
                       <div className="neo-page-size-selector">
                         <label htmlFor="queue-page-size">Per page:</label>
@@ -2748,10 +2770,10 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
           {activeNav === 'AUDIT' && (
             <section key="AUDIT" className="neo-queue-view-layout neo-view-transition" aria-label="Audit Trail and Retention Governance">
               {/* Complete Resolution Audit Trail Table */}
-              <div className="neo-modern-table-card">
-                <div className="neo-modern-toolbar">
+              <div className="neo-modern-table-card neo-audit-table-card">
+                <div className="neo-modern-toolbar neo-audit-modern-toolbar">
                   {/* Segmented Filter Pills */}
-                  <div className="neo-segmented-filter-group">
+                  <div className="neo-segmented-filter-group neo-audit-segmented-filter-group">
                     {[
                       { id: 'ALL', label: `All (${allAuditCount || auditStorageStats?.totalRecords || auditTotal})` },
                       {
@@ -2765,7 +2787,7 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                         ? [
                             {
                               id: 'UPDATE_SETTINGS',
-                              label: `Policies (${(auditStorageStats?.actionBreakdown?.settings || 0) + (auditStorageStats?.actionBreakdown?.toggle || 0)})`,
+                              label: 'Policies',
                             },
                           ]
                         : []),
@@ -2785,8 +2807,8 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                   </div>
 
                   {/* Right: Search, Date Filter, Retention Selector, Export and Prune Actions */}
-                  <div className="neo-modern-toolbar-actions">
-                    <div className="neo-toolbar-search-box">
+                  <div className="neo-modern-toolbar-actions neo-audit-toolbar-actions">
+                    <div className="neo-toolbar-search-box neo-audit-search-box">
                       <Search size={14} className="neo-search-icon-inside" aria-hidden="true" />
                       <input
                         type="text"
@@ -2800,39 +2822,42 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                       />
                     </div>
 
-                    {/* Date Range Selector Dropdown */}
-                    <div className="neo-retention-selector-wrapper" title="Filter audit events by timeframe">
-                      <select
-                        className="neo-retention-select"
-                        value={auditDateFilter}
-                        onChange={(e) => {
-                          setAuditDateFilter(e.target.value as any)
-                          setAuditPage(1)
-                        }}
-                        title="Filter audit trail by time period"
-                      >
-                        <option value="ALL">All Dates</option>
-                        <option value="TODAY">Today (24h)</option>
-                        <option value="7DAYS">Last 7 Days</option>
-                        <option value="30DAYS">Last 30 Days</option>
-                      </select>
-                    </div>
+                    {/* Date Range & Retention Selectors Row */}
+                    <div className="neo-audit-selectors-row">
+                      {/* Date Range Selector Dropdown */}
+                      <div className="neo-retention-selector-wrapper" title="Filter audit events by timeframe">
+                        <select
+                          className="neo-retention-select"
+                          value={auditDateFilter}
+                          onChange={(e) => {
+                            setAuditDateFilter(e.target.value as any)
+                            setAuditPage(1)
+                          }}
+                          title="Filter audit trail by time period"
+                        >
+                          <option value="ALL">All Dates</option>
+                          <option value="TODAY">Today (24h)</option>
+                          <option value="7DAYS">Last 7 Days</option>
+                          <option value="30DAYS">Last 30 Days</option>
+                        </select>
+                      </div>
 
-                    {/* Retention Setting Selector Dropdown */}
-                    <div className="neo-retention-selector-wrapper" title="Manually configure data retention TTL policy">
-                      <select
-                        className="neo-retention-select"
-                        value={retentionDays}
-                        disabled={isUpdatingRetention}
-                        onChange={(e) => void handleRetentionDaysChange(Number(e.target.value))}
-                        title="Set audit trail data retention period"
-                      >
-                        <option value={30}>TTL: 30 Days</option>
-                        <option value={60}>TTL: 60 Days</option>
-                        <option value={90}>TTL: 90 Days (Default)</option>
-                        <option value={180}>TTL: 180 Days (6 Mos)</option>
-                        <option value={365}>TTL: 365 Days (1 Yr)</option>
-                      </select>
+                      {/* Retention Setting Selector Dropdown */}
+                      <div className="neo-retention-selector-wrapper" title="Manually configure data retention TTL policy">
+                        <select
+                          className="neo-retention-select"
+                          value={retentionDays}
+                          disabled={isUpdatingRetention}
+                          onChange={(e) => void handleRetentionDaysChange(Number(e.target.value))}
+                          title="Set audit trail data retention period"
+                        >
+                          <option value={30}>TTL: 30 Days</option>
+                          <option value={60}>TTL: 60 Days</option>
+                          <option value={90}>TTL: 90 Days (Default)</option>
+                          <option value={180}>TTL: 180 Days (6 Mos)</option>
+                          <option value={365}>TTL: 365 Days (1 Yr)</option>
+                        </select>
+                      </div>
                     </div>
 
                   </div>
@@ -3824,14 +3849,14 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                                 <span className="neo-target-domain">{entry.officialDomain}</span>
                               </div>
                             </td>
-                            <td>{entry.category || '—'}</td>
+                            <td>{entry.category || '-'}</td>
                             <td>
                               <span className={`neo-status-pill-modern ${entry.status.toLowerCase()}`}>
                                 {entry.status}
                               </span>
                             </td>
-                            <td>{entry.reviewer || '—'}</td>
-                            <td>{entry.nextReviewDate || '—'}</td>
+                            <td>{entry.reviewer || '-'}</td>
+                            <td>{entry.nextReviewDate || '-'}</td>
                             <td>
                               <div style={{ display: 'flex', gap: '6px' }}>
                                 {entry.status !== 'ACTIVE' && (
@@ -3945,6 +3970,77 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
             </section>
           )}
         </main>
+
+        {/* ── Mobile Frosted Bottom Navigation Dock (Visible on mobile <= 768px) ── */}
+        <nav className="neo-mobile-bottom-nav" aria-label="Moderator Mobile Navigation Dock">
+          <button
+            type="button"
+            className={`neo-mobile-nav-btn ${activeNav === 'DASHBOARD' ? 'active' : ''}`}
+            onClick={() => setActiveNav('DASHBOARD')}
+            title="Dashboard Overview"
+          >
+            <div className="neo-mobile-nav-icon-wrap">
+              <LayoutDashboard size={19} aria-hidden="true" />
+            </div>
+            <span>Overview</span>
+          </button>
+
+          <button
+            type="button"
+            className={`neo-mobile-nav-btn ${activeNav === 'QUEUE' ? 'active' : ''}`}
+            onClick={() => {
+              setActiveNav('QUEUE')
+              setActiveTab('PENDING')
+            }}
+            title="Citizen Queue"
+          >
+            <div className="neo-mobile-nav-icon-wrap">
+              <Clock size={19} aria-hidden="true" />
+              {pendingCount > 0 && (
+                <span className="neo-mobile-badge-pill" title={`${pendingCount} pending`}>
+                  {pendingCount > 99 ? '99+' : pendingCount}
+                </span>
+              )}
+            </div>
+            <span>Queue</span>
+          </button>
+
+          <button
+            type="button"
+            className={`neo-mobile-nav-btn ${activeNav === 'INTELLIGENCE' ? 'active' : ''}`}
+            onClick={() => setActiveNav('INTELLIGENCE')}
+            title="Verified Threat Intelligence"
+          >
+            <div className="neo-mobile-nav-icon-wrap">
+              <ShieldCheck size={19} aria-hidden="true" />
+            </div>
+            <span>Intel</span>
+          </button>
+
+          <button
+            type="button"
+            className={`neo-mobile-nav-btn ${activeNav === 'DOMAINS' ? 'active' : ''}`}
+            onClick={() => setActiveNav('DOMAINS')}
+            title="Official Domains Directory"
+          >
+            <div className="neo-mobile-nav-icon-wrap">
+              <Globe size={19} aria-hidden="true" />
+            </div>
+            <span>Domains</span>
+          </button>
+
+          <button
+            type="button"
+            className={`neo-mobile-nav-btn ${activeNav === 'AUDIT' ? 'active' : ''}`}
+            onClick={() => setActiveNav('AUDIT')}
+            title="Moderation Audit Trail"
+          >
+            <div className="neo-mobile-nav-icon-wrap">
+              <FileText size={19} aria-hidden="true" />
+            </div>
+            <span>Audit</span>
+          </button>
+        </nav>
       </div>
 
       {/* ── Review Decision Modal (Consensus, Classification & Sanitization) ── */}

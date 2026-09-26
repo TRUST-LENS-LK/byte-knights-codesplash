@@ -79,6 +79,11 @@
   text-align: center;
   max-width: 720px;
   margin: 0 auto 36px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
 }
 
 .section-eyebrow {
@@ -141,6 +146,13 @@
   margin-top: 36px;
   margin-bottom: 48px;
   scroll-margin-top: 110px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 /* Category Navigation Pills */
@@ -247,34 +259,47 @@
   position: absolute;
   top: 50%;
   transform: translateY(-50%);
-  z-index: 10;
-  width: 40px;
-  height: 40px;
+  z-index: 25;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   background: #ffffff;
-  border: 1.5px solid #e2e8f0;
-  color: #64748b;
-  display: flex;
+  border: 1.5px solid #cbd5e1;
+  color: #0f172a;
+  display: flex !important;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  box-shadow: 0 2px 10px rgba(15,23,42,0.08);
-  transition: all 0.2s ease;
-  margin-top: -24px; /* offset above the dot row */
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.12);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  margin-top: -18px; /* offset above the dot row */
 }
 .slide-nav-btn:hover {
   background: #0066FF;
   border-color: #0066FF;
   color: #ffffff;
-  box-shadow: 0 4px 14px rgba(0, 102, 255, 0.3);
+  box-shadow: 0 6px 18px rgba(0, 102, 255, 0.35);
+  transform: translateY(-50%) scale(1.06);
 }
-.slide-nav-prev { left: -20px; }
-.slide-nav-next { right: -20px; }
+.slide-nav-btn:active {
+  transform: translateY(-50%) scale(0.94);
+}
+.slide-nav-prev { left: -22px; }
+.slide-nav-next { right: -22px; }
 
 @media (max-width: 860px) {
-  .slide-nav-prev { left: 8px; }
-  .slide-nav-next { right: 8px; }
+  .slideshow-outer {
+    padding: 0 24px;
+    box-sizing: border-box;
+  }
+  .slide-nav-btn {
+    width: 40px;
+    height: 40px;
+  }
+  .slide-nav-prev { left: 4px; }
+  .slide-nav-next { right: 4px; }
 }
+
 
 /* --- Dot indicators --- */
 .slide-dots {
@@ -501,35 +526,27 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #cbd5e1;
+  color: #64748b;
   align-self: center;
   flex-shrink: 0;
 }
 
-/* Defense Strip: Natural & Understated */
+/* Defense Strip: Centered Clean Rule */
 .slide-slim-defense {
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 10px;
-  padding: 10px 14px;
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  font-size: 12.5px;
-  color: #334155;
-  line-height: 1.5;
-}
-
-.defense-shield-icon {
-  color: #059669;
-  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  padding: 8px 16px 2px;
+  text-align: center;
+  font-size: 13px;
+  line-height: 1.55;
+  color: #475569;
 }
 
 .defense-rule-lead {
   font-family: var(--font-heading);
   font-weight: 750;
   color: #0f172a;
-  white-space: nowrap;
+  margin-right: 6px;
 }
 
 .defense-rule-body {
@@ -1351,6 +1368,42 @@
     grid-template-columns: 1fr 1fr;
     gap: 32px;
   }
+  .mission-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .footer-columns-grid {
+    grid-template-columns: 1fr;
+    gap: 28px;
+  }
+
+  .about-mission-card {
+    padding: 40px 28px;
+    border-radius: 24px;
+  }
+
+  .mission-grid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .mission-title {
+    font-size: 26px;
+  }
+
+  .landing-section {
+    margin-top: 40px;
+  }
+
+  .section-title {
+    font-size: 24px;
+  }
+
+  .slideshow-outer {
+    max-width: 100%;
+  }
 }
 
 @media (max-width: 640px) {
@@ -1358,13 +1411,13 @@
     grid-template-columns: 1fr;
   }
   .scam-simulator-section {
-    padding: 28px 18px 24px;
+    padding: 20px 0 20px;
   }
   .simulator-dossier-panel {
-    padding: 24px 18px;
+    padding: 20px 14px;
   }
   .dossier-title {
-    font-size: 19px;
+    font-size: 18px;
   }
   .scam-pulse-ticker {
     flex-direction: column;
@@ -1376,25 +1429,121 @@
   .top-announcement-content {
     flex-direction: column;
     gap: 8px;
+    text-align: center;
   }
   .section-title {
-    font-size: 26px;
+    font-size: 22px;
   }
   .how-it-works-section {
-    padding: 32px 20px;
+    padding: 28px 0 36px;
   }
   .about-mission-card {
-    padding: 32px 24px;
+    padding: 32px 20px;
+    border-radius: 20px;
   }
   .mission-title {
-    font-size: 25px;
+    font-size: 22px;
   }
   .footer-columns-grid {
     grid-template-columns: 1fr;
-    gap: 28px;
+    gap: 24px;
   }
   .footer-bottom-bar {
     flex-direction: column;
     align-items: flex-start;
   }
+  /* Slideshow card compact on mobile */
+  .slide-content-wrapper {
+    padding: 16px 14px;
+  }
+  .slide-brand-group {
+    min-width: unset;
+    flex: unset;
+    width: 100%;
+  }
+  .slide-compact-header {
+    flex-direction: column;
+    gap: 12px;
+  }
+  .slide-hotline-badge {
+    align-self: flex-start;
+  }
+  .slideshow-outer {
+    padding: 0 22px;
+    box-sizing: border-box;
+  }
+  .slide-nav-prev { left: 2px; }
+  .slide-nav-next { right: 2px; }
+
+  /* FAQ */
+  .faq-accordion-header {
+    padding: 14px 16px;
+  }
+  .faq-question-text {
+    font-size: 14.5px;
+  }
+  .faq-accordion-body {
+    padding: 0 16px 16px;
+  }
 }
+
+@media (max-width: 480px) {
+  .about-mission-card {
+    padding: 28px 16px;
+    border-radius: 18px;
+  }
+  .mission-title {
+    font-size: 20px;
+  }
+  .mission-actions {
+    flex-direction: column;
+    gap: 12px;
+    align-items: stretch;
+  }
+  .btn-primary-action,
+  .btn-outline-hotline {
+    width: 100%;
+    justify-content: center;
+  }
+  .section-title {
+    font-size: 20px;
+  }
+  .section-header-center {
+    margin-bottom: 24px;
+  }
+  .slideshow-outer {
+    padding: 0 20px;
+    box-sizing: border-box;
+  }
+  .slide-nav-btn {
+    width: 38px;
+    height: 38px;
+    display: flex !important;
+    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.16);
+  }
+  .slide-nav-prev {
+    left: 0px;
+  }
+  .slide-nav-next {
+    right: 0px;
+  }
+  .intel-category-nav {
+    gap: 6px;
+  }
+  .intel-nav-pill {
+    padding: 7px 12px;
+    font-size: 12px;
+  }
+  .landing-section {
+    margin-top: 32px;
+  }
+  .top-announcement-bar {
+    padding: 8px 14px;
+    font-size: 12px;
+  }
+  .announcement-hotline {
+    font-size: 11.5px;
+    padding: 3px 10px;
+  }
+}
+

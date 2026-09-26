@@ -5,9 +5,7 @@
 
 .ocr-uploader-card {
   width: 100%;
-  height: 240px;
   min-height: 240px;
-  max-height: 240px;
   box-sizing: border-box;
   border-radius: 16px;
   position: relative;
@@ -15,7 +13,6 @@
   flex-direction: column;
   margin: 0;
   font-family: inherit;
-  overflow: hidden;
   flex-shrink: 0;
   transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
 }
@@ -141,7 +138,6 @@
   justify-content: space-between;
   gap: 6px;
   color: #1e293b;
-  overflow-y: auto;
 }
 
 .ocr-header {
@@ -370,16 +366,16 @@
 
 .ocr-textarea {
   width: 100%;
-  height: 52px;
+  min-height: 96px;
   background: #ffffff;
   border: 1.5px solid #cbd5e1;
   border-radius: 6px;
   color: #0f172a;
-  padding: 6px 8px;
+  padding: 8px 10px;
   font-family: inherit;
-  font-size: 12px;
-  line-height: 1.4;
-  resize: none;
+  font-size: 13px;
+  line-height: 1.45;
+  resize: vertical;
   box-sizing: border-box;
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
@@ -421,4 +417,54 @@
   opacity: 0.5;
   cursor: not-allowed;
   transform: none;
+}
+
+/* ── Mobile Responsiveness ────────────────────────────── */
+@media (max-width: 600px) {
+  .ocr-header {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  
+  .ocr-header-actions {
+    width: 100%;
+    display: flex;
+    gap: 8px;
+  }
+
+  .ocr-btn-reset {
+    flex: 1;
+    justify-content: center;
+    padding: 8px 12px;
+    font-size: 13px;
+  }
+
+  .ocr-btn-close {
+    padding: 8px 14px;
+    background: #f1f5f9;
+    border: 1px solid #cbd5e1;
+  }
+  
+  .ocr-preview-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 8px;
+  }
+  
+  .ocr-result-meta {
+    flex-wrap: wrap;
+    align-self: flex-start;
+  }
+  
+  .ocr-action-row {
+    justify-content: center;
+  }
+  
+  .ocr-btn-confirm {
+    width: 100%;
+    justify-content: center;
+    padding: 10px 14px;
+    font-size: 14px;
+  }
 }

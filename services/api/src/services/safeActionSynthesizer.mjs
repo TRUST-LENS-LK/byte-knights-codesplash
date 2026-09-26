@@ -32,6 +32,7 @@ export function synthesizeSafeActions({
   sourceUrl = null,
   isAdvisory = false,
   isTransactional = false,
+  isPromotion = false,
   isCoercive = false,
   authorities = [],
 }) {
@@ -40,7 +41,7 @@ export function synthesizeSafeActions({
   const relevantOrg = matchedOrg || claimedOrg
 
   // 1. Genuine Defensive / Advisory Context
-  if (isAdvisory || (riskBand === 'LOW' && recommendation === 'VERIFIED_SAFE')) {
+  if (isAdvisory) {
     actions.add('This notice contains defensive educational guidance. No scam intent detected.')
     actions.add('Remember that genuine financial and public institutions will never ask for your OTP, PIN, or passwords over SMS or phone calls.')
     if (relevantOrg) {
@@ -55,6 +56,28 @@ export function synthesizeSafeActions({
     actions.add('Verify that the merchant name and transaction amount correspond exactly to the purchase you are making.')
     actions.add('CRITICAL: Never disclose, forward, or speak this OTP to anyone over phone or text. Genuine bank or merchant staff will never ask for it.')
     actions.add('If you did not initiate this transaction, contact your card issuing bank immediately to freeze your card.')
+    return Array.from(actions)
+  }
+
+  // 1c. Genuine Commercial Promotion / Informational Notice Context
+  if (isPromotion) {
+    actions.add('This communication appears to be a legitimate commercial promotion or informational update.')
+    actions.add('No fraudulent patterns, coercive lures, or credential demands were detected.')
+    if (relevantOrg) {
+      actions.add(`Verify promotions and place orders directly through ${relevantOrg}'s official portal${sourceUrl ? ` (${sourceUrl})` : ''}.`)
+    } else {
+      actions.add('Always ensure you access promotions through the merchant\'s verified official website or mobile app.')
+    }
+    return Array.from(actions)
+  }
+
+  // 1d. Genuine Verified Safe Official Portal Context
+  if (riskBand === 'LOW' && recommendation === 'VERIFIED_SAFE') {
+    actions.add(`This destination is confirmed as an authentic official portal${relevantOrg ? ` for ${relevantOrg}` : ''}.`)
+    actions.add('Always ensure your browser address bar displays a secure HTTPS connection and the correct domain name.')
+    if (relevantOrg && sourceUrl) {
+      actions.add(`Official portal confirmed: ${sourceUrl}`)
+    }
     return Array.from(actions)
   }
 

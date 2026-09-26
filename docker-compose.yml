@@ -1,4 +1,30 @@
 services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: npm --workspace apps/web run dev -- --host 0.0.0.0
+    ports:
+      - "5174:5174"
+    environment:
+      - VITE_API_URL=http://localhost:8787
+    depends_on:
+      - api
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: npm --workspace services/api start
+    ports:
+      - "8787:8787"
+    environment:
+      - PORT=8787
+      - CORS_ORIGIN=http://localhost:5174,http://127.0.0.1:5174,http://localhost:5173
+      - SCANNER_URL=http://scanner:8788
+    env_file:
+      - .env
+
   scanner:
     build:
       context: ./services/scanner
