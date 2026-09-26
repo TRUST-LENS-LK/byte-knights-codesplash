@@ -1,7 +1,7 @@
 import { GEMINI_API_KEY } from '../config/env.mjs'
 
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent'
-const REQUEST_TIMEOUT_MS = 12_000
+const REQUEST_TIMEOUT_MS = 18_000
 const MAX_TEXT_LENGTH = 2_000
 
 // In-memory failure cooldown guard (5 seconds)
@@ -55,12 +55,13 @@ function buildGeminiPrompt(text = '', findings = [], languageHint = '', riskBand
   const safeText = String(text || '')
   const truncatedText = safeText.slice(0, MAX_TEXT_LENGTH)
   const safeFindings = Array.isArray(findings) ? findings : []
-  const findingsSummary = safeFindings.length > 0
+  const hasPriorFindings = safeFindings.length > 0
+  const findingsSummary = hasPriorFindings
     ? safeFindings.map((f) => `- ${f?.canonicalSignal || f?.category || 'signal'} (strength: ${f?.strength || 0.5}): ${f?.evidence || 'detected'}`).join('\n')
-    : '- No high-risk threat signals flagged by deterministic rule engine.'
+    : '- Standalone semantic analysis (keyword rules bypassed).'
 
   return `You are a Sri Lankan cyber threat and scam detection expert for TrustLens LK.
-A deterministic rule engine analyzed a user message and reached a preliminary risk level of: ${riskBand}
+Your task is to analyze the full context, linguistics, and intent of the user message (supporting Sinhala, Singlish, Tamil, or English).
 
 MESSAGE TO ANALYZE:
 """
@@ -68,27 +69,32 @@ ${truncatedText}
 """
 Language Hint: ${languageHint || 'Auto-detect (Sinhala, Singlish, Tamil, or English)'}
 
-RULE ENGINE FINDINGS:
-${findingsSummary}
-
+${hasPriorFindings ? `PRELIMINARY HEURISTIC SIGNALS:\n${findingsSummary}\nPreliminary Risk Level: ${riskBand}\n` : 'MODE: Pure Semantic Intent Analysis (no keyword biases).\n'}
 TASK:
-Analyze the full context of the message. The rule engine assigned it a risk level of ${riskBand}. Do you AGREE or DISAGREE with this overall risk level?
-- If the rule engine evaluated it as HIGH/MEDIUM risk, but you determine the context is actually safe/benign (e.g. an official bank warning), output "DISAGREE".
-- If the rule engine evaluated it as LOW risk, but you determine the message is actually a dangerous scam/phishing attempt, output "DISAGREE".
-- Otherwise, if your assessment aligns with the rule engine's risk level, output "AGREE".
+Analyze the full context and intent of the message (supporting Sinhala, Singlish, Tamil, or English).
+1. Classify the message intent:
+   - "ADVISORY_WARNING": An educational security warning or customer advisory (e.g. genuine bank notice advising citizens never to share OTPs/passwords).
+   - "COERCIVE_DEMAND": An active scam lure, urgent threat of account suspension, demanding OTP/PIN/passwords, upfront fees, or task scam recruitment.
+   - "BENIGN_INFORMATIVE": Normal transactional receipt, automated OTP delivery notice, or non-malicious update.
+   - "GENERAL": Other / unclear.
+2. Determine whether you AGREE or DISAGREE with treating the message as a threat:
+   - If the context is an educational/defensive advisory or harmless transactional notice, output "DISAGREE" (or "AGREE" with benign safety).
+   - If the message is a dangerous scam, phishing, or social engineering lure, output "DISAGREE" (if initially assumed safe) or "AGREE" (if threat).
+   - Otherwise, if your assessment aligns with the preliminary risk level, output "AGREE".
 
 Respond STRICTLY in valid JSON matching this exact structure (no Markdown block wrappers, no preamble):
 {
   "verdict": "AGREE" | "DISAGREE" | "UNCERTAIN",
   "confidence": 0.85,
-  "reasoning": "One concise sentence explaining why the message context is benign or malicious."
-}`
+  "intent": "ADVISORY_WARNING" | "COERCIVE_DEMAND" | "BENIGN_INFORMATIVE" | "GENERAL",
+  "isAdvisory": false,
+  "reasoning": "One concise sentence explaining why the message context is benign, transactional, advisory, or malicious."
+}
+`
 }
 
 const GEMINI_MODELS = [
-  'gemini-flash-lite-latest',
   'gemini-3.5-flash-lite',
-  'gemini-3.6-flash',
   'gemini-3.1-flash-lite',
   'gemini-3.5-flash',
 ]
@@ -137,24 +143,32 @@ async function fetchModel(modelName, prompt) {
   const verdict = validVerdicts.includes(parsed.verdict) ? parsed.verdict : 'UNCERTAIN'
   const confidence = typeof parsed.confidence === 'number' ? Math.min(1, Math.max(0, parsed.confidence)) : 0.5
   const reasoning = parsed.reasoning || 'AI context evaluation complete.'
+  const intent = typeof parsed.intent === 'string' ? parsed.intent : 'GENERAL'
+  const isAdvisory = Boolean(parsed.isAdvisory || intent === 'ADVISORY_WARNING')
 
   lastFailureTimestamp = 0
   return {
     verdict,
     confidence,
     reasoning,
+    intent,
+    isAdvisory,
     evaluatedAt: new Date().toISOString(),
   }
 }
 
-export async function evaluateContextWithAi({ text = '', decision, languageHint = null }) {
+export async function evaluateContextWithAi({ text = '', decision = null, languageHint = null }) {
   if (!isAiValidationConfigured()) return null
-  if (!decision) return null
 
   const safeText = String(text || '').trim()
   if (!safeText) return null
 
-  const prompt = buildGeminiPrompt(safeText, decision.findings || [], languageHint, decision.riskBand)
+  const prompt = buildGeminiPrompt(
+    safeText,
+    decision?.findings || [],
+    languageHint,
+    decision?.riskBand || 'LOW'
+  )
 
   // Use Promise.any to race the top 3 models concurrently to reduce latency
   const modelsToRace = GEMINI_MODELS.slice(0, 3)
@@ -226,7 +240,7 @@ export function applyAiVerdict(decision, aiResult, intelligenceOverlay = null) {
         decision.recommendation = 'STOP_AND_AVOID'
         decision.overridesApplied = [...(decision.overridesApplied || []), 'ai_context_upgrade']
       } else {
-        trace.push(`[AI Context Layer]: AI context analysis detected benign language usage ("${aiResult.reasoning}"). Risk band DOWNGRADED from ${originalRiskBand} to ${newRiskBand}.`)
+        trace.push(`[AI Context Layer]: AI context analysis detected benign language usage ("${aiResult.reasoning}"). Risk band downgraded from ${originalRiskBand} to ${newRiskBand}.`)
         if (newRiskBand === 'MEDIUM') {
           decision.recommendation = 'PROCEED_WITH_CAUTION'
         } else if (newRiskBand === 'LOW') {
