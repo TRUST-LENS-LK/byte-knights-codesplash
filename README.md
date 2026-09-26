@@ -1,4 +1,4 @@
-# TrustLens LK — Advanced Scam Decision Support & Threat Intelligence Platform 🛡️🇱🇰
+# TrustLens LK - Advanced Scam Decision Support & Threat Intelligence Platform 🛡️🇱🇰
 
 [![Node.js](https://img.shields.io/badge/Node.js-20%2B-brightgreen.svg?logo=node.js)](https://nodejs.org/)
 [![React 19](https://img.shields.io/badge/React-19-blue.svg?logo=react)](https://react.dev/)
@@ -9,7 +9,7 @@
 
 **TrustLens LK** is an enterprise-grade, multi-layered threat intelligence and scam decision support platform engineered specifically to safeguard Sri Lankan citizens and organizations from modern digital scams, brand impersonation, deceptive task frauds, and credential harvesting.
 
-Combining **in-browser multilingual OCR**, **Sri Lanka-specific deterministic heuristics**, **curated institutional domain registries**, **isolated sandbox URL detonation**, and an **explainable decision arbiter**, TrustLens LK delivers transparent, NIST-aligned security verdicts with zero black-box hallucinations.
+Featuring a fully mobile-responsive citizen dashboard with real-time dynamic scan progression, TrustLens LK combines **in-browser multilingual OCR**, **Sri Lanka-specific deterministic heuristics**, **curated institutional domain registries**, **isolated sandbox URL detonation**, and an **explainable decision arbiter** to deliver transparent, NIST-aligned security verdicts with zero black-box hallucinations.
 
 ---
 
@@ -21,7 +21,7 @@ When an SMS, chat transcript, screenshot, or URL is submitted to TrustLens LK, i
 [ Citizen Submission / Screenshot Upload ]
                      │
                      ▼
-  Layer 1: Multilingual OCR Engine (Tesseract.js — English & Sinhala)
+  Layer 1: Multilingual OCR Engine (Tesseract.js - English & Sinhala)
                      │
                      ▼
   Layer 2: Sri Lanka Heuristic & Entity Extraction Engine (@trustlens/rules)
@@ -36,7 +36,7 @@ When an SMS, chat transcript, screenshot, or URL is submitted to TrustLens LK, i
   Layer 5: Decision Arbiter & Hard Invariant Enforcement (INV-01 to INV-09)
                      │
                      ▼
-[ Explainable Verdict + NIST Trace + Statutory Emergency Actions ]
+[ Explainable Verdict (e.g. Critical Risk, High Threat, Suspicious, Low Risk, Verified Safe) ]
 ```
 
 ### 1. Multilingual In-Browser OCR & Screenshot Extraction
@@ -82,9 +82,9 @@ To prevent probabilistic AI hallucinations from endangering citizens, TrustLens 
 
 ## 🏛️ Explainable AI (XAI) & NIST Compliance
 
-### Dual-Stage Gemini AI Integration
-To ensure both accurate linguistic understanding and holistic threat context, Gemini AI is invoked in a two-stage pipeline:
-1. **Pure Semantic Intent Analysis**: First, the model analyzes the raw text in isolation (understanding Sinhala, Singlish, and English) to determine the baseline psychological intent—whether the message is a coercive threat, an educational advisory, or a benign notification.
+### Dual-Stage Gemini 3.5 Flash AI Integration
+To ensure both accurate linguistic understanding and holistic threat context, Gemini 3.5 Flash is invoked in a two-stage pipeline:
+1. **Pure Semantic Intent Analysis**: First, the model analyzes the raw text in isolation (understanding Sinhala, Singlish, and English) to determine the baseline psychological intent-whether the message is a coercive threat, an educational advisory, or a benign notification.
 2. **Unified Contextual Synthesis**: Finally, the system feeds the AI's independent semantic reasoning alongside all deterministic heuristic signals (domain verification, sandbox findings, and intelligence hits) back into Gemini. The model synthesizes this combined intelligence into a single, user-friendly overall summary explaining exactly *why* the message is safe or dangerous.
 
 Every analysis strictly adheres to **NIST Explainable AI (XAI) Principles**:
@@ -92,6 +92,7 @@ Every analysis strictly adheres to **NIST Explainable AI (XAI) Principles**:
 - **Plain-Language Action Directives (`safeActions`)**: Concrete instructions (e.g., *"Do not share your OTP"*, *"Verify transaction with your bank"*).
 - **Statutory Authority Contacts**: Dynamically resolves official helpline numbers for Sri Lanka CERT, CBSL Financial Consumer Protection, 1990, and Police Cyber Crime units.
 - **Explicit Limitation Disclosures**: Discloses system boundaries (e.g., whether sandbox detonation was bypassed or if the entity is unverified in the national directory).
+- **Comprehensive UI Evidence Tabs**: Users can explore the exact technical evidence via dedicated tabs: Scan Summary, Threat Signals, Website Scan, Official Checks, and AI Analysis.
 
 ---
 
@@ -202,7 +203,7 @@ byte-knights/
 
 ---
 
-## 🐳 Quick Start (Docker) — Recommended for Evaluation
+## 🐳 Quick Start (Docker) - Recommended for Evaluation
 
 ### Prerequisites
 - [Docker](https://docs.docker.com/get-docker/) & [Docker Compose](https://docs.docker.com/compose/) installed.
