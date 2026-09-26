@@ -693,21 +693,6 @@ function App() {
 
               <div className="verdict-headline-group">
                 <h2 className="verdict-primary-title">{risk}</h2>
-                <p className="verdict-explanation">
-                  {isOfficialEntity
-                    ? `This website is verified in official Sri Lankan directories as belonging to ${intelligenceOverlay?.officialOrganization || 'an authorized institution'}.`
-                    : isImpersonation
-                      ? 'This message pretends to be a recognized bank or government service, but asks for login details or payment through an unauthorized channel.'
-                      : isVerifiedSafe
-                        ? 'This content has been reviewed and confirmed safe.'
-                        : isConfirmedScam
-                          ? 'This message matches confirmed fraud and scam reports in Sri Lanka.'
-                          : decision.riskBand === 'HIGH'
-                            ? 'This message contains deceptive tricks typical of online banking and phishing scams.'
-                            : decision.riskBand === 'MEDIUM'
-                              ? 'Warning signs were identified. Verify the sender independently before taking action.'
-                              : 'No scam or phishing patterns were detected in this message.'}
-                </p>
               </div>
 
               <div className="verdict-cta-group">
