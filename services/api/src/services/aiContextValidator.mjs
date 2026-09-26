@@ -288,3 +288,67 @@ export function applyAiVerdict(decision, aiResult, intelligenceOverlay = null) {
     },
   }
 }
+
+export async function generateOverallSummaryWithAi({ text = '', aiResult = null, decision = null }) {
+  if (!isAiValidationConfigured() || !aiResult || !decision) return null;
+
+  const safeText = String(text || '').trim();
+  if (!safeText) return null;
+
+  const safeFindings = decision.findings || [];
+  const findingsSummary = safeFindings.length > 0
+    ? safeFindings.map((f) => `- ${f?.canonicalSignal || f?.category || 'signal'}: ${f?.evidence || 'detected'}`).join('\n')
+    : 'No additional heuristic signals detected.';
+
+  const prompt = `You are a Sri Lankan cyber threat expert.
+Write a single, user-friendly summary sentence explaining the final risk assessment of this message.
+
+MESSAGE:
+"""
+${safeText.slice(0, 1000)}
+"""
+
+AI'S INDEPENDENT SEMANTIC REASONING:
+"${aiResult.reasoning}"
+
+SYSTEM DETECTED HEURISTIC SIGNALS:
+${findingsSummary}
+Final Arbitrated Risk Level: ${decision.riskBand}
+
+TASK:
+Write a unified, clear summary combining BOTH the AI's semantic reasoning AND the system's heuristic findings.
+Explain clearly why the message is safe or dangerous based on all evidence.
+Do not use technical jargon like "heuristic signals" or "semantic reasoning". Just explain the conclusion.
+
+Respond STRICTLY in valid JSON:
+{
+  "summary": "Your unified summary text here."
+}`;
+
+  try {
+    const response = await fetch(\`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=\${encodeURIComponent(GEMINI_API_KEY)}\`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.1, responseMimeType: 'application/json' },
+      }),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+    if (!response.ok) return null;
+    const data = await response.json();
+    let contentText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!contentText) return null;
+    let cleanJsonText = contentText.trim();
+    if (cleanJsonText.startsWith('\`\`\`')) cleanJsonText = cleanJsonText.replace(/^\`\`\`(?:json)?\s*/i, '').replace(/\\s*\`\`\`$/i, '').trim();
+    if (!cleanJsonText.startsWith('{')) {
+      const match = contentText.match(/\\{[\\s\\S]*\\}/);
+      if (match) cleanJsonText = match[0];
+    }
+    const parsed = JSON.parse(cleanJsonText);
+    return parsed.summary;
+  } catch (err) {
+    console.error('[AI Summary Exception] Failed to generate overall summary:', err);
+    return null;
+  }
+}

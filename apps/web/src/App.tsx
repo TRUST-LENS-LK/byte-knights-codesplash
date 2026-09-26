@@ -719,7 +719,7 @@ function App() {
                     {Math.round(aiValidation.confidence * 100)}% Confidence
                   </span>
                 </div>
-                <p className="ai-spotlight-quote">{aiValidation.reasoning}</p>
+                <p className="ai-spotlight-quote">{aiValidation.overallSummary || aiValidation.reasoning}</p>
               </div>
             )}
 

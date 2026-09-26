@@ -39,7 +39,7 @@ import {
   getIndicatorIntelligenceContext,
 } from './services/reportingService.mjs'
 import { reconcileDecision } from './services/reconcileIntelligence.mjs'
-import { applyAiVerdict, evaluateContextWithAi, isAiValidationConfigured } from './services/aiContextValidator.mjs'
+import { applyAiVerdict, evaluateContextWithAi, isAiValidationConfigured, generateOverallSummaryWithAi } from './services/aiContextValidator.mjs'
 import { arbitrateDecision } from './services/decisionArbiter.mjs'
 import { getOpenApiSpec, getSwaggerHtml } from './http/swagger.mjs'
 
@@ -981,6 +981,18 @@ const server = createServer(async (req, res) => {
     }
 
     aiValidation = arbitrated.aiValidation || aiValidation
+
+    if (aiValidation && isAiValidationConfigured()) {
+      const overallSummary = await generateOverallSummaryWithAi({
+        text,
+        aiResult: aiValidation,
+        decision,
+      })
+      if (overallSummary) {
+        aiValidation = { ...aiValidation, overallSummary }
+        decision.aiValidation = aiValidation
+      }
+    }
 
     const submissionId = await persistIfConsented({ ...body, text }, decision, entities)
     return send(res, 200, {
