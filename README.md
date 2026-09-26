@@ -82,6 +82,11 @@ To prevent probabilistic AI hallucinations from endangering citizens, TrustLens 
 
 ## 🏛️ Explainable AI (XAI) & NIST Compliance
 
+### Dual-Stage Gemini AI Integration
+To ensure both accurate linguistic understanding and holistic threat context, Gemini AI is invoked in a two-stage pipeline:
+1. **Pure Semantic Intent Analysis**: First, the model analyzes the raw text in isolation (understanding Sinhala, Singlish, and English) to determine the baseline psychological intent—whether the message is a coercive threat, an educational advisory, or a benign notification.
+2. **Unified Contextual Synthesis**: Finally, the system feeds the AI's independent semantic reasoning alongside all deterministic heuristic signals (domain verification, sandbox findings, and intelligence hits) back into Gemini. The model synthesizes this combined intelligence into a single, user-friendly overall summary explaining exactly *why* the message is safe or dangerous.
+
 Every analysis strictly adheres to **NIST Explainable AI (XAI) Principles**:
 - **Explainable Decision Trace**: Viewers see the specific `findings` and weighting that produced the verdict.
 - **Plain-Language Action Directives (`safeActions`)**: Concrete instructions (e.g., *"Do not share your OTP"*, *"Verify transaction with your bank"*).
