@@ -642,7 +642,7 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
       if (showSpinner) setIsLoadingQueue(true)
       setQueueError(null)
       try {
-        const res = await fetchModerationQueue(token, 'ALL', 1, 100)
+        const res = await fetchModerationQueue(token, 'ALL', 1, 500)
         if (res.success && res.reports) {
           setAllReports(res.reports)
         } else {
@@ -675,7 +675,7 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
       }
     })
 
-    fetchModerationQueue(token, 'ALL', 1, 100)
+    fetchModerationQueue(token, 'ALL', 1, 500)
       .then((res) => {
         if (!active) return
         if (res.success && res.reports) {
@@ -1254,6 +1254,9 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
   const rejectedReports = useMemo(() => allReports.filter((r) => r.status === 'REJECTED'), [allReports])
 
   const pendingCount = stats?.metrics.pendingCount ?? pendingReports.length
+  const approvedCount = stats?.metrics.approvedCount ?? approvedReports.length
+  const rejectedCount = stats?.metrics.rejectedCount ?? rejectedReports.length
+  const totalReportsCount = stats?.metrics.totalReports ?? (pendingCount + approvedCount + rejectedCount)
   const confirmedThreatCount =
     stats?.metrics.confirmedThreatCount ?? approvedReports.filter((r) => r.report_type === 'suspicious').length
   const clearedSafeCount =
@@ -1590,7 +1593,7 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
         <div className="neo-kpi-content">
           <div className="neo-kpi-body">
             <div className="neo-kpi-metric-row">
-              <span className="neo-kpi-value">{String(approvedReports.length).padStart(2, '0')}</span>
+              <span className="neo-kpi-value">{String(approvedCount).padStart(2, '0')}</span>
               <span className="neo-kpi-label">Approved</span>
             </div>
             <div className="neo-kpi-trend green">
@@ -1624,7 +1627,7 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
         <div className="neo-kpi-content">
           <div className="neo-kpi-body">
             <div className="neo-kpi-metric-row">
-              <span className="neo-kpi-value">{String(rejectedReports.length).padStart(2, '0')}</span>
+              <span className="neo-kpi-value">{String(rejectedCount).padStart(2, '0')}</span>
               <span className="neo-kpi-label">Rejected</span>
             </div>
             <div className="neo-kpi-trend orange">
@@ -2419,10 +2422,10 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({ onBackTo
                         {tab === 'PENDING'
                           ? `Pending ${pendingCount}`
                           : tab === 'APPROVED'
-                            ? `Approved ${approvedReports.length}`
+                            ? `Approved ${approvedCount}`
                             : tab === 'REJECTED'
-                              ? `Rejected ${rejectedReports.length}`
-                              : `All Reports ${allReports.length}`}
+                              ? `Rejected ${rejectedCount}`
+                              : `All Reports ${totalReportsCount}`}
                       </button>
                     ))}
                   </div>
