@@ -42,23 +42,35 @@ export async function verifyApprovedDomains(entities) {
  * since a stale entry cannot be used as evidence in either direction.
  */
 export async function checkClaimedOrganizationDomain(entities) {
-  const organizationEntity = entities.find((entity) => entity.type === 'organization')
+  const organizationEntities = entities.filter((entity) => entity.type === 'organization')
   const domainEntity = entities.find((entity) => entity.type === 'domain')
-  if (!organizationEntity || !domainEntity) return { findings: [], limitations: [] }
+  if (!organizationEntities.length || !domainEntity) return { findings: [], limitations: [] }
 
   const directory = await listDomainDirectory({ includeStale: true })
   if (!directory.length) return { findings: [], limitations: [] }
 
   const domainValue = (domainEntity.normalizedValue || domainEntity.value).toLowerCase()
-  const result = checkOrganizationDomainMatch(organizationEntity.value, domainValue, directory)
 
-  if (result.outcome === 'MISMATCH') {
+  // Evaluate all claimed organization entities
+  const results = organizationEntities.map((org) =>
+    checkOrganizationDomainMatch(org.value, domainValue, directory)
+  )
+
+  // If ANY claimed organization matches the destination domain, there is NO mismatch!
+  const hasMatch = results.some((r) => r.outcome === 'MATCHED')
+  if (hasMatch) {
+    return { findings: [], limitations: [] }
+  }
+
+  // Otherwise check if any produced a MISMATCH
+  const mismatchResult = results.find((r) => r.outcome === 'MISMATCH')
+  if (mismatchResult) {
     return {
       findings: [
         {
           canonicalSignal: 'domain_mismatch',
           category: 'Domain verification',
-          evidence: result.evidence,
+          evidence: mismatchResult.evidence,
           source: 'DOMAIN_DIRECTORY',
           strength: 0.9,
           confidence: 0.85,
@@ -69,11 +81,12 @@ export async function checkClaimedOrganizationDomain(entities) {
     }
   }
 
-  if (result.outcome === 'STALE') {
+  const staleResult = results.find((r) => r.outcome === 'STALE')
+  if (staleResult) {
     return {
       findings: [],
       limitations: [
-        `The directory entry for "${organizationEntity.value}" is due for re-review and could not be used to verify this domain.`,
+        `The directory entry for "${staleResult.claimedOrganization}" is due for re-review and could not be used to verify this domain.`,
       ],
     }
   }

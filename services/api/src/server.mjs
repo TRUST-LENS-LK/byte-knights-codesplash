@@ -39,7 +39,8 @@ import {
   getIndicatorIntelligenceContext,
 } from './services/reportingService.mjs'
 import { reconcileDecision } from './services/reconcileIntelligence.mjs'
-import { applyAiVerdict, evaluateContextWithAi } from './services/aiContextValidator.mjs'
+import { applyAiVerdict, evaluateContextWithAi, isAiValidationConfigured } from './services/aiContextValidator.mjs'
+import { arbitrateDecision } from './services/decisionArbiter.mjs'
 import { getOpenApiSpec, getSwaggerHtml } from './http/swagger.mjs'
 
 // In-memory cache for sandbox detonation results (1-hour TTL, max 200 entries)
@@ -797,7 +798,50 @@ const server = createServer(async (req, res) => {
       }
     }
 
-    let decision = analyze(finalScanText)
+    const isAiActive = isAiValidationEnabled() && isAiValidationConfigured()
+    let aiResult = null
+    let aiValidation = null
+
+    if (isAiActive) {
+      aiResult = await evaluateContextWithAi({
+        text: finalScanText || text,
+        languageHint: body.language || body.languageHint || null,
+      }).catch((err) => {
+        console.warn('AI context evaluation failed, falling back to deterministic rules:', err?.message || err)
+        return null
+      })
+    }
+
+    let decision
+    if (aiResult && aiResult.verdict !== 'UNCERTAIN') {
+      // AI-First Architecture: Bypassing keyword regex detection completely
+      decision = {
+        riskBand: aiResult.intent === 'COERCIVE_DEMAND' ? 'HIGH' : 'LOW',
+        recommendation: aiResult.intent === 'COERCIVE_DEMAND' ? 'STOP_AND_AVOID' : 'PROCEED_CAUTIOUSLY',
+        findings: [],
+        limitations: [],
+        safeActions: [],
+        policyVersion: 'ai-first-synchronized',
+      }
+      if (aiResult.intent === 'COERCIVE_DEMAND') {
+        decision.findings.push({
+          canonicalSignal: 'coercive_scam_lure',
+          category: 'Social Engineering & Coercion',
+          strength: aiResult.confidence || 0.95,
+          evidence: aiResult.reasoning || 'Coercive demand or deceptive recruitment lure identified by semantic analysis',
+        })
+      }
+      aiValidation = {
+        ...aiResult,
+        originalRiskBand: decision.riskBand,
+        adjustedRiskBand: decision.riskBand,
+        appliedAction: 'AI_SOVEREIGN',
+      }
+    } else {
+      // Fallback: Deterministic keyword rules engine (only when AI is inactive or unavailable)
+      decision = analyze(finalScanText)
+    }
+
     if (urlEntities._pendingLimitations) {
       decision.limitations.push(...urlEntities._pendingLimitations)
     }
@@ -863,14 +907,14 @@ const server = createServer(async (req, res) => {
     if (isVerifiedIntelEnabled()) {
       verifiedFindings = await checkVerifiedIntelligence(entities, contentSha256).catch(() => [])
       if (verifiedFindings.length) decision.findings.push(...verifiedFindings)
-      const reconciled = reconcileDecision(decision, verifiedFindings)
+      const reconciled = reconcileDecision(decision, verifiedFindings, { messageBody: text })
+      decision = reconciled.decision
       intelligenceOverlay = reconciled.intelligenceOverlay
     }
 
-    // ── Layer 5: AI Context Validation Engine ──────────────────────────
-    let aiValidation = null
-    if (isAiValidationEnabled()) {
-      const aiResult = await evaluateContextWithAi({
+    // ── Layer 5: AI Context Validation Engine (Fallback check if not already evaluated)
+    if (!aiResult && isAiValidationEnabled()) {
+      aiResult = await evaluateContextWithAi({
         text,
         decision,
         languageHint: body.language || body.languageHint || null,
@@ -881,6 +925,62 @@ const server = createServer(async (req, res) => {
         aiValidation = decision.aiValidation
       }
     }
+
+    // ── Synchronized Multi-Signal Arbitration Engine ───────────────────
+    const claimedOrg = entities.find((e) => e.type === 'organization')?.value || null
+    const authorities = approvedDomainFindings
+      .filter((f) => {
+        const cat = (f.category || '').toLowerCase()
+        const org = (f.organization || '').toLowerCase()
+        return cat.includes('law enforcement') || cat.includes('cybersecurity') || org.includes('police') || org.includes('cert')
+      })
+      .map((f) => ({
+        name: f.organization,
+        officialDomain: f.domain,
+        sourceUrl: f.sourceUrl,
+      }))
+
+    const arbitrated = arbitrateDecision({
+      baseDecision: decision,
+      entities,
+      scannerFindings: localScannerFindings,
+      scannerEvidence,
+      domainFindings: [
+        ...approvedDomainFindings,
+        ...(globalDomainCheck.findings || []),
+        ...(safeBrowsingCheck.findings || []),
+        ...(organizationDomainCheck.findings || []),
+        ...(domainAgeCheck.findings || []),
+      ],
+      verifiedIntelligenceFindings: verifiedFindings,
+      aiResult,
+      text,
+      claimedOrg,
+      authorities,
+    })
+
+    decision = {
+      ...decision,
+      riskBand: arbitrated.decision.riskBand,
+      recommendation: arbitrated.decision.recommendation,
+      findings: arbitrated.decision.findings,
+      safeActions: arbitrated.decision.safeActions,
+      compositeScore: arbitrated.compositeScore,
+      reconciliationTrace: [
+        ...(decision.reconciliationTrace || []),
+        ...(intelligenceOverlay?.reconciliationTrace || []),
+        ...(arbitrated.decision.reconciliationTrace || []),
+      ].filter((item, idx, arr) => arr.indexOf(item) === idx),
+    }
+
+    if (arbitrated.intelligenceOverlay) {
+      intelligenceOverlay = {
+        ...(intelligenceOverlay || {}),
+        ...arbitrated.intelligenceOverlay,
+      }
+    }
+
+    aiValidation = arbitrated.aiValidation || aiValidation
 
     const submissionId = await persistIfConsented({ ...body, text }, decision, entities)
     return send(res, 200, {
