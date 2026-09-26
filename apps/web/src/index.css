@@ -76,11 +76,17 @@
 
 html {
   scroll-behavior: smooth;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 body {
   margin: 0;
   min-height: 100vh;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
   font-family: var(--font-body);
   font-size: 14.5px;
   line-height: 1.55;
@@ -91,7 +97,6 @@ body {
   text-rendering: optimizeLegibility;
   font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
   position: relative;
-  overflow-x: hidden;
 }
 
 /* Clean, pure white canvas with subtle cybernetic gradient */
@@ -102,11 +107,15 @@ body::after {
 
 #root {
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
   min-height: 100svh;
   display: flex;
   flex-direction: column;
   position: relative;
   z-index: 1;
+  overflow-x: hidden;
+  box-sizing: border-box;
 }
 
 h1, h2, h3, h4, h5, h6 {
