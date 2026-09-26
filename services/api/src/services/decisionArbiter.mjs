@@ -102,11 +102,10 @@ export function evaluateHardInvariants({
   const isDeliveryOrCautionText = Boolean(
     /\b(?:your otp (?:at|for|is)|otp (?:is|expires in)|do not share|never share|keep (?:your )?otp confidential)\b/i.test(text)
   )
-  const isAiBenignInfo = Boolean(
+  const isBenignNotification = Boolean(
     (aiResult?.intent === 'BENIGN_INFORMATIVE' || (aiResult?.verdict === 'DISAGREE' && !isAdvisoryNotice && aiResult?.intent !== 'COERCIVE_DEMAND')) &&
     (aiResult?.confidence || 0) >= 0.75
-  )
-  const isTransactionalOTP = Boolean(isDeliveryOrCautionText && !hasAdvanceFee && !hasDomainMismatch)
+  ) || (isDeliveryOrCautionText && !hasAdvanceFee && !hasDomainMismatch)
 
   // INV-06: Genuine Advisory Notice Suppression
   if (isAdvisoryNotice && !hasDomainMismatch && !signals.has('known_malicious_domain')) {
@@ -121,7 +120,7 @@ export function evaluateHardInvariants({
   }
 
   // INV-08: Genuine Transactional / OTP Delivery Notification Suppression
-  if (isTransactionalOTP && !hasDomainMismatch && !signals.has('known_malicious_domain') && !hasAdvanceFee) {
+  if (isBenignNotification && !hasDomainMismatch && !signals.has('known_malicious_domain') && !hasAdvanceFee) {
     return {
       code: 'INV-08',
       riskBand: 'LOW',
@@ -132,20 +131,8 @@ export function evaluateHardInvariants({
     }
   }
 
-  // INV-09: Verified Benign Informational Content
-  if (isAiBenignInfo && !isTransactionalOTP && !hasDomainMismatch && !signals.has('known_malicious_domain') && !hasAdvanceFee) {
-    return {
-      code: 'INV-09',
-      riskBand: 'LOW',
-      recommendation: 'VERIFIED_SAFE',
-      reason: `Verified Safe Content: ${aiResult?.reasoning || 'Message is a standard informational or marketing notice. No malicious intent detected.'}`,
-      invariantType: 'BENIGN_CONTENT_PRESERVATION',
-      isBenignInfo: true,
-    }
-  }
-
   // INV-05: Anti-Spoofing Rule (Official Domain Quoted in Phishing Lure)
-  if (hasOfficialDomain && (hasCredentialTheft || hasAdvanceFee || aiResult?.intent === 'COERCIVE_DEMAND' || signals.has('coercive_scam_lure')) && !isAdvisoryNotice && !isAiBenignInfo && !isTransactionalOTP) {
+  if (hasOfficialDomain && (hasCredentialTheft || hasAdvanceFee || aiResult?.intent === 'COERCIVE_DEMAND' || signals.has('coercive_scam_lure')) && !isAdvisoryNotice && !isBenignNotification) {
     return {
       code: 'INV-05',
       riskBand: 'HIGH',
@@ -402,7 +389,7 @@ export function arbitrateDecision({
   // raw keyword findings (e.g. "credential_request" or "urgency") are false alarms and must not
   // pollute the user-facing findings list with "Critical Threat" or "credential request" badges.
   let sanitizedFindings = [...allFindings]
-  if (invariantHit?.isTransactional || invariantHit?.isAdvisory || invariantHit?.isBenignInfo || (aiResult?.intent === 'BENIGN_INFORMATIVE' && (aiResult?.confidence || 0) >= 0.75)) {
+  if (invariantHit?.isTransactional || invariantHit?.isAdvisory || (aiResult?.intent === 'BENIGN_INFORMATIVE' && (aiResult?.confidence || 0) >= 0.75)) {
     sanitizedFindings = sanitizedFindings.filter(
       (f) => f.canonicalSignal !== 'credential_request' && f.canonicalSignal !== 'urgency'
     )
@@ -413,14 +400,6 @@ export function arbitrateDecision({
         strength: 0.0,
         evidence: 'Standard OTP issuance or transaction confirmation notice',
         limitation: 'Verify that the merchant name and transaction amount correspond to your own legitimate activity.',
-      })
-    } else if (invariantHit?.isBenignInfo) {
-      sanitizedFindings.push({
-        canonicalSignal: 'verified_benign_content',
-        category: 'Verified Safe & Normal',
-        strength: 0.0,
-        evidence: 'Standard informational or promotional content without malicious intent',
-        limitation: 'Ensure any links or contact numbers belong to the official organization.',
       })
     }
   }
