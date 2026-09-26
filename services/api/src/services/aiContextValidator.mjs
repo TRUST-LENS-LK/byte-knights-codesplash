@@ -326,7 +326,7 @@ Respond STRICTLY in valid JSON:
 }`;
 
   try {
-    const response = await fetch(\`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=\${encodeURIComponent(GEMINI_API_KEY)}\`, {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=${encodeURIComponent(GEMINI_API_KEY)}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -340,9 +340,9 @@ Respond STRICTLY in valid JSON:
     let contentText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
     if (!contentText) return null;
     let cleanJsonText = contentText.trim();
-    if (cleanJsonText.startsWith('\`\`\`')) cleanJsonText = cleanJsonText.replace(/^\`\`\`(?:json)?\s*/i, '').replace(/\\s*\`\`\`$/i, '').trim();
+    if (cleanJsonText.startsWith('```')) cleanJsonText = cleanJsonText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
     if (!cleanJsonText.startsWith('{')) {
-      const match = contentText.match(/\\{[\\s\\S]*\\}/);
+      const match = contentText.match(/\{[\s\S]*\}/);
       if (match) cleanJsonText = match[0];
     }
     const parsed = JSON.parse(cleanJsonText);
